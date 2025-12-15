@@ -6,7 +6,8 @@ import tkinter as tk
 import sys
 import os
 import signal
-import subprocess
+import atexit
+import time
 
 # Ensure src is in path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -15,88 +16,172 @@ from settings_manager import SettingsManager
 from relay_control import RelayControl
 from sequence_manager import SequenceManager
 from ui_manager import UIManager
-from hardware_interface import HardwareInterface # <--- NEW IMPORT
+from hardware_interface import HardwareInterface 
+from startup_wizard import StartupWizard
 
 # --- CONSTANTS ---
 APP_NAME = "KettleBrain"
-VERSION = "0.2.0-Dev"
+VERSION = "0.2.1-Dev"
 
-# --- HARDWARE PIN MAP (BCM) ---
-RELAY_PINS = {
-    "Heater1": 17, # 1000W Element
-    "Heater2": 27, # 800W Element
-    "Aux": 22      # Optional Fan
-}
+# Wait this many seconds ONLY on auto-start to allow drivers to stabilize
+STARTUP_DELAY_S = 3
+
+# --- GLOBAL REFERENCE (Crucial for Signal Handling) ---
+kettle_app = None 
+
+def handle_exit_signal(signum, frame):
+    """ROBUST SHUTDOWN HANDLER"""
+    signal_name = "SIGHUP" if signum == signal.SIGHUP else "SIGTERM"
+    print(f"\n[{APP_NAME}] CRITICAL: Received {signal_name}. initiating EMERGENCY STOP.")
+
+    # 1. HARDWARE SAFETY FIRST
+    try:
+        if kettle_app and kettle_app.relay:
+            kettle_app.relay.turn_off_all_relays()
+            if hasattr(kettle_app.relay, 'cleanup_gpio'):
+                kettle_app.relay.cleanup_gpio()
+            print(f"[{APP_NAME}] SAFETY: Relays forced OFF.")
+    except Exception as e:
+        try: print(f"[{APP_NAME}] Hardware cleanup error: {e}")
+        except: pass
+
+    # 2. HARD KILL
+    print(f"[{APP_NAME}] Process Terminated.")
+    os._exit(0)
 
 class KettleBrainApp:
     def __init__(self):
         self.root = None
-        self.relay_control = None
-        
-    def run(self):
-        print(f"[{APP_NAME}] Starting v{VERSION}...")
-        
-        # 1. Initialize Settings
-        self.settings_mgr = SettingsManager()
-        
-        # --- NUMLOCK ENFORCEMENT ---
-        if self.settings_mgr.get("system_settings", "force_numlock", True):
-            try:
-                subprocess.run(["which", "numlockx"], check=True, stdout=subprocess.DEVNULL)
-                subprocess.run(["numlockx", "on"])
-                print(f"[{APP_NAME}] NumLock forced ON.")
-            except:
-                pass 
-        
-        # 2. Initialize Hardware Output (Relays)
-        self.relay_control = RelayControl(self.settings_mgr, RELAY_PINS)
+        self.relay = None 
+        self.is_shutting_down = False 
 
-        # 3. Initialize Hardware Input (Sensors/Simulation) <--- NEW
-        self.hw_interface = HardwareInterface(self.settings_mgr)
-        
-        # 4. Initialize The Engine (Sequencer)
-        # We now pass the HW Interface so the sequencer can read temps (real or virtual)
-        self.sequencer = SequenceManager(self.settings_mgr, self.relay_control, self.hw_interface)
-        
-        # 5. Initialize UI
+        # Register Safety Net
+        atexit.register(self._emergency_cleanup)
+
+    def run(self):
+        # --- 1. HARDWARE STABILIZATION DELAY (Conditional) ---
+        # Only wait if launched via Auto-Start (boot)
+        if "--auto-start" in sys.argv:
+            print(f"[{APP_NAME}] Auto-Start detected. Waiting {STARTUP_DELAY_S}s for drivers...")
+            time.sleep(STARTUP_DELAY_S)
+        else:
+            print(f"[{APP_NAME}] Normal start detected. Skipping boot delay.")
+
         self.root = tk.Tk()
-        # We pass the HW Interface so the UI can draw the Dev Mode sliders
-        self.ui = UIManager(self.root, self.sequencer, self.hw_interface)
+        base_dir = os.path.expanduser("~")
+        self.settings_mgr = SettingsManager(base_dir)
+
+        # --- UNCONTROLLED SHUTDOWN CHECK ---
+        uncontrolled = not self.settings_mgr.last_shutdown_was_clean
+        auto_resume = self.settings_mgr.get_system_setting("auto_resume_enabled", False)
+        recovery_data = self.settings_mgr.get_recovery_state()
         
-        # 6. Handle Shutdown Signals
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        resume_success = False
+
+        self.hardware = HardwareInterface(self.settings_mgr)
+        self.relay = RelayControl(self.settings_mgr)
+
+        # --- WIZARD CHECK ---
+        if not self.settings_mgr.get_system_setting("relay_logic_configured"):
+            print("[Main] Relay logic not configured. Launching Startup Wizard...")
+            wizard = StartupWizard(self.root, self.settings_mgr, self.relay)
+            self.root.wait_window(wizard.window)
+
+        self.sequencer = SequenceManager(self.settings_mgr, self.relay, self.hardware)
+        self.ui = UIManager(self.root, self.sequencer, self.hardware)
+
+        # --- RECOVERY LOGIC ---
+        if uncontrolled and auto_resume and recovery_data:
+            print("[Main] Attempting Auto-Resume from Power Loss...")
+            p_id = recovery_data.get("profile_id")
+            profiles = self.settings_mgr.get_all_profiles()
+            target_profile = next((p for p in profiles if p.id == p_id), None)
+            
+            if target_profile:
+                self.sequencer.load_profile(target_profile)
+                self.sequencer.restore_from_recovery(recovery_data)
+                resume_success = True
+                print("[Main] Auto-Resume Successful.")
+            else:
+                print("[Main] Recovery failed: Profile not found.")
         
-        # 7. Start Main Loop
+        # --- DEFAULT STARTUP (If not resuming) ---
+        if not resume_success:
+            # 1. Load Default Profile (so Auto mode isn't empty if they switch)
+            profiles = self.settings_mgr.get_all_profiles()
+            if profiles:
+                # Try to find "Default Profile", else take the first one
+                default_p = next((p for p in profiles if p.name == "Default Profile"), profiles[0])
+                self.sequencer.load_profile(default_p)
+                print(f"[Main] Loaded startup profile: {default_p.name}")
+            
+            # 2. Enter Manual Mode immediately
+            self.sequencer.enter_manual_mode()
+
+        if uncontrolled and not resume_success:
+            print(f"[{APP_NAME}] WARNING: Uncontrolled Shutdown Detected!")
+            self.root.after(1000, self._show_crash_warning)
+
+        # Handle "X" Button
+        self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
+
+        print(f"[{APP_NAME} {VERSION}] Starting Main Loop...")
         try:
             self.root.mainloop()
         except KeyboardInterrupt:
+            print(f"\n[{APP_NAME}] KeyboardInterrupt (Ctrl+C).")
             self.shutdown()
-        finally:
-            self.shutdown()
+        except Exception as e:
+            print(f"\n[{APP_NAME}] CRITICAL MAIN LOOP ERROR: {e}")
+            self._emergency_cleanup()
+            raise
 
-    def _signal_handler(self, sig, frame):
-        print(f"\n[{APP_NAME}] Signal received. Shutting down...")
-        self.shutdown()
+    def _show_crash_warning(self):
+        from tkinter import messagebox
+        messagebox.showwarning(
+            "Uncontrolled Shutdown Detected",
+            "The system did not shut down cleanly last time.\n"
+            "(Power Loss, Crash, or Terminal Closed)\n\n"
+            "Safety Check:\n"
+            "All relays have been reset to OFF.",
+            parent=self.root
+        )
 
     def shutdown(self):
-        print(f"[{APP_NAME}] Performing Cleanup...")
+        if self.is_shutting_down: return
+        self.is_shutting_down = True 
+        print(f"[{APP_NAME}] Performing Controlled Shutdown...")
         
         if hasattr(self, 'sequencer'):
-            self.sequencer.stop()
-            
-        if hasattr(self, 'relay_control'):
-            self.relay_control.cleanup_gpio()
-            
+            try: self.sequencer.stop()
+            except Exception as e: print(f"[{APP_NAME}] Error stopping sequencer: {e}")
+
+        self._emergency_cleanup()
+        
+        if hasattr(self, 'settings_mgr'):
+            print(f"[{APP_NAME}] Marking session as Clean Exit.")
+            self.settings_mgr.set_controlled_shutdown(True)
+
         if self.root:
-            try:
-                self.root.destroy()
-            except:
-                pass
-                
+            try: self.root.destroy()
+            except: pass
+
         print(f"[{APP_NAME}] Goodbye.")
         sys.exit(0)
 
+    def _emergency_cleanup(self):
+        if hasattr(self, 'relay') and self.relay:
+            try:
+                self.relay.turn_off_all_relays()
+                if hasattr(self.relay, 'cleanup_gpio'):
+                    self.relay.cleanup_gpio()
+                print(f"[{APP_NAME}] Relays forced OFF (Emergency Cleanup).")
+            except Exception as e:
+                print(f"[{APP_NAME}] CRITICAL: Failed to cleanup relays: {e}")
+
 if __name__ == "__main__":
     app = KettleBrainApp()
+    kettle_app = app
+    signal.signal(signal.SIGHUP, handle_exit_signal)
+    signal.signal(signal.SIGTERM, handle_exit_signal)
     app.run()

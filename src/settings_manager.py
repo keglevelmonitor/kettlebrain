@@ -6,46 +6,67 @@ settings_manager.py
 import json
 import os
 import threading
-from typing import List, Optional, Dict
-
-# UPDATED IMPORTS: Added BrewAddition
-from profile_data import BrewProfile, BrewStep, StepType, TimeoutBehavior, BrewAddition
+import uuid
+from datetime import datetime
+from profile_data import BrewProfile, BrewStep, BrewAddition, StepType, TimeoutBehavior
 
 SETTINGS_FILE = "kettlebrain_settings.json"
-DATA_DIR_NAME = "kettlebrain-data"
+
+DEFAULT_SETTINGS = {
+    "system_settings": {
+        "units": "imperial",
+        "temp_sensor_id": "unassigned",
+        "heater_gpio": 17,
+        "pump_gpio": 27,
+        "aux_gpio": 22,
+        "buzzer_gpio": 13,
+        "sensor_type": "DS18B20",
+        "screen_timeout": 300,
+        "altitude_ft": 0,
+        "boil_temp_f": 212,
+        "relay_active_high": False,
+        "relay_logic_configured": False,
+        "force_numlock": True,
+        "dev_mode": False,
+        "controlled_shutdown": False,
+        "auto_start_enabled": True,
+        "auto_resume_enabled": False,
+        # --- NEW HEATING CONSTANTS ---
+        "heater_ref_volume_gal": 8.0,
+        "heater_ref_rate_fpm": 1.2,  # Degrees F per minute
+    },
+    # --- NEW MANUAL MODE MEMORY ---
+    "manual_mode_settings": {
+        "last_setpoint_f": 150.0,
+        "last_timer_min": 60.0,
+        "heater_enabled": False
+    },
+    "pid_settings": {
+        "kp": 50.0,
+        "ki": 0.1,
+        "kd": 2.0,
+        "sample_time_s": 2.0
+    },
+    "recovery_state": None
+}
 
 class SettingsManager:
-    
-    def __init__(self):
-        # Determine path (User home directory)
-        self.data_dir = os.path.join(os.path.expanduser('~'), DATA_DIR_NAME)
-        self.settings_file = os.path.join(self.data_dir, SETTINGS_FILE)
-        
+    def __init__(self, base_dir):
+        self.base_dir = base_dir
+        self.data_dir = os.path.join(base_dir, 'kettlebrain-data')
+        self.settings_file = os.path.join(self.data_dir, 'kettlebrain_settings.json')
+        self.profiles_file = os.path.join(self.data_dir, 'kettlebrain_profiles.json')
         self._data_lock = threading.RLock()
+        
         self.settings = {}
+        self.profiles = {}
+        
+        # Dead Man's Switch: Assumed Clean until loaded otherwise
+        self.last_shutdown_was_clean = True 
         
         self._ensure_data_dir()
         self._load_settings()
-
-    def _get_default_settings(self):
-        """Returns the baseline settings structure."""
-        return {
-            "system_settings": {
-                "units": "F", # or "C"
-                "heating_rate_f_min": 1.5, # Degrees per minute (for Delayed Start)
-                "relay_logic_configured": False,
-                "relay_active_high": False, # Default to Active Low
-                "force_numlock": True # <--- NEW: Default to ON
-            },
-            "pid_settings": {
-                "kp": 50.0,
-                "ki": 0.1,
-                "kd": 2.0,
-                "sample_time_s": 2.0
-            },
-            "recovery_state": None, 
-            "profiles": {} 
-        }
+        self._load_profiles()
 
     def _ensure_data_dir(self):
         try:
@@ -53,19 +74,118 @@ class SettingsManager:
         except OSError as e:
             print(f"[SettingsManager] Error creating data dir: {e}")
 
+    def _get_default_settings(self):
+        return copy.deepcopy(DEFAULT_SETTINGS)
+
+    def _create_default_profile_dict(self):
+        """Creates the 'Default Profile'."""
+        p_id = str(uuid.uuid4())
+        profile = BrewProfile(
+            id=p_id, 
+            name="Default Profile"
+        )
+        
+        # --- STEP 1: Heat to Strike ---
+        s1 = BrewStep(
+            id=str(uuid.uuid4()), 
+            name="Step", 
+            step_type=StepType.STEP, 
+            setpoint_f=156.0,
+            duration_min=0.0,
+            power_watts=1800,
+            lauter_volume=7.5,
+            timeout_behavior=TimeoutBehavior.AUTO_ADVANCE,
+            note="Heat to dough-in, reserve water, dough-in."
+        )
+        s1.additions.append(BrewAddition(name="Reserve 1.5 Gal for lautering", time_point_min=0))
+        s1.additions.append(BrewAddition(name="Dough-in", time_point_min=0))
+        s1.additions.append(BrewAddition(name="Turn on pump", time_point_min=0))
+        profile.add_step(s1)
+        
+        # --- STEP 2: Mash ---
+        s2 = BrewStep(
+            id=str(uuid.uuid4()), 
+            name="Mash", 
+            step_type=StepType.MASH, 
+            setpoint_f=152.0, 
+            duration_min=60.0,
+            power_watts=1800,
+            lauter_volume=6.5,
+            timeout_behavior=TimeoutBehavior.AUTO_ADVANCE,
+            note="Mash and take SG reading"
+        )
+        s2.additions.append(BrewAddition(name="Take SG reading", time_point_min=0))
+        profile.add_step(s2)
+        
+        # --- STEP 3: Mash Out ---
+        s3 = BrewStep(
+            id=str(uuid.uuid4()), 
+            name="Mash-out", 
+            step_type=StepType.MASH_OUT, 
+            setpoint_f=170.0, 
+            duration_min=10.0,
+            power_watts=1800,
+            timeout_behavior=TimeoutBehavior.AUTO_ADVANCE,
+            note="Mash-out, turn off pump, lift basket, lauter"
+        )
+        s3.additions.append(BrewAddition(name="Turn off pump", time_point_min=0))
+        s3.additions.append(BrewAddition(name="Lift grain basket", time_point_min=0))
+        s3.additions.append(BrewAddition(name="Lauter with reserved water", time_point_min=0))
+        profile.add_step(s3)
+        
+        # --- STEP 4: Boil ---
+        s4 = BrewStep(
+            id=str(uuid.uuid4()), 
+            name="Boil", 
+            step_type=StepType.BOIL, 
+            setpoint_f=212.0, 
+            duration_min=60.0,
+            power_watts=1800,
+            lauter_volume=6.5,
+            timeout_behavior=TimeoutBehavior.AUTO_ADVANCE,
+            note="Boil and follow hops schedule"
+        )
+        s4.additions.append(BrewAddition(name="Bittering hops", time_point_min=60))
+        s4.additions.append(BrewAddition(name="Flavor hops", time_point_min=30))
+        s4.additions.append(BrewAddition(name="Irish Moss", time_point_min=10))
+        s4.additions.append(BrewAddition(name="Aroma hops", time_point_min=5))
+        profile.add_step(s4)
+
+        # --- STEP 5: Chill ---
+        s5 = BrewStep(
+            id=str(uuid.uuid4()), 
+            name="Chill", 
+            step_type=StepType.CHILL, 
+            setpoint_f=70.0, 
+            duration_min=15.0,
+            power_watts=1800,
+            lauter_volume=5.5,
+            timeout_behavior=TimeoutBehavior.END_PROGRAM,
+            note=""
+        )
+        s5.additions.append(BrewAddition(name="Take SG reading", time_point_min=0))
+        profile.add_step(s5)
+        
+        return {
+            p_id: {
+                "id": profile.id,
+                "name": profile.name,
+                "steps": [step.to_dict() for step in profile.steps]
+            }
+        }
+
     def _load_settings(self):
         with self._data_lock:
+            import copy
             if not os.path.exists(self.settings_file):
-                print(f"[SettingsManager] No settings found. Creating defaults at {self.settings_file}")
-                self.settings = self._get_default_settings()
+                self.settings = copy.deepcopy(DEFAULT_SETTINGS)
                 self._save_settings()
             else:
                 try:
                     with open(self.settings_file, 'r') as f:
                         self.settings = json.load(f)
-                    
-                    # Merge defaults (in case of software update adding new keys)
-                    defaults = self._get_default_settings()
+                    # Merge defaults
+                    defaults = copy.deepcopy(DEFAULT_SETTINGS)
                     for section, data in defaults.items():
                         if section not in self.settings:
                             self.settings[section] = data
@@ -73,13 +193,44 @@ class SettingsManager:
                             for key, val in data.items():
                                 if key not in self.settings[section]:
                                     self.settings[section][key] = val
-                                    
                 except Exception as e:
                     print(f"[SettingsManager] Error loading settings: {e}. Reverting to defaults.")
-                    self.settings = self._get_default_settings()
+                    self.settings = copy.deepcopy(DEFAULT_SETTINGS)
+            
+            # --- DEAD MAN'S SWITCH LOGIC ---
+            self.last_shutdown_was_clean = self.settings.get("system_settings", {}).get("controlled_shutdown", False)
+            
+            # Mark current session as Dirty (False) immediately
+            if "system_settings" not in self.settings: self.settings["system_settings"] = {}
+            self.settings["system_settings"]["controlled_shutdown"] = False
+            self._save_settings()
+
+    def _load_profiles(self):
+        with self._data_lock:
+            if "profiles" in self.settings:
+                legacy_profiles = self.settings.pop("profiles")
+                if legacy_profiles:
+                    print("[SettingsManager] Migrating profiles to kettlebrain_profiles.json")
+                    self.profiles = legacy_profiles
+                    self._save_profiles()
+                    self._save_settings() 
+                    return
+                self._save_settings()
+
+            if not os.path.exists(self.profiles_file):
+                print(f"[SettingsManager] No profiles file. Creating default.")
+                self.profiles = self._create_default_profile_dict()
+                self._save_profiles()
+            else:
+                try:
+                    with open(self.profiles_file, 'r') as f:
+                        self.profiles = json.load(f)
+                except Exception as e:
+                    print(f"[SettingsManager] Error loading profiles: {e}. Reverting.")
+                    self.profiles = self._create_default_profile_dict()
+                    self._save_profiles()
 
     def _save_settings(self):
-        """Writes current settings to disk."""
         with self._data_lock:
             try:
                 with open(self.settings_file, 'w') as f:
@@ -87,7 +238,15 @@ class SettingsManager:
             except Exception as e:
                 print(f"[SettingsManager] Error saving settings: {e}")
 
-    # --- GENERIC GETTERS / SETTERS ---
+    def _save_profiles(self):
+        with self._data_lock:
+            try:
+                with open(self.profiles_file, 'w') as f:
+                    json.dump(self.profiles, f, indent=4)
+            except Exception as e:
+                print(f"[SettingsManager] Error saving profiles: {e}")
+
+    # --- GETTERS / SETTERS ---
 
     def get(self, section, key, default=None):
         with self._data_lock:
@@ -100,63 +259,82 @@ class SettingsManager:
             self.settings[section][key] = value
             self._save_settings()
 
+    def get_system_setting(self, key, default=None):
+        return self.get("system_settings", key, default)
+
+    def set_system_setting(self, key, value):
+        self.set("system_settings", key, value)
+        
+    def set_controlled_shutdown(self, is_controlled):
+        """Called by main.py only during a successful shutdown sequence."""
+        self.set("system_settings", "controlled_shutdown", is_controlled)
+
+    # --- RECOVERY STATE METHODS ---
+
+    def save_recovery_state(self, state_dict):
+        """Saves a snapshot of the running brew."""
+        with self._data_lock:
+            self.settings["recovery_state"] = state_dict
+            self._save_settings()
+
+    def get_recovery_state(self):
+        """Retrieves the last saved snapshot."""
+        with self._data_lock:
+            return self.settings.get("recovery_state")
+
+    def clear_recovery_state(self):
+        """Clears the snapshot (used when brew finishes or stops cleanly)."""
+        with self._data_lock:
+            self.settings["recovery_state"] = None
+            self._save_settings()
+
     # --- PROFILE MANAGEMENT ---
 
     def save_profile(self, profile: BrewProfile):
-        """
-        Serializes a BrewProfile object and saves it to the settings dict.
-        """
         with self._data_lock:
-            # 1. Convert Object -> Dict (Serialization)
-            # We construct a clean dict to ensure JSON compatibility
             profile_data = {
                 "id": profile.id,
                 "name": profile.name,
-                "created_date": profile.created_date,
                 "steps": [step.to_dict() for step in profile.steps]
             }
-            
-            # 2. Store in Settings
-            self.settings["profiles"][profile.id] = profile_data
-            self._save_settings()
-            print(f"[SettingsManager] Saved profile: {profile.name} ({len(profile.steps)} steps)")
+            self.profiles[profile.id] = profile_data
+            self._save_profiles()
+            print(f"[SettingsManager] Saved profile: {profile.name}")
 
     def delete_profile(self, profile_id: str):
         with self._data_lock:
-            if profile_id in self.settings["profiles"]:
-                del self.settings["profiles"][profile_id]
-                self._save_settings()
+            if profile_id in self.profiles:
+                p_data = self.profiles[profile_id]
+                if p_data.get("name") == "Default Profile":
+                    print("[SettingsManager] Prevented deletion of Default Profile.")
+                    return False
+                del self.profiles[profile_id]
+                self._save_profiles()
+                return True
+            return False
 
-    def get_all_profiles(self) -> List[BrewProfile]:
-        """
-        Returns a list of re-hydrated BrewProfile objects.
-        """
+    def get_all_profiles(self) -> list[BrewProfile]:
         profiles = []
         with self._data_lock:
-            stored_data = self.settings.get("profiles", {})
-            for pid, p_data in stored_data.items():
+            for pid, p_data in self.profiles.items():
                 try:
-                    # Re-hydrate the Profile
                     profile = BrewProfile(
                         id=p_data.get("id", pid),
-                        name=p_data.get("name", "Unknown Profile"),
-                        created_date=p_data.get("created_date", "")
+                        name=p_data.get("name", "Unknown Profile")
                     )
                     
-                    # Re-hydrate Steps
                     raw_steps = p_data.get("steps", [])
                     for s_data in raw_steps:
-                        # Convert string Enums back to Enum objects
                         try:
                             s_type = StepType(s_data.get("step_type", "Step"))
                         except ValueError:
-                            s_type = StepType.STEP # Fallback
-                            
+                            s_type = StepType.STEP
+                        
                         try:
                             t_behavior = TimeoutBehavior(s_data.get("timeout_behavior", "Manual Advance"))
                         except ValueError:
                             t_behavior = TimeoutBehavior.MANUAL_ADVANCE
-                            
+
                         step = BrewStep(
                             id=s_data.get("id"),
                             name=s_data.get("name", "Step"),
@@ -167,8 +345,6 @@ class SettingsManager:
                             target_completion_time=s_data.get("target_completion_time"),
                             power_watts=s_data.get("power_watts"),
                             timeout_behavior=t_behavior,
-                            
-                            # Activity Fields
                             sg_reading=s_data.get("sg_reading"),
                             sg_temp_f=s_data.get("sg_temp_f"),
                             sg_temp_correction=s_data.get("sg_temp_correction", False),
@@ -177,50 +353,27 @@ class SettingsManager:
                             lauter_volume=s_data.get("lauter_volume")
                         )
                         
-                        # --- FIX: RE-HYDRATE ADDITIONS ---
                         raw_additions = s_data.get("additions", [])
                         for add_data in raw_additions:
-                            # Basic validation to ensure it's a dict
                             if isinstance(add_data, dict):
                                 new_add = BrewAddition(
                                     id=add_data.get("id"),
                                     name=add_data.get("name", "Alert"),
                                     time_point_min=add_data.get("time_point_min", 0),
-                                    triggered=False # Always reset triggered state on load
+                                    triggered=False
                                 )
                                 step.additions.append(new_add)
-                        # ---------------------------------
                         
                         profile.add_step(step)
-                        
                     profiles.append(profile)
                 except Exception as e:
                     print(f"[SettingsManager] Error inflating profile {pid}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    
+        
         return profiles
 
-    def get_profile_by_id(self, profile_id: str) -> Optional[BrewProfile]:
+    def get_profile_by_id(self, profile_id: str):
         all_profiles = self.get_all_profiles()
         for p in all_profiles:
             if p.id == profile_id:
                 return p
         return None
-
-    # --- RECOVERY STATE ---
-
-    def save_recovery_state(self, state_dict: dict):
-        """Called by SequenceManager to save current progress."""
-        with self._data_lock:
-            self.settings["recovery_state"] = state_dict
-            self._save_settings()
-
-    def get_recovery_state(self):
-        with self._data_lock:
-            return self.settings.get("recovery_state")
-
-    def clear_recovery_state(self):
-        with self._data_lock:
-            self.settings["recovery_state"] = None
-            self._save_settings()
