@@ -1,6 +1,7 @@
 """
 src/settings_ui.py 
-Settings popup for KettleBrain. upd
+09:16
+Settings popup for KettleBrain. 
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
