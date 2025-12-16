@@ -61,7 +61,7 @@ class UpdateChecker:
     def run_update_script(script_path):
         """
         Executes the update script in a new terminal window.
-        CRITICAL FIX: Explicitly sets 'cwd' to the repo root to fix Shortcut issues.
+        Keeps the window open after execution so errors can be read.
         """
         try:
             if not os.path.exists(script_path):
@@ -70,13 +70,16 @@ class UpdateChecker:
             # Ensure executable
             subprocess.run(["chmod", "+x", script_path], check=False)
             
-            # CRITICAL FIX: The script MUST run inside the repo directory
             repo_dir = os.path.dirname(script_path)
 
-            # Launch in lxterminal so the user sees the process
-            # This detaches the process so it survives when Python closes
+            # COMMAND EXPLANATION:
+            # We construct a bash command that runs the script, then prints a separator,
+            # then waits for user input. This keeps the window open.
+            cmd_str = f"bash '{script_path}'; echo; echo '------------------------------------------------'; read -p 'Press Enter to close terminal...' wait"
+            
+            # Launch lxterminal with this compound command
             subprocess.Popen(
-                ["lxterminal", "--working-directory", repo_dir, "-e", f"bash {script_path}"],
+                ["lxterminal", "--working-directory", repo_dir, "-e", f"bash -c \"{cmd_str}\""],
                 cwd=repo_dir
             )
             

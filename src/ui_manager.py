@@ -61,7 +61,7 @@ class UIManager:
         self._update_loop()
 
         # Schedule Update Check (3 seconds after launch to let UI render first)
-        self.root.after(3000, self._perform_startup_update_check)
+        # self.root.after(3000, self._perform_startup_update_check)
         
     def _perform_startup_update_check(self):
         """Checks for git updates in a background thread to avoid freezing UI."""
