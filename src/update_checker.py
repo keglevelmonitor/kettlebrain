@@ -1,6 +1,7 @@
 """
 kettlebrain app
 update_checker.py
+
 """
 import subprocess
 import os
