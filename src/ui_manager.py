@@ -12,7 +12,9 @@ import copy
 from utils import UnitUtils
 import sys
 import os
+import threading
 from update_checker import UpdateChecker
+from update_dialog import UpdateDialog
 
 class UIManager:
     
@@ -58,32 +60,31 @@ class UIManager:
         self._create_main_layout()
         self._update_loop()
 
-        # Schedule Update Check (2 seconds after launch)
-        self.root.after(2000, self._perform_startup_update_check)
+        # Schedule Update Check (3 seconds after launch to let UI render first)
+        self.root.after(3000, self._perform_startup_update_check)
         
     def _perform_startup_update_check(self):
-        """Checks for git updates if enabled in settings."""
+        """Checks for git updates in a background thread to avoid freezing UI."""
+        # USE THE SPECIFIC GETTER HERE:
         if not self.settings.get_check_updates_on_launch():
             return
 
-        # Determine repo root (assuming src/ui_manager.py is one level deep)
-        # We need the folder containing the .git directory
-        try:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            
-            update_avail, msg = UpdateChecker.check_for_updates(base_dir)
-            
-            if update_avail:
-                if messagebox.askyesno("Update Available", f"{msg}\n\nDo you want to update now?"):
-                    script_path = os.path.join(base_dir, "update.sh")
-                    success, err = UpdateChecker.run_update_script(script_path)
-                    if success:
-                        self.root.quit()
-                        sys.exit(0)
-                    else:
-                        messagebox.showerror("Update Error", err)
-        except Exception as e:
-            print(f"Update Check Error: {e}")
+        def background_check():
+            try:
+                # Find repo root (Up one level from src)
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                is_avail, result_text = UpdateChecker.get_available_updates(base_dir)
+                
+                if is_avail:
+                    # Show dialog on Main Thread
+                    self.root.after(0, lambda: UpdateDialog(self.root, base_dir, result_text))
+                else:
+                    print(f"[UIManager] Update Check: {result_text}")
+            except Exception as e:
+                print(f"[UIManager] Update Check Failed: {e}")
+
+        # Run check in background thread
+        threading.Thread(target=background_check, daemon=True).start()
     
     def _open_delayed_start(self):
         # 1. If Active -> Open Action Dialog (Cancel/Edit)

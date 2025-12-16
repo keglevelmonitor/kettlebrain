@@ -31,6 +31,7 @@ DEFAULT_SETTINGS = {
         "controlled_shutdown": False,
         "auto_start_enabled": True,
         "auto_resume_enabled": False,
+        "check_updates_on_launch": True,
         # --- NEW HEATING CONSTANTS ---
         "heater_ref_volume_gal": 8.0,
         "heater_ref_rate_fpm": 1.2,  # Degrees F per minute

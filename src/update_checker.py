@@ -1,17 +1,13 @@
-"""
-kettlebrain app
-update_checker.py
-"""
 import subprocess
 import os
 import sys
 
 class UpdateChecker:
     @staticmethod
-    def check_for_updates(repo_path):
+    def get_available_updates(repo_path):
         """
-        Checks if the local git repo is behind the remote origin.
-        Returns: (bool, str) -> (update_available, status_message)
+        Checks for updates and returns the commit log if available.
+        Returns: (bool, str) -> (update_available, log_text_or_status)
         """
         try:
             # 1. Fetch latest data (timeout ensures we don't hang if offline)
@@ -19,84 +15,67 @@ class UpdateChecker:
                 ["git", "fetch"], 
                 cwd=repo_path, 
                 check=True, 
-                timeout=5,
+                timeout=10,
                 capture_output=True
             )
 
-            # 2. Get Local Hash
-            local_hash = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], 
-                cwd=repo_path
-            ).decode().strip()
-
-            # 3. Get Upstream Hash
-            # Dynamically determine the tracking branch (e.g., origin/main or origin/master)
+            # 2. Get the log of commits between local HEAD and upstream
+            # --pretty=format:"%h - %s (%cr)" gives: "a1b2c3d - Fixed bug X (2 days ago)"
             try:
+                # Determine current branch dynamically
                 branch = subprocess.check_output(
                     ["git", "rev-parse", "--abbrev-ref", "HEAD"], 
                     cwd=repo_path
                 ).decode().strip()
                 
-                remote_hash = subprocess.check_output(
-                    ["git", "rev-parse", f"origin/{branch}"], 
+                upstream = f"origin/{branch}"
+                
+                # Check if we are behind
+                local = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_path).decode().strip()
+                remote = subprocess.check_output(["git", "rev-parse", upstream], cwd=repo_path).decode().strip()
+                
+                if local == remote:
+                    return False, "System is up to date."
+                
+                # Get the formatted log
+                log_output = subprocess.check_output(
+                    ["git", "log", "--pretty=format:• %s (%cr)", f"HEAD..{upstream}"],
                     cwd=repo_path
                 ).decode().strip()
-            except subprocess.CalledProcessError:
-                # Fallback if detached HEAD or odd state
-                return False, "Git: Detached HEAD or no upstream."
+                
+                return True, log_output
 
-            if local_hash != remote_hash:
-                short_local = local_hash[:7]
-                short_remote = remote_hash[:7]
-                return True, f"New version available.\nLocal: {short_local}\nRemote: {short_remote}"
-            
-            return False, "System is up to date."
+            except subprocess.CalledProcessError:
+                return False, "Git: Detached HEAD or no upstream branch configured."
 
         except subprocess.TimeoutExpired:
             return False, "Update check timed out (No Internet?)"
-        except subprocess.CalledProcessError:
-            return False, "Git Error: Not a valid repository or network issue."
         except Exception as e:
             return False, f"Error checking updates: {e}"
 
     @staticmethod
     def run_update_script(script_path):
         """
-        Executes the update script in a new terminal window and shuts down the current app.
-        Uses lxterminal to ensure the process survives the parent app closing
-        and sets the correct CWD so git commands work.
+        Executes the update script in a new terminal window.
+        CRITICAL FIX: Explicitly sets 'cwd' to the repo root to fix Shortcut issues.
         """
         try:
             if not os.path.exists(script_path):
                 return False, "Update script not found."
 
-            # Ensure executable permissions
+            # Ensure executable
             subprocess.run(["chmod", "+x", script_path], check=False)
             
-            # CRITICAL FIX 1: Determine the repo root directory
-            # The script is likely in the root, so we use its directory as the CWD
+            # CRITICAL FIX: The script MUST run inside the repo directory
             repo_dir = os.path.dirname(script_path)
 
-            # CRITICAL FIX 2: Launch in a new lxterminal window.
-            # - 'lxterminal -e' opens a new window and runs the command.
-            # - This creates a new process group, so when Python exits, this window stays open.
-            # - passing 'cwd=repo_dir' ensures 'git pull' runs in the right folder.
+            # Launch in lxterminal so the user sees the process
+            # This detaches the process so it survives when Python closes
             subprocess.Popen(
                 ["lxterminal", "--working-directory", repo_dir, "-e", f"bash {script_path}"],
                 cwd=repo_dir
             )
             
-            return True, "Starting update..."
+            return True, "Update initiated."
         except Exception as e:
-            # Fallback for headless or if lxterminal is missing: 
-            # Use 'start_new_session=True' to detach from parent process
-            try:
-                repo_dir = os.path.dirname(script_path)
-                subprocess.Popen(
-                    ["bash", script_path], 
-                    cwd=repo_dir, 
-                    start_new_session=True
-                )
-                return True, "Starting update (Background mode)..."
-            except Exception as e2:
-                return False, f"Failed to launch update: {e}"
+            return False, f"Failed to launch update: {e}"
