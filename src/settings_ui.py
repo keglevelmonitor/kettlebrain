@@ -8,10 +8,11 @@ import uuid
 import copy
 import os
 import sys
+import subprocess
+import threading  # <--- Insert this new import
 from profile_editor import ProfileEditor
 from profile_data import BrewProfile, SequenceStatus
 from utils import UnitUtils
-import subprocess
 
 class SettingsPopup(tk.Toplevel):
     def __init__(self, parent, settings_manager, hardware_interface, relay_control, sequencer):
@@ -110,26 +111,33 @@ class SettingsPopup(tk.Toplevel):
         self.notebook.pack(fill='both', expand=True, padx=10, pady=5)
         
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_change)
-       
+        
+        # 1. Profile Library
         self.tab_profiles = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_profiles, text="Profile Library")
         self._build_profiles_tab()
         
-        # System Settings Tab (Index 1)
+        # 2. System Settings
         self.tab_system = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_system, text="System Settings")
         self._build_system_tab()
         
-        # Relay Test Tab (Index 2)
+        # 3. Updates (NEW)
+        self.tab_updates = ttk.Frame(self.notebook, padding=15)
+        self.notebook.add(self.tab_updates, text="Updates")
+        self._build_updates_tab()
+        
+        # 4. Relay Test
         self.tab_relay_test = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_relay_test, text="Relay Test")
         self._build_relay_test_tab()
 
-        # Developer Tab (Index 3)
+        # 5. Developer
         self.tab_developer = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_developer, text="Developer")
         self._build_developer_tab()
         
+        # Indices for tab change logic
         self.system_settings_index = self.notebook.index(self.tab_system)
         self.relay_test_index = self.notebook.index(self.tab_relay_test)
         self.developer_index = self.notebook.index(self.tab_developer)
@@ -437,6 +445,136 @@ class SettingsPopup(tk.Toplevel):
         ttk.Button(sys_btn_frame, text="Close", command=self._on_close).pack(side='right')
         ttk.Button(sys_btn_frame, text="Save System Settings", command=self._save_settings).pack(side='right', padx=10)
 
+    # --- TAB 3: UPDATES ---
+
+    def _build_updates_tab(self):
+        # Main Container
+        frame = ttk.Frame(self.tab_updates)
+        frame.pack(fill='both', expand=True)
+
+        # Log Area (Text Widget + Scrollbar)
+        log_frame = ttk.LabelFrame(frame, text="Update Status", padding=5)
+        log_frame.pack(fill='both', expand=True, pady=(0, 10))
+
+        self.txt_update_log = tk.Text(log_frame, height=10, state='disabled', font=('Courier', 10))
+        self.txt_update_log.pack(side='left', fill='both', expand=True)
+
+        sb = ttk.Scrollbar(log_frame, orient='vertical', command=self.txt_update_log.yview)
+        sb.pack(side='right', fill='y')
+        self.txt_update_log.config(yscrollcommand=sb.set)
+
+        # Buttons Area
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', side='bottom')
+
+        # Close Button (Right)
+        ttk.Button(btn_frame, text="Close", command=self._on_close).pack(side='right', padx=5)
+
+        # Action Buttons (Left)
+        self.btn_check_updates = ttk.Button(btn_frame, text="Check for Updates", command=self._on_check_updates)
+        self.btn_check_updates.pack(side='left', padx=5)
+
+        self.btn_install_updates = ttk.Button(btn_frame, text="Install Updates", command=self._on_install_updates, state='disabled')
+        self.btn_install_updates.pack(side='left', padx=5)
+
+    def _safe_append_log(self, text):
+        """Thread-safe way to append text to the log widget."""
+        def _update():
+            self.txt_update_log.config(state='normal')
+            self.txt_update_log.insert(tk.END, text)
+            self.txt_update_log.see(tk.END)
+            self.txt_update_log.config(state='disabled')
+        self.after(0, _update)
+
+    def _safe_toggle_install(self, enable):
+        """Thread-safe way to enable/disable the install button."""
+        state = 'normal' if enable else 'disabled'
+        self.after(0, lambda: self.btn_install_updates.config(state=state))
+
+    def _on_check_updates(self):
+        # Clear log
+        self.txt_update_log.config(state='normal')
+        self.txt_update_log.delete(1.0, tk.END)
+        self.txt_update_log.config(state='disabled')
+        
+        self.btn_check_updates.config(state='disabled')
+        self.btn_install_updates.config(state='disabled')
+        
+        # Start Thread: Pass flags ONLY
+        t = threading.Thread(target=self._run_update_process, args=(["--check"], True))
+        t.start()
+
+    def _on_install_updates(self):
+        self.btn_check_updates.config(state='disabled')
+        self.btn_install_updates.config(state='disabled')
+        
+        # Start Thread: No flags for install
+        t = threading.Thread(target=self._run_update_process, args=([], False))
+        t.start()
+
+    def _run_update_process(self, flags, is_check_mode):
+        """Runs the bash command and monitors output."""
+        try:
+            # 1. Calculate Absolute Path to update.sh
+            # This file is in .../kettlebrain/src/settings_ui.py
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # Go up one level to .../kettlebrain/
+            project_root = os.path.dirname(current_dir)
+            script_path = os.path.join(project_root, "update.sh")
+
+            if not os.path.exists(script_path):
+                self._safe_append_log(f"Error: Could not find update script at:\n{script_path}\n")
+                self.after(0, lambda: self.btn_check_updates.config(state='normal'))
+                return
+
+            # 2. Build Command
+            command = ["bash", script_path]
+            if flags:
+                command.extend(flags)
+
+            process = subprocess.Popen(
+                command, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT, 
+                text=True, 
+                bufsize=1
+            )
+
+            update_available = False
+
+            # Read output line by line
+            while True:
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                if line:
+                    self._safe_append_log(line)
+                    if "Update available!" in line:
+                        update_available = True
+
+            return_code = process.poll()
+
+            # Post-Process Logic
+            if is_check_mode:
+                self.after(0, lambda: self.btn_check_updates.config(state='normal'))
+                if update_available:
+                    self._safe_toggle_install(True)
+                else:
+                    self._safe_append_log("\n[Check Complete] No updates found.\n")
+            else:
+                # Install Mode
+                if return_code == 0:
+                    self._safe_append_log("\n[Update Successful] Please restart the application.\n")
+                else:
+                    self._safe_append_log("\n[Update Failed] Check console for details.\n")
+                
+                # Re-enable check button so they can try again if needed
+                self.after(0, lambda: self.btn_check_updates.config(state='normal'))
+
+        except Exception as e:
+            self._safe_append_log(f"\nError running update utility: {e}\n")
+            self.after(0, lambda: self.btn_check_updates.config(state='normal'))
+    
     def _build_developer_tab(self):
         content_frame = ttk.Frame(self.tab_developer)
         content_frame.pack(fill='both', expand=True)

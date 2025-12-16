@@ -10,11 +10,6 @@ from settings_ui import SettingsPopup
 import uuid
 import copy
 from utils import UnitUtils
-import sys
-import os
-import threading
-from update_checker import UpdateChecker
-from update_dialog import UpdateDialog
 
 class UIManager:
     
@@ -28,13 +23,15 @@ class UIManager:
         
         self.dev_window = None
         self.settings_window = None
-        self.last_profile_id = None
-        self.last_active_iid = None
+        
+        self.last_profile_id = None 
+        self.last_active_iid = None 
         
         self.root.title("KettleBrain")
         
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
+        
         target_w = 800
         target_h = 480
         
@@ -44,48 +41,24 @@ class UIManager:
         else:
             self.root.geometry(f"{target_w}x{target_h}")
             self.root.resizable(False, False)
-            
+
         self._configure_styles()
         
         self.current_temp_var = tk.StringVar(value="--.-°F")
-        self.timer_var = tk.StringVar(value="--:--:--")
+        self.timer_var = tk.StringVar(value="--:--:--") 
+        
         self.target_sub_var = tk.StringVar(value="Target: --")
         self.elapsed_sub_var = tk.StringVar(value="Elapsed: 00:00")
-        self.status_text_var = tk.StringVar(value="System Idle")
-        self.target_text_var = tk.StringVar(value="")
-        self.next_addition_var = tk.StringVar(value="")
         
+        self.status_text_var = tk.StringVar(value="System Idle")
+        self.target_text_var = tk.StringVar(value="") 
+        
+        self.next_addition_var = tk.StringVar(value="")
         self.action_btn_text = tk.StringVar(value="START")
         
         self._create_main_layout()
         self._update_loop()
-
-        # Schedule Update Check (3 seconds after launch to let UI render first)
-        # self.root.after(3000, self._perform_startup_update_check)
         
-    def _perform_startup_update_check(self):
-        """Checks for git updates in a background thread to avoid freezing UI."""
-        # USE THE SPECIFIC GETTER HERE:
-        if not self.settings.get_check_updates_on_launch():
-            return
-
-        def background_check():
-            try:
-                # Find repo root (Up one level from src)
-                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                is_avail, result_text = UpdateChecker.get_available_updates(base_dir)
-                
-                if is_avail:
-                    # Show dialog on Main Thread
-                    self.root.after(0, lambda: UpdateDialog(self.root, base_dir, result_text))
-                else:
-                    print(f"[UIManager] Update Check: {result_text}")
-            except Exception as e:
-                print(f"[UIManager] Update Check Failed: {e}")
-
-        # Run check in background thread
-        threading.Thread(target=background_check, daemon=True).start()
-    
     def _open_delayed_start(self):
         # 1. If Active -> Open Action Dialog (Cancel/Edit)
         if self.sequencer.status == SequenceStatus.DELAYED_WAIT:
@@ -811,6 +784,7 @@ class UIManager:
         if st in [SequenceStatus.MANUAL, SequenceStatus.DELAYED_WAIT]:
             # Show Manual Panel, Hide Auto List
             if self.view_auto.winfo_ismapped():
+                # SAFETY: View is disappearing, move focus to root
                 self.root.focus_set()
                 self.view_auto.pack_forget()
                 
@@ -827,6 +801,7 @@ class UIManager:
         else:
             # Show Auto List, Hide Manual Panel
             if self.view_manual.winfo_ismapped():
+                # SAFETY: View is disappearing, move focus to root
                 self.root.focus_set()
                 self.view_manual.pack_forget()
                 
@@ -847,26 +822,12 @@ class UIManager:
         global_str = self.sequencer.get_global_elapsed_time_str()
         self.elapsed_sub_var.set(f"Elapsed: {global_str}")
 
-        # --- COLOR LOGIC FIX ---
-        new_style = 'HeroTemp.TLabel' # Default White
-        
-        # Determine if we should colorize based on active state
-        should_colorize = False
-        
-        if st in [SequenceStatus.RUNNING, SequenceStatus.WAITING_FOR_USER]:
-            should_colorize = True
-        elif st == SequenceStatus.MANUAL:
-            # Only colorize if Manual Mode is actively running (Heater or Timer on)
-            if self.sequencer.is_manual_running:
-                should_colorize = True
-        
-        # Apply Color Logic Only if Active
-        if should_colorize and tgt is not None and tgt > 0:
+        new_style = 'HeroTemp.TLabel'
+        if st in [SequenceStatus.RUNNING, SequenceStatus.WAITING_FOR_USER, SequenceStatus.MANUAL] and tgt is not None and tgt > 0:
             diff = t_display - tgt
             if diff < -1.0: new_style = 'HeroTempBlue.TLabel'
             elif diff > 1.0: new_style = 'HeroTempRed.TLabel'
             else: new_style = 'HeroTempGreen.TLabel'
-            
         self.lbl_temp.configure(style=new_style)
 
         # --- 3. DELAYED START BUTTON ---
@@ -968,6 +929,7 @@ class UIManager:
                         children = self.step_list.get_children(parent_iid)
                         current_step_obj = profile.steps[current_idx]
                         
+                        # --- FIX: ROBUST LOGIC FOR CHILDREN UPDATES ---
                         if hasattr(current_step_obj, 'additions') and current_step_obj.additions:
                             sorted_adds = sorted(current_step_obj.additions, key=lambda x: x.time_point_min, reverse=True)
                             for j, child_iid in enumerate(children):
@@ -983,8 +945,10 @@ class UIManager:
                                     else:
                                         self.step_list.item(child_iid, tags=('pending_step',))
                         else:
+                            # If no additions in data, but children exist in UI, reset them
                             for child_iid in children:
                                 self.step_list.item(child_iid, tags=('pending_step',))
+                        # -----------------------------------------------
 
                 if active_cursor_iid != self.last_active_iid:
                     try:
