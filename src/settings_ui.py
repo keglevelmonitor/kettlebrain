@@ -549,16 +549,29 @@ class SettingsPopup(tk.Toplevel):
                     break
                 if line:
                     self._safe_append_log(line)
-                    if "Update available!" in line:
+                    
+                    # --- FIXED DETECTION LOGIC ---
+                    # Detect "Update available" (KegLevel style) OR standard Git output indicating changes
+                    lower_line = line.lower()
+                    if "update available" in lower_line:
                         update_available = True
+                    elif "fast-forward" in lower_line:
+                        update_available = True
+                    elif "changed" in lower_line and "file" in lower_line:
+                        # Catches "1 file changed" or "5 files changed"
+                        update_available = True
+                    # -----------------------------
 
             return_code = process.poll()
 
             # Post-Process Logic
             if is_check_mode:
                 self.after(0, lambda: self.btn_check_updates.config(state='normal'))
+                
                 if update_available:
                     self._safe_toggle_install(True)
+                    # Optional: Add a note that it's ready to install/restart
+                    self._safe_append_log("\n[Check Complete] Updates found. Click 'Install Updates'.\n")
                 else:
                     self._safe_append_log("\n[Check Complete] No updates found.\n")
             else:
