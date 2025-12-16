@@ -10,6 +10,9 @@ from settings_ui import SettingsPopup
 import uuid
 import copy
 from utils import UnitUtils
+import sys
+import os
+from update_checker import UpdateChecker
 
 class UIManager:
     
@@ -23,15 +26,13 @@ class UIManager:
         
         self.dev_window = None
         self.settings_window = None
-        
-        self.last_profile_id = None 
-        self.last_active_iid = None 
+        self.last_profile_id = None
+        self.last_active_iid = None
         
         self.root.title("KettleBrain")
         
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
-        
         target_w = 800
         target_h = 480
         
@@ -41,24 +42,49 @@ class UIManager:
         else:
             self.root.geometry(f"{target_w}x{target_h}")
             self.root.resizable(False, False)
-
+            
         self._configure_styles()
         
         self.current_temp_var = tk.StringVar(value="--.-°F")
-        self.timer_var = tk.StringVar(value="--:--:--") 
-        
+        self.timer_var = tk.StringVar(value="--:--:--")
         self.target_sub_var = tk.StringVar(value="Target: --")
         self.elapsed_sub_var = tk.StringVar(value="Elapsed: 00:00")
-        
         self.status_text_var = tk.StringVar(value="System Idle")
-        self.target_text_var = tk.StringVar(value="") 
-        
+        self.target_text_var = tk.StringVar(value="")
         self.next_addition_var = tk.StringVar(value="")
+        
         self.action_btn_text = tk.StringVar(value="START")
         
         self._create_main_layout()
         self._update_loop()
+
+        # Schedule Update Check (2 seconds after launch)
+        self.root.after(2000, self._perform_startup_update_check)
         
+    def _perform_startup_update_check(self):
+        """Checks for git updates if enabled in settings."""
+        if not self.settings.get_check_updates_on_launch():
+            return
+
+        # Determine repo root (assuming src/ui_manager.py is one level deep)
+        # We need the folder containing the .git directory
+        try:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            update_avail, msg = UpdateChecker.check_for_updates(base_dir)
+            
+            if update_avail:
+                if messagebox.askyesno("Update Available", f"{msg}\n\nDo you want to update now?"):
+                    script_path = os.path.join(base_dir, "update.sh")
+                    success, err = UpdateChecker.run_update_script(script_path)
+                    if success:
+                        self.root.quit()
+                        sys.exit(0)
+                    else:
+                        messagebox.showerror("Update Error", err)
+        except Exception as e:
+            print(f"Update Check Error: {e}")
+    
     def _open_delayed_start(self):
         # 1. If Active -> Open Action Dialog (Cancel/Edit)
         if self.sequencer.status == SequenceStatus.DELAYED_WAIT:
@@ -103,36 +129,54 @@ class UIManager:
         DelayedStartPopup(self.root, self.sequencer, self.settings)
         
     def _request_mode_switch(self, target_mode):
+        # 1. SAFETY: Force focus to root
+        try: self.root.focus_set()
+        except: pass
+
         current_stat = self.sequencer.status
         is_active = current_stat in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]
         
-        # If active, warn user
-        if is_active:
-            if not messagebox.askyesno("Switch Modes?", "Switching modes will STOP the current process.\nAre you sure?"):
-                return
-        
-        # Execute Switch
-        self.sequencer.stop() # Resets everything
-        
-        if target_mode == "MANUAL":
-            self.sequencer.enter_manual_mode()
-            self.view_manual.lift()
-            # Set Colors: Manual Selected (Green), Auto Unselected (Gray/Dark Blue)
-            self._set_btn_color(self.btn_mode_manual, '#2ecc71', 'black')
-            self._set_btn_color(self.btn_mode_auto, '#e0e0e0', '#0044CC')
+        # Define the actual switch logic
+        def perform_switch():
+            self.sequencer.stop() # Resets everything
             
-            self.action_btn_text.set("START") 
-            self.btn_action.config(state='disabled') # tk.Button syntax
-        else:
-            self.sequencer.status = SequenceStatus.IDLE
-            self.view_auto.lift()
-            # Set Colors: Auto Selected (Green), Manual Unselected (Gray/Dark Blue)
-            self._set_btn_color(self.btn_mode_auto, '#2ecc71', 'black')
-            self._set_btn_color(self.btn_mode_manual, '#e0e0e0', '#0044CC')
-            
-            self.action_btn_text.set("START")
-            self.btn_action.config(state='normal') # tk.Button syntax
+            if target_mode == "MANUAL":
+                self.sequencer.enter_manual_mode()
+                self.view_manual.lift()
+                
+                self._set_btn_color(self.btn_mode_manual, '#2ecc71', 'black')
+                self._set_btn_color(self.btn_mode_auto, '#e0e0e0', '#0044CC')
+                
+                self.action_btn_text.set("START") 
+                self.btn_action.config(state='disabled') 
+            else:
+                self.sequencer.status = SequenceStatus.IDLE
+                self.view_auto.lift()
+                
+                self._set_btn_color(self.btn_mode_auto, '#2ecc71', 'black')
+                self._set_btn_color(self.btn_mode_manual, '#e0e0e0', '#0044CC')
+                
+                self.action_btn_text.set("START")
+                self.btn_action.config(state='normal')
 
+            # Ensure layout updates safely
+            try:
+                self.root.update_idletasks()
+                self.root.focus_set()
+            except: pass
+
+        # If active, warn user via Callback Dialog
+        if is_active:
+            CustomConfirmDialog(
+                self.root,
+                "Switch Modes?", 
+                "Switching modes will STOP the current process.\nAre you sure?",
+                callback=perform_switch
+            )
+        else:
+            # If idle, just do it immediately
+            perform_switch()
+            
     def _configure_styles(self):
         style = ttk.Style()
         style.theme_use('default') 
@@ -233,7 +277,6 @@ class UIManager:
 
     def _create_hero_widgets(self):
         # 1. TOP ROW: Temp | Delayed Start | Timer
-        # Removed top padding (pady=0) to move elements UP
         top_data_row = ttk.Frame(self.hero_frame, style='Hero.TFrame')
         top_data_row.pack(fill='both', expand=True, pady=0, padx=10)
         
@@ -270,11 +313,10 @@ class UIManager:
         center_stack.pack(side='left', fill='y', expand=False, padx=2)
         self._bind_header_clicks(center_stack)
         
-        # Updated: Font size 14 bold (same as Start), Default Colors (Gray BG, Dark Blue Text)
         self.btn_delayed = tk.Button(center_stack, text="DELAYED\nSTART", font=('Arial', 14, 'bold'),
                                      width=18, height=4,
                                      command=self._open_delayed_start)
-        self._set_btn_color(self.btn_delayed, '#e0e0e0', '#0044CC') # Gray BG, Dark Blue Text
+        self._set_btn_color(self.btn_delayed, '#e0e0e0', '#0044CC')
         self.btn_delayed.pack(expand=True, anchor='center')
 
         # 2. STATUS ROW (Packed below)
@@ -289,6 +331,24 @@ class UIManager:
         self.lbl_addition = ttk.Label(msg_stack, textvariable=self.next_addition_var, style='HeroAddition.TLabel', justify='center')
         self.lbl_addition.pack(side='top', anchor='center')
         self._bind_header_clicks(self.lbl_addition)
+
+        # --- 3. OVERLAY INDICATORS (Floating on top) ---
+        
+        # A. HEATER BADGES (Top Left) - Split for 1000W and 800W
+        # Heater 1 (1000W) - Red
+        self.lbl_h1 = tk.Label(self.hero_frame, text="1000W", font=('Arial', 10, 'bold'),
+                               bg='#e74c3c', fg='white', padx=6, pady=2, relief='flat')
+        
+        # Heater 2 (800W) - Orange/Red (Distinct but related)
+        self.lbl_h2 = tk.Label(self.hero_frame, text="800W", font=('Arial', 10, 'bold'),
+                               bg='#e67e22', fg='white', padx=6, pady=2, relief='flat')
+        
+        # B. HEARTBEAT PULSE (Top Right)
+        self.cv_heartbeat = tk.Canvas(self.hero_frame, width=16, height=16, 
+                                      bg='#222222', highlightthickness=0)
+        self.cv_heartbeat.place(relx=1.0, x=-25, y=10, anchor='ne')
+        
+        self.heartbeat_id = self.cv_heartbeat.create_oval(2, 2, 14, 14, fill='#444444', outline='')
 
     def _bind_header_clicks(self, widget):
         widget.bind("<Button-1>", self._on_header_click)
@@ -485,47 +545,97 @@ class UIManager:
         btn_frame = ttk.Frame(dlg)
         btn_frame.pack(side='bottom', fill='x', pady=20, padx=20)
         
-        def go_to_settings():
+        def close_cleanly():
+            try:
+                dlg.grab_release()
+                self.root.focus_set() # Return focus to Main Window
+            except: pass
             dlg.destroy()
+
+        def go_to_settings():
+            close_cleanly()
             self._on_settings_click()
             
-        ttk.Button(btn_frame, text="Cancel", command=dlg.destroy).pack(side='right')
+        ttk.Button(btn_frame, text="Cancel", command=close_cleanly).pack(side='right')
         ttk.Button(btn_frame, text="Settings", command=go_to_settings).pack(side='left')
         
+        # SAFETY: Handle Window Manager 'X' button
+        dlg.protocol("WM_DELETE_WINDOW", close_cleanly)
+
+        dlg.wait_visibility()
         dlg.grab_set()
         dlg.focus_set()
 
     def _on_abort_click(self):
+        # 1. AGGRESSIVE GRAB CLEANUP
+        # If any window holds a grab (input lock), force release it immediately.
+        try:
+            grabber = self.root.grab_current()
+            if grabber:
+                grabber.grab_release()
+        except: pass
+        
+        # 2. DECOUPLE
+        # Don't run logic inside the button click event.
+        # Schedule it for 50ms later to let the UI loop breathe.
+        self.root.after(50, self._real_abort_logic)
+        
+    def _real_abort_logic(self):
+        # 1. AGGRESSIVE CLEANUP
+        # If we have a reference to an old dialog, destroy it immediately.
+        # This prevents the "No-Op" bug where the app thinks a dialog is open but you can't see it.
+        if hasattr(self, '_current_dialog') and self._current_dialog:
+            try:
+                self._current_dialog.destroy()
+            except:
+                pass
+            self._current_dialog = None
+
         st = self.sequencer.status
         
         # --- MANUAL STOP LOGIC ---
         if st == SequenceStatus.MANUAL:
-            # Custom Popup for Manual Reset
-            ans = messagebox.askyesno(
-                "Stop Manual Mode?", 
-                "Heaters will be turned off and the timer will be reset.\n\nContinue?", 
-                parent=self.root
-            )
-            if ans:
+            def do_manual_reset():
                 self.sequencer.reset_manual_state()
+                
+            self._current_dialog = CustomConfirmDialog(
+                self.root, 
+                "Stop Manual Mode?", 
+                "Heaters will be turned off and the timer will be reset.\n\nContinue?",
+                callback=do_manual_reset
+            )
             return
 
         # --- AUTO STOP LOGIC ---
-        # Custom Popup for Auto Reset
-        ans = messagebox.askyesno(
-            "Abort Sequence?", 
-            "Heaters will be turned off.\nTimer will be reset.\nProfile will be reset.\n\nContinue?", 
-            parent=self.root
-        )
-        if ans:
+        def do_auto_stop():
             self.sequencer.stop() # Resets everything to IDLE
 
+        self._current_dialog = CustomConfirmDialog(
+            self.root, 
+            "Stop Session?", 
+            "Heaters will be turned off.\nTimer will be reset.\nProfile will be reset.\n\nContinue?",
+            callback=do_auto_stop
+        )
+    
     def _on_header_click(self, event):
+        """
+        Handles header clicks for Dev Mode AND acts as a 'Safety Valve' 
+        to unstick the UI if a grab gets lost.
+        """
+        # --- SAFETY VALVE: FORCE RELEASE GRABS ---
+        try:
+            self.root.grab_release()
+            self.root.focus_set()
+        except:
+            pass
+        # -----------------------------------------
+
         import time
         now = time.time()
         if now - self.last_click_time > 2.0: self.title_clicks = 0
         self.title_clicks += 1
         self.last_click_time = now
+        
         if self.title_clicks >= 5:
             self.title_clicks = 0
             if not self.hw.is_dev_mode(): self._show_safety_dialog()
@@ -543,15 +653,30 @@ class UIManager:
         dialog.geometry("400x300")
         dialog.configure(bg="#c0392b")
         dialog.transient(self.root) 
+        
+        # Define clean close
+        def close_safety():
+            try:
+                dialog.grab_release()
+                self.root.focus_set()
+            except: pass
+            dialog.destroy()
+
+        dialog.protocol("WM_DELETE_WINDOW", close_safety)
+        
         dialog.wait_visibility()
         dialog.grab_set()
+        
         tk.Label(dialog, text="⚠ WARNING ⚠", font=("Arial", 24, "bold"), bg="#c0392b", fg="white").pack(pady=20)
         tk.Label(dialog, text="ENTERING DEVELOPER MODE", bg="#c0392b", fg="white", font=("Arial", 12)).pack(pady=10)
+        
         self.safety_slider = tk.Scale(dialog, from_=0, to=100, orient="horizontal", length=300, showvalue=0)
         self.safety_slider.pack(pady=10)
-        self.safety_slider.bind("<ButtonRelease-1>", lambda e: self._check_slider(dialog))
+        
+        # Pass the close function to the checker so it can clean up properly
+        self.safety_slider.bind("<ButtonRelease-1>", lambda e: self._check_slider(dialog, close_safety))
 
-    def _check_slider(self, dialog_window):
+    def _check_slider(self, dialog_window, close_callback):
         val = self.safety_slider.get()
         if val >= 100:
             self.hw.set_dev_mode(True)
@@ -559,8 +684,11 @@ class UIManager:
             style.configure('Hero.TFrame', background='#e67e22')
             self.hero_frame.configure(style='Hero.TFrame')
             self.toggle_dev_tools(True)
-            dialog_window.destroy()
-        else: self.safety_slider.set(0)
+            
+            # Call the clean closer
+            close_callback()
+        else: 
+            self.safety_slider.set(0)
 
     def toggle_dev_tools(self, is_active):
         if not is_active:
@@ -672,6 +800,8 @@ class UIManager:
         self.root.after(100, self._update_loop)
 
     def update_ui_from_state(self):
+        import time # Needed for heartbeat timing
+        
         t = self.sequencer.current_temp
         st = self.sequencer.status
         tgt = self.sequencer.get_target_temp()
@@ -680,11 +810,13 @@ class UIManager:
         if st in [SequenceStatus.MANUAL, SequenceStatus.DELAYED_WAIT]:
             # Show Manual Panel, Hide Auto List
             if self.view_auto.winfo_ismapped():
+                self.root.focus_set()
                 self.view_auto.pack_forget()
+                
             if not self.view_manual.winfo_ismapped():
                 self.view_manual.pack(fill='both', expand=True)
             
-            # REFRESH MANUAL PANEL (To ensure Delayed Target updates)
+            # REFRESH MANUAL PANEL
             self.view_manual.refresh()
 
             # FORCE CLEAR STALE TEXT
@@ -694,7 +826,9 @@ class UIManager:
         else:
             # Show Auto List, Hide Manual Panel
             if self.view_manual.winfo_ismapped():
+                self.root.focus_set()
                 self.view_manual.pack_forget()
+                
             if not self.view_auto.winfo_ismapped():
                 self.view_auto.pack(fill='both', expand=True)
 
@@ -712,12 +846,26 @@ class UIManager:
         global_str = self.sequencer.get_global_elapsed_time_str()
         self.elapsed_sub_var.set(f"Elapsed: {global_str}")
 
-        new_style = 'HeroTemp.TLabel'
-        if st in [SequenceStatus.RUNNING, SequenceStatus.WAITING_FOR_USER, SequenceStatus.MANUAL] and tgt is not None and tgt > 0:
+        # --- COLOR LOGIC FIX ---
+        new_style = 'HeroTemp.TLabel' # Default White
+        
+        # Determine if we should colorize based on active state
+        should_colorize = False
+        
+        if st in [SequenceStatus.RUNNING, SequenceStatus.WAITING_FOR_USER]:
+            should_colorize = True
+        elif st == SequenceStatus.MANUAL:
+            # Only colorize if Manual Mode is actively running (Heater or Timer on)
+            if self.sequencer.is_manual_running:
+                should_colorize = True
+        
+        # Apply Color Logic Only if Active
+        if should_colorize and tgt is not None and tgt > 0:
             diff = t_display - tgt
             if diff < -1.0: new_style = 'HeroTempBlue.TLabel'
             elif diff > 1.0: new_style = 'HeroTempRed.TLabel'
             else: new_style = 'HeroTempGreen.TLabel'
+            
         self.lbl_temp.configure(style=new_style)
 
         # --- 3. DELAYED START BUTTON ---
@@ -728,31 +876,27 @@ class UIManager:
             self.btn_delayed.config(text=btn_txt)
             self._set_btn_color(self.btn_delayed, '#0044CC', '#e0e0e0')
             
-            # Disable controls completely (Visual + Functional)
+            # Disable controls
             self._disable_custom_btn(self.btn_action)
             if hasattr(self, 'btn_mode_auto'): self._disable_custom_btn(self.btn_mode_auto)
             if hasattr(self, 'btn_mode_manual'): self._disable_custom_btn(self.btn_mode_manual)
-            
-            # Disable Sliders in Manual Panel
             self.view_manual.set_enabled(False)
             
-            return # Skip the rest of the UI update
+            # Even in Delay, update Heartbeat (Blue Pulse)
+            self._update_indicators(st, time.time())
+            return 
         else:
             self.btn_delayed.config(text="DELAYED\nSTART")
-            
-            # DEFAULT -> Gray BG, Dark Blue Text
             self._set_btn_color(self.btn_delayed, '#e0e0e0', '#0044CC')
-            
-            # Re-enable Sliders (Visual + Functional)
             self.view_manual.set_enabled(True)
             
             if st == SequenceStatus.IDLE:
                  if hasattr(self, 'btn_mode_auto'): self.btn_mode_auto.config(state='normal')
                  if hasattr(self, 'btn_mode_manual'): self.btn_mode_manual.config(state='normal')
                  self.action_btn_text.set("START")
-                 self._set_btn_color(self.btn_action, '#e0e0e0', '#0044CC') # Reset Action color
+                 self._set_btn_color(self.btn_action, '#e0e0e0', '#0044CC')
 
-        # --- 4. STATUS TEXT & ALERTS (Only for Non-Manual) ---
+        # --- 4. STATUS TEXT & ALERTS ---
         if st != SequenceStatus.MANUAL:
             self.timer_var.set(self.sequencer.get_display_timer())
             raw_msg = self.sequencer.get_status_message()
@@ -765,7 +909,7 @@ class UIManager:
                 self.status_text_var.set(f"ALERT: {clean_msg}")
             else:
                 self.lbl_timer.configure(style='HeroTimer.TLabel')        
-                self.lbl_status.configure(style='HeroStatus.TLabel')      
+                self.lbl_status.configure(style='HeroStatus.TLabel') 
                 self.status_text_var.set(raw_msg)
 
             # Dynamic "Next" Line
@@ -782,7 +926,7 @@ class UIManager:
 
         self.lbl_addition.pack(side='top', anchor='center') 
 
-        # --- 5. STEP LIST REFRESH (Only if Visible) ---
+        # --- 5. STEP LIST REFRESH ---
         if st != SequenceStatus.MANUAL:
             current_idx = self.sequencer.current_step_index
             profile = self.sequencer.current_profile
@@ -822,6 +966,7 @@ class UIManager:
                         self.step_list.item(parent_iid, tags=('active_step',))
                         children = self.step_list.get_children(parent_iid)
                         current_step_obj = profile.steps[current_idx]
+                        
                         if hasattr(current_step_obj, 'additions') and current_step_obj.additions:
                             sorted_adds = sorted(current_step_obj.additions, key=lambda x: x.time_point_min, reverse=True)
                             for j, child_iid in enumerate(children):
@@ -834,8 +979,11 @@ class UIManager:
                                             self.step_list.item(child_iid, tags=('active_step',))
                                     elif add_obj.triggered:
                                         self.step_list.item(child_iid, tags=('done_step',))
+                                    else:
+                                        self.step_list.item(child_iid, tags=('pending_step',))
                         else:
-                            self.step_list.item(child_iid, tags=('pending_step',))
+                            for child_iid in children:
+                                self.step_list.item(child_iid, tags=('pending_step',))
 
                 if active_cursor_iid != self.last_active_iid:
                     try:
@@ -845,10 +993,8 @@ class UIManager:
                     except:
                         pass
 
-        # --- 6. ACTION BUTTON LABELS & COLORS ---
+        # --- 6. ACTION BUTTON LABELS ---
         self.btn_action.config(state='normal')
-        
-        # FIXED: Ensure mode buttons are re-enabled (visual + functional) if coming back from Delayed Start
         if hasattr(self, 'btn_mode_auto'): self.btn_mode_auto.config(state='normal')
         if hasattr(self, 'btn_mode_manual'): self.btn_mode_manual.config(state='normal')
 
@@ -857,11 +1003,7 @@ class UIManager:
                 self.action_btn_text.set("PAUSE")
             else:
                 self.action_btn_text.set("START")
-            
-            # Manual Mode: Gray BG, Dark Blue Text
             self._set_btn_color(self.btn_action, '#e0e0e0', '#0044CC')
-
-            # Manual is Selected (Green), Auto is Unselected (Gray/Dark Blue)
             if hasattr(self, 'btn_mode_manual'): self._set_btn_color(self.btn_mode_manual, '#2ecc71', 'black')
             if hasattr(self, 'btn_mode_auto'): self._set_btn_color(self.btn_mode_auto, '#e0e0e0', '#0044CC')
 
@@ -877,7 +1019,6 @@ class UIManager:
             alert_txt = self.sequencer.current_alert_text
             if is_mid_step_alert:
                 self.action_btn_text.set(f"ACKNOWLEDGE:\n{alert_txt}")
-                # Acknowledge: Yellow BG, Black Text
                 self._set_btn_color(self.btn_action, '#f1c40f', 'black')
             else:
                 step_num = current_idx + 1
@@ -886,7 +1027,6 @@ class UIManager:
                     self.action_btn_text.set(f"Step {step_num} COMPLETE\nADVANCE to Step {next_step_num}")
                 else:
                     self.action_btn_text.set(f"Step {step_num} COMPLETE\nFINISH BREW")
-                # Advance: Gray BG, Dark Blue Text (Standard)
                 self._set_btn_color(self.btn_action, '#e0e0e0', '#0044CC')
             
         elif st == SequenceStatus.COMPLETED:
@@ -896,10 +1036,70 @@ class UIManager:
         elif st == SequenceStatus.IDLE:
              self.action_btn_text.set("START")
              self._set_btn_color(self.btn_action, '#e0e0e0', '#0044CC')
-             
-             # Auto is Selected (Green), Manual is Unselected (Gray/Dark Blue)
              if hasattr(self, 'btn_mode_auto'): self._set_btn_color(self.btn_mode_auto, '#2ecc71', 'black')
              if hasattr(self, 'btn_mode_manual'): self._set_btn_color(self.btn_mode_manual, '#e0e0e0', '#0044CC')
+             
+        # --- 7. INDICATORS ---
+        self._update_indicators(st, time.time())
+
+    def _update_indicators(self, status, now):
+        # A. HEATER STATUS (Top Left)
+        # We check the ACTUAL relay state from the relay controller
+        # This confirms physical activation, not just "enabled" status
+        h1_on = False
+        h2_on = False
+        
+        if hasattr(self.sequencer, 'relay'):
+             h1_on = self.sequencer.relay.relay_states.get("Heater1", False)
+             h2_on = self.sequencer.relay.relay_states.get("Heater2", False)
+
+        # Draw H1 (1000W)
+        if h1_on:
+            self.lbl_h1.place(x=10, y=10)
+        else:
+            self.lbl_h1.place_forget()
+            
+        # Draw H2 (800W) - Offset so they don't overlap if both are on
+        if h2_on:
+            self.lbl_h2.place(x=80, y=10) 
+        else:
+            self.lbl_h2.place_forget()
+            
+        # B. HEARTBEAT (Top Right)
+        color = '#444444' # Default Idle Gray
+        
+        # Logic: Pulse if Auto Running OR (Manual AND actively running)
+        should_pulse_green = False
+        
+        if status == SequenceStatus.RUNNING:
+            should_pulse_green = True
+        elif status == SequenceStatus.MANUAL:
+            # Only pulse if Manual Mode is unpaused (Timer active or Heater active)
+            if self.sequencer.is_manual_running:
+                should_pulse_green = True
+        
+        if should_pulse_green:
+            # Blink Green (2s period: 1s ON, 1s Dim)
+            if (int(now) % 2) == 0:
+                color = '#2ecc71' # Bright Green
+            else:
+                color = '#145a32' # Dim Green
+                
+        elif status == SequenceStatus.WAITING_FOR_USER:
+            # Blink Yellow (Fast: 0.5s)
+            if (int(now * 4) % 2) == 0:
+                color = '#f1c40f' # Bright Yellow
+            else:
+                color = '#7d6608' # Dim Yellow
+                
+        elif status == SequenceStatus.DELAYED_WAIT:
+            # Blink Blue (Slow)
+            if (int(now) % 2) == 0:
+                color = '#3498db'
+            else:
+                color = '#1b4f72'
+                
+        self.cv_heartbeat.itemconfig(self.heartbeat_id, fill=color)
             
 class ManualPanel(ttk.Frame):
     def __init__(self, parent, sequencer, settings):
@@ -1013,9 +1213,8 @@ class DelayedStartActionDialog(tk.Toplevel):
     def __init__(self, parent, on_cancel, on_edit):
         super().__init__(parent)
         self.title("Cancel Delay")
-        self.geometry("420x180") # Slightly wider to fit 3 buttons comfortably
+        self.geometry("420x180")
         self.transient(parent)
-        self.grab_set()
         
         self.on_cancel = on_cancel
         self.on_edit = on_edit
@@ -1035,19 +1234,29 @@ class DelayedStartActionDialog(tk.Toplevel):
         btn_frame = ttk.Frame(self)
         btn_frame.pack(side='bottom', fill='x', pady=20, padx=10)
         
-        # Order: [ Yes ] [ No ] [ Edit ]
-        # We use pack with side='left' and expand=True to space them evenly
         ttk.Button(btn_frame, text="Yes", command=self._do_cancel).pack(side='left', padx=5, expand=True, fill='x')
-        ttk.Button(btn_frame, text="No", command=self.destroy).pack(side='left', padx=5, expand=True, fill='x')
+        ttk.Button(btn_frame, text="No", command=self._clean_close).pack(side='left', padx=5, expand=True, fill='x')
         ttk.Button(btn_frame, text="Edit", command=self._do_edit).pack(side='left', padx=5, expand=True, fill='x')
 
-    def _do_cancel(self):
+        self.protocol("WM_DELETE_WINDOW", self._clean_close)
+        self.grab_set()
+        self.focus_set()
+
+    def _clean_close(self):
+        try:
+            self.grab_release()
+            self.master.focus_set()
+        except: pass
         self.destroy()
+
+    def _do_cancel(self):
+        self._clean_close()
         self.on_cancel()
 
     def _do_edit(self):
-        self.destroy()
+        self._clean_close()
         self.on_edit()
+        
 class DelayedStartPopup(tk.Toplevel):
     def __init__(self, parent, sequencer, settings, initial_data=None):
         super().__init__(parent)
@@ -1177,3 +1386,78 @@ class DelayedStartPopup(tk.Toplevel):
             
         except ValueError:
             messagebox.showerror("Error", "Invalid numeric input.", parent=self)
+            
+class CustomConfirmDialog(tk.Toplevel):
+    def __init__(self, parent, title, message, callback=None):
+        """
+        Safety-First Dialog (Version 3)
+        - Force Topmost
+        - No Grabs
+        - Debug Prints
+        """
+        super().__init__(parent)
+        print(f"[UI] Creating Dialog: {title}") # DEBUG
+        
+        self.callback = callback
+        self.title(title)
+        
+        # Visual Styling
+        self.configure(bg='#ecf0f1')
+        self.geometry("480x240")
+        
+        # Force window to float above everything else
+        self.attributes('-topmost', True)
+        self.resizable(False, False)
+        
+        # Center logic
+        try:
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            x = (sw - 480) // 2
+            y = (sh - 240) // 2
+            self.geometry(f"+{x}+{y}")
+        except: pass
+        
+        # Layout
+        lbl = tk.Label(self, text=message, font=('Arial', 14), 
+                  bg='#ecf0f1', fg='#2c3e50', justify='center', wraplength=440)
+        lbl.pack(pady=30, padx=20, expand=True, fill='both')
+        
+        btn_frame = tk.Frame(self, bg='#ecf0f1')
+        btn_frame.pack(side='bottom', fill='x', pady=20)
+        
+        btn_yes = tk.Button(btn_frame, text="YES", font=('Arial', 14, 'bold'), 
+                           bg='#2ecc71', fg='white', activebackground='#27ae60',
+                           height=2, width=12, relief='flat',
+                           command=self._on_yes)
+        btn_yes.pack(side='left', padx=30, expand=True)
+        
+        btn_no = tk.Button(btn_frame, text="NO", font=('Arial', 14, 'bold'), 
+                          bg='#e74c3c', fg='white', activebackground='#c0392b',
+                          height=2, width=12, relief='flat',
+                          command=self._on_no)
+        btn_no.pack(side='right', padx=30, expand=True)
+        
+        self.protocol("WM_DELETE_WINDOW", self._on_no)
+        
+        # Ensure visibility without grabbing focus
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def _on_yes(self):
+        print("[UI] Dialog: YES clicked") # DEBUG
+        self.destroy()
+        if self.callback:
+            # Run callback slightly later to allow UI to clear
+            self.after(50, self._run_callback)
+
+    def _run_callback(self):
+        try:
+            if self.callback: self.callback()
+        except Exception as e:
+            print(f"[UI] Dialog Callback Error: {e}")
+
+    def _on_no(self):
+        print("[UI] Dialog: NO clicked") # DEBUG
+        self.destroy()

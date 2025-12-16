@@ -203,15 +203,16 @@ class SequenceManager:
         self.delayed_ready_time_str = ready_time_dt.strftime("%H:%M")
         self.delayed_start_time_str = datetime.fromtimestamp(start_epoch).strftime("%H:%M")
         
-        # NEW: Update Manual Mode Setpoint immediately.
-        # This ensures that if the delay is canceled (or finishes), 
-        # the system uses THIS temperature as the current target, not the old one.
+        # Update Manual Mode Setpoint immediately
         self.set_manual_target(self.delayed_target_temp)
         
         self.status = SequenceStatus.DELAYED_WAIT
         print(f"[Sequence] Delayed Start Set.")
         print(f"   Ready By: {self.delayed_ready_time_str}")
         print(f"   Heater Fires At: {self.delayed_start_time_str}")
+        
+        # CRITICAL: Save state immediately so we can recover from power loss
+        self._save_recovery_snapshot()
 
     def get_delayed_status_msg(self):
         """Returns the dynamic lines for the UI button."""
@@ -230,9 +231,11 @@ class SequenceManager:
         timer_min = self.settings.get("manual_mode_settings", "last_timer_min", 60.0)
         self.manual_timer_duration = timer_min * 60.0
         
+        # Load heater state, but reset timing logic
         self.is_heating = self.settings.get("manual_mode_settings", "heater_enabled", False)
+        self.step_start_time = 0.0 
+        self.temp_reached = False # [FIX] Ensure we wait for temp before counting down
         
-        self.step_start_time = 0.0 # Timer is stopped by default
         print(f"[Sequence] Entered Manual Mode. Target: {self.target_temp}")
 
     def toggle_manual_heater(self, enabled):
@@ -326,37 +329,95 @@ class SequenceManager:
                     self.last_alert_time = now
                     
     def _manage_temperature_generic(self, target):
-        """Simple hysteresis control for Manual Mode."""
+        """Simple hysteresis control for Manual Mode + Timer Trigger."""
         if target <= 0: 
             self.relay.set_relays(False, False, False)
             return
 
+        # [FIX] Check if we reached target to start timer
+        if not self.temp_reached:
+             if self.current_temp >= target:
+                 self.temp_reached = True
+                 self.step_start_time = time.monotonic()
+                 # Play alert sound to notify user target is reached
+                 self._play_alert_sound() 
+                 print(f"[Sequence] Manual Target Reached ({self.current_temp}). Timer Started.")
+
+        # Power Logic (Hysteresis)
         if self.current_temp < (target - 0.5):
             self._apply_power_logic(1800) # Full power
         elif self.current_temp > target:
             self.relay.set_relays(False, False, False)
+        # else: maintain current state
             
     def _save_recovery_snapshot(self):
         """Saves current progress to settings for power-loss recovery."""
-        if not self.current_profile: return
-        
         state = {
-            "profile_id": self.current_profile.id,
-            "step_index": self.current_step_index,
-            "elapsed_time": self.step_elapsed_time,
-            "temp_reached": self.temp_reached,
-            "global_elapsed": self._get_total_elapsed_seconds(),
+            "status": self.status.value,
             "timestamp": time.time()
         }
-        self.settings.save_recovery_state(state)
 
+        # 1. SAVE DELAY STATE
+        if self.status == SequenceStatus.DELAYED_WAIT:
+            state["mode_type"] = "DELAY"
+            state["delayed_start_epoch"] = getattr(self, 'delayed_start_epoch', 0)
+            state["delayed_target_temp"] = getattr(self, 'delayed_target_temp', 0)
+            state["delayed_vol"] = getattr(self, 'delayed_vol', 0)
+            state["delayed_ready_time_str"] = getattr(self, 'delayed_ready_time_str', "")
+            state["delayed_start_time_str"] = getattr(self, 'delayed_start_time_str', "")
+            
+            self.settings.save_recovery_state(state)
+            return
+
+        # 2. SAVE PROFILE STATE
+        if self.current_profile:
+            state["mode_type"] = "PROFILE"
+            state["profile_id"] = self.current_profile.id
+            state["step_index"] = self.current_step_index
+            state["elapsed_time"] = self.step_elapsed_time
+            state["temp_reached"] = self.temp_reached
+            state["global_elapsed"] = self._get_total_elapsed_seconds()
+            
+            self.settings.save_recovery_state(state)
     def _get_total_elapsed_seconds(self):
         if self.global_start_time is None: return 0
         return time.monotonic() - self.global_start_time - self.global_paused_time
 
     # --- RESTORE LOGIC ---
     def restore_from_recovery(self, state_dict):
-        """Called by Main to resume a crashed session."""
+        """Called by Main to resume a crashed/interrupted session."""
+        mode_type = state_dict.get("mode_type", "PROFILE")
+        
+        # --- RESTORE DELAYED START ---
+        if mode_type == "DELAY":
+            print("[Sequence] Restoring Delayed Start...")
+            
+            # 1. Restore Variables
+            self.delayed_start_epoch = state_dict.get("delayed_start_epoch", 0)
+            self.delayed_target_temp = state_dict.get("delayed_target_temp", 0)
+            self.delayed_vol = state_dict.get("delayed_vol", 0)
+            self.delayed_ready_time_str = state_dict.get("delayed_ready_time_str", "")
+            self.delayed_start_time_str = state_dict.get("delayed_start_time_str", "")
+            
+            # Ensure Manual Target is synced
+            self.set_manual_target(self.delayed_target_temp)
+            
+            # 2. Check Time
+            now = time.time()
+            if now >= self.delayed_start_epoch:
+                # We missed the start time (or it's happening now) -> WAKE UP IMMEDIATELY
+                print("[Sequence] Restore: Start time passed. Firing Heater immediately.")
+                self.enter_manual_mode()
+                self.set_manual_target(self.delayed_target_temp)
+                self.toggle_manual_heater(True)
+            else:
+                # We are still early -> GO BACK TO SLEEP
+                print("[Sequence] Restore: Still early. Resuming Delayed Wait.")
+                self.status = SequenceStatus.DELAYED_WAIT
+                
+            return
+
+        # --- RESTORE PROFILE ---
         # 1. First, initialize the step to load standard defaults (Setpoints, etc.)
         self.current_step_index = state_dict.get("step_index", 0)
         self._init_step(self.current_step_index)
@@ -373,8 +434,7 @@ class SequenceManager:
         
         # Restore Step Timer
         if self.temp_reached:
-            # CRITICAL FIX: If we had already reached temp, force the start time 
-            # to be in the past so the timer resumes exactly where it left off.
+            # Force the start time to be in the past so the timer resumes correctly
             self.step_start_time = now - saved_elapsed
             self.step_elapsed_time = saved_elapsed
         else:
@@ -678,16 +738,23 @@ class SequenceManager:
         """Toggles between START (Active) and PAUSE (Inactive) for Manual Mode."""
         # Note: No parentheses because is_manual_running is a @property
         if not self.is_manual_running:
-            # START: Enable Heater (if target set) and Start/Resume Timer
+            # START: Enable Heater
             self.is_heating = True
-            if self.step_start_time == 0: 
-                self.step_start_time = time.monotonic()
-            else: 
-                # Resume from pause
-                if self.last_pause_start > 0:
+            
+            # [FIX] Only resume timer if we had already reached temp
+            if self.temp_reached:
+                if self.step_start_time == 0: 
+                    self.step_start_time = time.monotonic()
+                elif self.last_pause_start > 0: 
+                    # Resume from pause
                      paused_duration = time.monotonic() - self.last_pause_start
                      self.step_start_time += paused_duration
                      self.last_pause_start = 0
+            
+            # If temp_reached is False, we leave step_start_time as 0.0.
+            # The _manage_temperature_generic loop will detect when target is hit
+            # and start the timer then.
+
             print("[Sequence] Manual Playback STARTED")
         else:
             # PAUSE: Disable Heater and Pause Timer

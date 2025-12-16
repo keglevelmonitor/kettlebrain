@@ -268,6 +268,12 @@ class SettingsManager:
     def set_controlled_shutdown(self, is_controlled):
         """Called by main.py only during a successful shutdown sequence."""
         self.set("system_settings", "controlled_shutdown", is_controlled)
+        
+    def get_check_updates_on_launch(self):
+        return self.get("system_settings", "check_updates_on_launch", True)
+
+    def set_check_updates_on_launch(self, enabled):
+        self.set("system_settings", "check_updates_on_launch", bool(enabled))
 
     # --- RECOVERY STATE METHODS ---
 

@@ -171,21 +171,15 @@ class ProfileEditor(tk.Toplevel):
         self.deiconify() 
 
     def close(self):
-        if self.current_step_index is not None:
-             self._save_current_edit()
-
-        if self.steps_working_copy != self.profile.steps:
-            if not messagebox.askyesno("Unsaved Changes", "You have made changes. Discard them?", parent=self):
-                return 
-
         try:
+            # Explicitly release grab (if any)
             self.grab_release()
+            # CRITICAL: Force focus back to the parent (ProfileEditor)
             if self.master:
-                self.master.focus_set() 
+                self.master.focus_set()
         except:
             pass
-        finally:
-            self.destroy()
+        self.destroy()
 
     def _configure_styles(self):
         s = ttk.Style()

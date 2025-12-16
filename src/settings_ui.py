@@ -219,7 +219,28 @@ class SettingsPopup(tk.Toplevel):
     def _refresh_profile_list(self):
         self.tree.delete(*self.tree.get_children())
         profiles = self.settings.get_all_profiles()
+        
+        # 1. Separate "Default Profile" from the rest
+        default_profile = None
+        other_profiles = []
+        
         for p in profiles:
+            if p.name == "Default Profile":
+                default_profile = p
+            else:
+                other_profiles.append(p)
+        
+        # 2. Sort the others alphabetically (case-insensitive)
+        other_profiles.sort(key=lambda x: x.name.lower())
+        
+        # 3. Recombine: Default first, then sorted others
+        display_list = []
+        if default_profile:
+            display_list.append(default_profile)
+        display_list.extend(other_profiles)
+
+        # 4. Insert into TreeView
+        for p in display_list:
             self.tree.insert("", "end", iid=p.id, text=p.name, values=(len(p.steps),))
 
     def _get_selected_id(self):
@@ -232,7 +253,7 @@ class SettingsPopup(tk.Toplevel):
         if self.sequencer.status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
             messagebox.showwarning(
                 "System Active", 
-                "Cannot load a new profile while a sequence is running.\n\nPlease ABORT the current brew on the main screen first.",
+                "Cannot load a new profile while a sequence is running.\n\nPlease STOP the current session on the main screen first.",
                 parent=self
             )
             return
