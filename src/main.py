@@ -60,7 +60,6 @@ class KettleBrainApp:
 
     def run(self):
         # --- 1. HARDWARE STABILIZATION DELAY (Conditional) ---
-        # Only wait if launched via Auto-Start (boot)
         if "--auto-start" in sys.argv:
             print(f"[{APP_NAME}] Auto-Start detected. Waiting {STARTUP_DELAY_S}s for drivers...")
             time.sleep(STARTUP_DELAY_S)
@@ -93,20 +92,30 @@ class KettleBrainApp:
         # --- RECOVERY LOGIC ---
         if uncontrolled and auto_resume and recovery_data:
             print("[Main] Attempting Auto-Resume from Power Loss...")
-            p_id = recovery_data.get("profile_id")
-            profiles = self.settings_mgr.get_all_profiles()
-            target_profile = next((p for p in profiles if p.id == p_id), None)
             
-            if target_profile:
-                self.sequencer.load_profile(target_profile)
+            mode_type = recovery_data.get("mode_type", "PROFILE")
+            
+            if mode_type in ["DELAY", "MANUAL"]:
                 self.sequencer.restore_from_recovery(recovery_data)
                 resume_success = True
-                print("[Main] Auto-Resume Successful.")
-            else:
-                print("[Main] Recovery failed: Profile not found.")
+                print(f"[Main] Auto-Resume Successful ({mode_type} Mode).")
+            
+            elif mode_type == "PROFILE":
+                p_id = recovery_data.get("profile_id")
+                profiles = self.settings_mgr.get_all_profiles()
+                target_profile = next((p for p in profiles if p.id == p_id), None)
+                
+                if target_profile:
+                    self.sequencer.load_profile(target_profile)
+                    self.sequencer.restore_from_recovery(recovery_data)
+                    resume_success = True
+                    print("[Main] Auto-Resume Successful (Profile Mode).")
+                else:
+                    print("[Main] Recovery failed: Profile not found.")
         
         # --- DEFAULT STARTUP (If not resuming) ---
         if not resume_success:
+            print("[Main] Performing Standard Startup...")
             # 1. Load Default Profile (so Auto mode isn't empty if they switch)
             profiles = self.settings_mgr.get_all_profiles()
             if profiles:
@@ -114,13 +123,11 @@ class KettleBrainApp:
                 default_p = next((p for p in profiles if p.name == "Default Profile"), profiles[0])
                 self.sequencer.load_profile(default_p)
                 print(f"[Main] Loaded startup profile: {default_p.name}")
+            else:
+                print("[Main] No profiles found to load.")
             
-            # 2. Enter Manual Mode immediately
+            # 2. Enter Manual Mode immediately (This will now preserve the loaded profile)
             self.sequencer.enter_manual_mode()
-
-        if uncontrolled and not resume_success:
-            print(f"[{APP_NAME}] WARNING: Uncontrolled Shutdown Detected!")
-            self.root.after(1000, self._show_crash_warning)
 
         # Handle "X" Button
         self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
@@ -135,17 +142,6 @@ class KettleBrainApp:
             print(f"\n[{APP_NAME}] CRITICAL MAIN LOOP ERROR: {e}")
             self._emergency_cleanup()
             raise
-
-    def _show_crash_warning(self):
-        from tkinter import messagebox
-        messagebox.showwarning(
-            "Uncontrolled Shutdown Detected",
-            "The system did not shut down cleanly last time.\n"
-            "(Power Loss, Crash, or Terminal Closed)\n\n"
-            "Safety Check:\n"
-            "All relays have been reset to OFF.",
-            parent=self.root
-        )
 
     def shutdown(self):
         if self.is_shutting_down: return

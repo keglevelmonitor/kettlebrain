@@ -39,6 +39,8 @@ DEFAULT_SETTINGS = {
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
         "last_timer_min": 60.0,
+        "last_power_watts": 1800,   # <--- NEW
+        "last_volume_gal": 6.0,     # <--- NEW
         "heater_enabled": False
     },
     "pid_settings": {

@@ -23,6 +23,7 @@ class UIManager:
         
         self.dev_window = None
         self.settings_window = None
+        self.delayed_start_window = None  # <--- ADD THIS LINE
         
         self.last_profile_id = None 
         self.last_active_iid = None 
@@ -60,38 +61,79 @@ class UIManager:
         self._update_loop()
         
     def _open_delayed_start(self):
-        # 1. If Active -> Open Action Dialog (Cancel/Edit)
+        # 1. AGGRESSIVE GRAB CLEANUP
+        try:
+            grabber = self.root.grab_current()
+            if grabber:
+                grabber.grab_release()
+        except: pass
+
+        # 2. DECOUPLE
+        self.root.after(50, self._real_delayed_start_logic)
+
+    def _real_delayed_start_logic(self):
+        # 0. PREVENT DUPLICATES
+        if self.delayed_start_window:
+            try:
+                if self.delayed_start_window.winfo_exists():
+                    self.delayed_start_window.lift()
+                    return
+                else:
+                    self.delayed_start_window = None
+            except:
+                self.delayed_start_window = None
+
+        # --- HELPER: CLEANUP REFERENCE ---
+        def cleanup_ref():
+            self.delayed_start_window = None
+
+        # 1. If Active -> Open Action Dialog
         if self.sequencer.status == SequenceStatus.DELAYED_WAIT:
             
             def do_cancel():
-                # FIXED: Revert to Manual Mode instead of IDLE (which forces Auto view)
-                self.sequencer.enter_manual_mode()
+                self.sequencer.cancel_delayed_mode()
                 
             def do_edit():
-                # Capture current data before stopping
+                # Capture current data AND Context before stopping
                 data = {
                     'vol': getattr(self.sequencer, 'delayed_vol', 8.0),
                     'temp': getattr(self.sequencer, 'delayed_target_temp', 154.0),
                     'time_str': getattr(self.sequencer, 'delayed_ready_time_str', "")
                 }
-                # We stop to clear the current Delay state, then immediately re-open the popup.
+                was_auto = getattr(self.sequencer, 'delayed_is_auto', True)
+                
+                # Stop the current Delay (Clears timer)
                 self.sequencer.stop() 
                 
-                # Re-open popup with data
-                DelayedStartPopup(self.root, self.sequencer, self.settings, initial_data=data)
+                # --- FIX: RESTORE CONTEXT IMMEDIATELY ---
+                # If we were in Manual mode, force the system back to MANUAL state 
+                # so the background UI doesn't flip to Auto (IDLE).
+                if not was_auto:
+                    self.sequencer.enter_manual_mode()
+                # ----------------------------------------
+                
+                # Re-open popup with data AND preserved context
+                self.delayed_start_window = DelayedStartPopup(
+                    self.root, 
+                    self.sequencer, 
+                    self.settings, 
+                    initial_data=data, 
+                    initial_context=was_auto
+                )
 
-            DelayedStartActionDialog(self.root, on_cancel=do_cancel, on_edit=do_edit)
+            self.delayed_start_window = DelayedStartActionDialog(
+                self.root, 
+                on_cancel=do_cancel, 
+                on_edit=do_edit,
+                on_cleanup=cleanup_ref
+            )
             return
 
-        # 2. Safety Check: 
-        # Allow if IDLE -OR- if MANUAL (but not actively running)
+        # 2. Safety Check
         can_proceed = False
-        
         if self.sequencer.status == SequenceStatus.IDLE:
              can_proceed = True
         elif self.sequencer.status == SequenceStatus.MANUAL:
-            # Check if Manual Mode is "Running" (Heater on or Timer going)
-            # We access the property without () based on your last setup
             if not self.sequencer.is_manual_running: 
                 can_proceed = True
 
@@ -100,7 +142,7 @@ class UIManager:
              return
 
         # 3. Open Popup (New Mode)
-        DelayedStartPopup(self.root, self.sequencer, self.settings)
+        self.delayed_start_window = DelayedStartPopup(self.root, self.sequencer, self.settings)
         
     def _request_mode_switch(self, target_mode):
         # 1. SAFETY: Force focus to root
@@ -340,8 +382,8 @@ class UIManager:
         scrollbar = ttk.Scrollbar(self.view_auto)
         scrollbar.pack(side='right', fill='y')
         
-        # Treeview - FIXED: Added 'step_num' to columns
-        columns = ('step_num', 'name', 'target', 'duration', 'action')
+        # Treeview
+        columns = ('step_num', 'name', 'target', 'duration', 'ready', 'action')
         self.step_list = ttk.Treeview(self.view_auto, columns=columns, show='headings', 
                                       yscrollcommand=scrollbar.set, height=5)
         
@@ -353,10 +395,13 @@ class UIManager:
         self.step_list.column('name', width=220, anchor='w')
         
         self.step_list.heading('target', text='Target')
-        self.step_list.column('target', width=90, anchor='center')
+        self.step_list.column('target', width=80, anchor='center')
         
         self.step_list.heading('duration', text='Duration')
-        self.step_list.column('duration', width=90, anchor='center')
+        self.step_list.column('duration', width=80, anchor='center')
+
+        self.step_list.heading('ready', text='Ready At')
+        self.step_list.column('ready', width=80, anchor='center')
         
         self.step_list.heading('action', text='Next Action')
         self.step_list.column('action', width=110, anchor='center')
@@ -371,7 +416,34 @@ class UIManager:
         scrollbar.config(command=self.step_list.yview)
 
         # --- VIEW 2: MANUAL PANEL ---
-        self.view_manual = ManualPanel(self.strip_frame, self.sequencer, self.settings)
+        # Pass status_text_var so manual panel can write "Ready At" to the header
+        self.view_manual = ManualPanel(self.strip_frame, self.sequencer, self.settings, self.status_text_var)
+        
+    def _set_layout_mode(self, mode="AUTO"):
+        """
+        Dynamically adjusts frame heights to give Manual Mode more space 
+        by 'borrowing' unused vertical space from the Hero section.
+        """
+        # Prevent redundant updates if already in the correct state
+        current_hero_h = self.hero_frame.winfo_height()
+        
+        target_hero_h = 220
+        target_strip_h = 180
+        
+        if mode == "MANUAL":
+            # Shrink Hero (Hide empty status lines), Grow Strip (For big sliders)
+            target_hero_h = 130 
+            target_strip_h = 270
+        else:
+            # Restore Standard Auto Layout
+            target_hero_h = 220
+            target_strip_h = 180
+
+        # Apply changes only if needed to avoid jitter
+        # Note: We use configure(height=...) because pack_propagate is False
+        if current_hero_h != target_hero_h:
+            self.hero_frame.configure(height=target_hero_h)
+            self.strip_frame.configure(height=target_strip_h)
 
     def _configure_step_list_tags(self):
         self.step_list.tag_configure('active_step', background='#2ecc71', foreground='black') 
@@ -387,6 +459,10 @@ class UIManager:
         self.last_active_iid = None 
         
         if not profile: return
+
+        # Trigger prediction update before rendering
+        if hasattr(self.sequencer, 'update_predictions'):
+            self.sequencer.update_predictions()
 
         for i, step in enumerate(profile.steps):
             try:
@@ -405,10 +481,16 @@ class UIManager:
                 else: mode_str = "WAIT"
             except: mode_str = "?"
 
+            # Retrieve predicted time (added by sequencer.update_predictions)
+            ready_str = getattr(step, 'predicted_ready_time', "")
+            if ready_str is None: ready_str = ""
+
             step_iid = str(i)
+            
+            # Insert Row (Note: Added ready_str to values)
             self.step_list.insert(
                 "", "end", iid=step_iid, 
-                values=(i + 1, step.name, temp_str, dur_str, mode_str),
+                values=(i + 1, step.name, temp_str, dur_str, ready_str, mode_str),
                 tags=('pending_step',),
                 open=True 
             )
@@ -419,9 +501,11 @@ class UIManager:
                     child_iid = f"{step_iid}_add_{j}"
                     add_name = f"  ↳ {add.name}"
                     add_time = f"@ {add.time_point_min}m"
+                    
+                    # Insert Addition (Must provide empty string for 'ready' column to align)
                     self.step_list.insert(
                         step_iid, "end", iid=child_iid,
-                        values=("", add_name, "", add_time, "Alert"),
+                        values=("", add_name, "", add_time, "", "Alert"),
                         tags=('pending_step',)
                     )
 
@@ -464,6 +548,22 @@ class UIManager:
         btn_settings.pack(side='top', fill='both', expand=True, pady=1)
 
     def _on_settings_click(self):
+        # 1. AGGRESSIVE GRAB CLEANUP
+        # If any window holds a grab (input lock), force release it immediately.
+        # This prevents the 'frozen button' state.
+        try:
+            grabber = self.root.grab_current()
+            if grabber:
+                grabber.grab_release()
+        except: pass
+
+        # 2. DECOUPLE
+        # Don't run logic inside the button click event.
+        # Schedule it for 50ms later to let the UI loop breathe and the button release visually.
+        self.root.after(50, self._real_settings_logic)
+
+    def _real_settings_logic(self):
+        # 1. CHECK EXISTING WINDOW
         if self.settings_window:
             try:
                 if self.settings_window.winfo_exists():
@@ -474,6 +574,7 @@ class UIManager:
             except:
                 self.settings_window = None
 
+        # 2. OPEN SETTINGS POPUP
         self.settings_window = SettingsPopup(
             self.root, 
             self.settings, 
@@ -556,8 +657,6 @@ class UIManager:
         
     def _real_abort_logic(self):
         # 1. AGGRESSIVE CLEANUP
-        # If we have a reference to an old dialog, destroy it immediately.
-        # This prevents the "No-Op" bug where the app thinks a dialog is open but you can't see it.
         if hasattr(self, '_current_dialog') and self._current_dialog:
             try:
                 self._current_dialog.destroy()
@@ -566,6 +665,19 @@ class UIManager:
             self._current_dialog = None
 
         st = self.sequencer.status
+        
+        # --- DELAYED START STOP LOGIC ---
+        if st == SequenceStatus.DELAYED_WAIT:
+             def do_delay_cancel():
+                 self.sequencer.cancel_delayed_mode()
+             
+             self._current_dialog = CustomConfirmDialog(
+                self.root,
+                "Cancel Delayed Start?",
+                "This will cancel the timer and return to the previous mode.",
+                callback=do_delay_cancel
+             )
+             return
         
         # --- MANUAL STOP LOGIC ---
         if st == SequenceStatus.MANUAL:
@@ -774,37 +886,42 @@ class UIManager:
         self.root.after(100, self._update_loop)
 
     def update_ui_from_state(self):
-        import time # Needed for heartbeat timing
+        import time 
         
         t = self.sequencer.current_temp
         st = self.sequencer.status
         tgt = self.sequencer.get_target_temp()
 
         # --- 1. VIEW SWITCHING (Auto vs Manual) ---
-        if st in [SequenceStatus.MANUAL, SequenceStatus.DELAYED_WAIT]:
-            # Show Manual Panel, Hide Auto List
+        show_manual_view = False
+        
+        if st == SequenceStatus.MANUAL:
+            show_manual_view = True
+        elif st == SequenceStatus.DELAYED_WAIT:
+            # Check context flag
+            if not getattr(self.sequencer, 'delayed_is_auto', True):
+                show_manual_view = True
+
+        if show_manual_view:
+            # MANUAL MODE
             if self.view_auto.winfo_ismapped():
-                # SAFETY: View is disappearing, move focus to root
                 self.root.focus_set()
                 self.view_auto.pack_forget()
                 
             if not self.view_manual.winfo_ismapped():
                 self.view_manual.pack(fill='both', expand=True)
             
-            # REFRESH MANUAL PANEL
             self.view_manual.refresh()
-
-            # FORCE CLEAR STALE TEXT
-            self.status_text_var.set("") 
+            # Note: We do NOT clear status_text_var here anymore, 
+            # because ManualPanel populates it with "Ready At".
             self.next_addition_var.set(" ") 
             
         else:
-            # Show Auto List, Hide Manual Panel
+            # AUTO MODE
             if self.view_manual.winfo_ismapped():
-                # SAFETY: View is disappearing, move focus to root
                 self.root.focus_set()
                 self.view_manual.pack_forget()
-                
+            
             if not self.view_auto.winfo_ismapped():
                 self.view_auto.pack(fill='both', expand=True)
 
@@ -822,29 +939,39 @@ class UIManager:
         global_str = self.sequencer.get_global_elapsed_time_str()
         self.elapsed_sub_var.set(f"Elapsed: {global_str}")
 
-        new_style = 'HeroTemp.TLabel'
-        if st in [SequenceStatus.RUNNING, SequenceStatus.WAITING_FOR_USER, SequenceStatus.MANUAL] and tgt is not None and tgt > 0:
+        # --- COLOR LOGIC ---
+        new_style = 'HeroTemp.TLabel' # Default White
+        should_color = False
+        
+        if st == SequenceStatus.MANUAL:
+            if self.sequencer.is_manual_running:
+                should_color = True
+        elif st in [SequenceStatus.RUNNING, SequenceStatus.WAITING_FOR_USER]:
+            should_color = True
+            
+        if should_color and tgt is not None and tgt > 0:
             diff = t_display - tgt
-            if diff < -1.0: new_style = 'HeroTempBlue.TLabel'
-            elif diff > 1.0: new_style = 'HeroTempRed.TLabel'
-            else: new_style = 'HeroTempGreen.TLabel'
+            if diff < -1.0: 
+                new_style = 'HeroTempBlue.TLabel'
+            elif diff > 1.0: 
+                new_style = 'HeroTempRed.TLabel'
+            else: 
+                new_style = 'HeroTempGreen.TLabel'
+                
         self.lbl_temp.configure(style=new_style)
 
         # --- 3. DELAYED START BUTTON ---
         if st == SequenceStatus.DELAYED_WAIT:
-            # ACTIVE / SLEEPING -> Dark Blue BG, Gray Text
             time_info = self.sequencer.get_delayed_status_msg()
             btn_txt = f"DELAY ACTIVE\nSLEEPING\n{time_info}"
             self.btn_delayed.config(text=btn_txt)
             self._set_btn_color(self.btn_delayed, '#0044CC', '#e0e0e0')
             
-            # Disable controls
             self._disable_custom_btn(self.btn_action)
             if hasattr(self, 'btn_mode_auto'): self._disable_custom_btn(self.btn_mode_auto)
             if hasattr(self, 'btn_mode_manual'): self._disable_custom_btn(self.btn_mode_manual)
             self.view_manual.set_enabled(False)
             
-            # Even in Delay, update Heartbeat (Blue Pulse)
             self._update_indicators(st, time.time())
             return 
         else:
@@ -874,14 +1001,12 @@ class UIManager:
                 self.lbl_status.configure(style='HeroStatus.TLabel') 
                 self.status_text_var.set(raw_msg)
 
-            # Dynamic "Next" Line
             next_txt = self.sequencer.get_upcoming_additions()
             if not next_txt or "No more" in next_txt:
                 self.next_addition_var.set(" ")
             else:
                 self.next_addition_var.set(next_txt)
         else:
-            # Manual Mode Specific Text Updates
             self.timer_var.set(self.sequencer.get_display_timer())
             self.lbl_timer.configure(style='HeroTimer.TLabel')
             self.lbl_status.configure(style='HeroStatus.TLabel')
@@ -904,6 +1029,7 @@ class UIManager:
                 step_iid = str(current_idx)
                 active_cursor_iid = step_iid
                 alert_text = self.sequencer.current_alert_text
+                is_mid_step_alert = (st == SequenceStatus.WAITING_FOR_USER and self.sequencer.current_alert_text != "Step Complete")
 
                 if hasattr(step, 'additions') and step.additions:
                     children = self.step_list.get_children(step_iid)
@@ -919,17 +1045,16 @@ class UIManager:
                     if i < current_idx:
                         self.step_list.item(parent_iid, tags=('done_step',))
                         for child in self.step_list.get_children(parent_iid):
-                            self.step_list.item(child, tags=('done_step',))
+                             self.step_list.item(child, tags=('done_step',))
                     elif i > current_idx:
                         self.step_list.item(parent_iid, tags=('pending_step',))
                         for child in self.step_list.get_children(parent_iid):
-                            self.step_list.item(child, tags=('pending_step',))
+                             self.step_list.item(child, tags=('pending_step',))
                     else: 
                         self.step_list.item(parent_iid, tags=('active_step',))
                         children = self.step_list.get_children(parent_iid)
                         current_step_obj = profile.steps[current_idx]
                         
-                        # --- FIX: ROBUST LOGIC FOR CHILDREN UPDATES ---
                         if hasattr(current_step_obj, 'additions') and current_step_obj.additions:
                             sorted_adds = sorted(current_step_obj.additions, key=lambda x: x.time_point_min, reverse=True)
                             for j, child_iid in enumerate(children):
@@ -945,10 +1070,8 @@ class UIManager:
                                     else:
                                         self.step_list.item(child_iid, tags=('pending_step',))
                         else:
-                            # If no additions in data, but children exist in UI, reset them
-                            for child_iid in children:
+                             for child_iid in children:
                                 self.step_list.item(child_iid, tags=('pending_step',))
-                        # -----------------------------------------------
 
                 if active_cursor_iid != self.last_active_iid:
                     try:
@@ -982,6 +1105,7 @@ class UIManager:
             
         elif st == SequenceStatus.WAITING_FOR_USER:
             alert_txt = self.sequencer.current_alert_text
+            is_mid_step_alert = (st == SequenceStatus.WAITING_FOR_USER and self.sequencer.current_alert_text != "Step Complete")
             if is_mid_step_alert:
                 self.action_btn_text.set(f"ACKNOWLEDGE:\n{alert_txt}")
                 self._set_btn_color(self.btn_action, '#f1c40f', 'black')
@@ -1067,101 +1191,212 @@ class UIManager:
         self.cv_heartbeat.itemconfig(self.heartbeat_id, fill=color)
             
 class ManualPanel(ttk.Frame):
-    def __init__(self, parent, sequencer, settings):
+    def __init__(self, parent, sequencer, settings, status_var):
         super().__init__(parent, style='Strip.TFrame')
         self.sequencer = sequencer
         self.settings = settings
+        self.status_var = status_var 
         
         self.var_target = tk.DoubleVar(value=150.0)
         self.var_timer = tk.DoubleVar(value=60.0)
+        self.var_vol = tk.DoubleVar(value=6.0)
+        self.var_power_idx = tk.IntVar(value=3)
+        
+        self.last_is_metric = None 
         
         self._init_ui()
         self._sync_from_sequencer()
+        
+        self._pred_timer = None
+        self._schedule_prediction()
 
     def _init_ui(self):
-        # Grid: 2 Columns (50/50 split)
+        # Grid: 2 Columns
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
 
-        # Colors for the "Card" look
-        card_bg = '#e0e0e0'     # Light Gray Box
-        text_fg = '#0044CC'     # Royal Blue Text (Matches Buttons)
-        trough_col = '#c0c0c0'  # Contrast for slider trough
-
-        # --- LEFT: TEMP CONTROL ---
-        f_temp = tk.Frame(self, bg=card_bg)
-        f_temp.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)
+        card_bg = '#e0e0e0'
+        text_fg = '#0044CC'
+        trough_col = '#c0c0c0'
         
-        # Label with Blue Text
-        self.lbl_target_val = tk.Label(f_temp, text="Target: --°F", font=('Arial', 24, 'bold'), 
-                                       bg=card_bg, fg=text_fg)
-        self.lbl_target_val.pack(pady=(20, 5))
+        # --- SIZES ---
+        LABEL_FONT = ('Arial', 14, 'bold')
+        SLIDER_WIDTH = 30
+        SLIDER_LENGTH = 300
         
-        # Scale Widget (Text is also Blue)
-        self.scale_temp = tk.Scale(f_temp, from_=50, to=212, orient='horizontal', length=300, width=40,
+        # --- LEFT CARD: Target & Volume ---
+        f_left = tk.Frame(self, bg=card_bg)
+        f_left.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        
+        # Target Temp
+        self.lbl_target_val = tk.Label(f_left, text="Target: --°F", font=LABEL_FONT, bg=card_bg, fg=text_fg)
+        self.lbl_target_val.pack(pady=(10, 5))
+        
+        self.scale_temp = tk.Scale(f_left, from_=50, to=212, orient='horizontal', 
+                                   length=SLIDER_LENGTH, width=SLIDER_WIDTH,
                                    showvalue=0, command=self._on_temp_slide, variable=self.var_target,
                                    bg=card_bg, activebackground=card_bg, fg=text_fg,
                                    highlightthickness=0, troughcolor=trough_col)
-        self.scale_temp.pack(fill='x', expand=True, padx=20, pady=10)
+        self.scale_temp.pack(fill='x', padx=15, pady=(0, 5))
         self.scale_temp.bind("<ButtonRelease-1>", self._on_temp_release)
 
-        # --- RIGHT: TIMER CONTROL ---
-        f_timer = tk.Frame(self, bg=card_bg)
-        f_timer.grid(row=0, column=1, sticky='nsew', padx=10, pady=10)
+        # Volume
+        self.lbl_vol_val = tk.Label(f_left, text="Volume: --", font=LABEL_FONT, bg=card_bg, fg=text_fg)
+        self.lbl_vol_val.pack(pady=(5, 0))
         
-        # Label with Blue Text
-        self.lbl_timer_val = tk.Label(f_timer, text="Timer: --m", font=('Arial', 24, 'bold'), 
-                                      bg=card_bg, fg=text_fg)
-        self.lbl_timer_val.pack(pady=(20, 5))
+        # Initial config; updated dynamically in _sync
+        self.scale_vol = tk.Scale(f_left, from_=2.0, to=9.0, orient='horizontal', 
+                                  length=SLIDER_LENGTH, width=SLIDER_WIDTH, resolution=0.25,
+                                  showvalue=0, command=self._on_vol_slide, variable=self.var_vol,
+                                  bg=card_bg, activebackground=card_bg, fg=text_fg,
+                                  highlightthickness=0, troughcolor=trough_col)
+        self.scale_vol.pack(fill='x', padx=15, pady=(0, 5))
+        self.scale_vol.bind("<ButtonRelease-1>", self._on_vol_release)
+
+        # --- RIGHT CARD: Timer & Power ---
+        f_right = tk.Frame(self, bg=card_bg)
+        f_right.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
         
-        self.scale_timer = tk.Scale(f_timer, from_=1, to=120, orient='horizontal', length=300, width=40,
+        # Timer
+        self.lbl_timer_val = tk.Label(f_right, text="Timer: --m", font=LABEL_FONT, bg=card_bg, fg=text_fg)
+        self.lbl_timer_val.pack(pady=(10, 5))
+        
+        self.scale_timer = tk.Scale(f_right, from_=1, to=120, orient='horizontal', 
+                                    length=SLIDER_LENGTH, width=SLIDER_WIDTH,
                                     showvalue=0, command=self._on_timer_slide, variable=self.var_timer,
                                     bg=card_bg, activebackground=card_bg, fg=text_fg,
                                     highlightthickness=0, troughcolor=trough_col)
-        self.scale_timer.pack(fill='x', expand=True, padx=20, pady=10)
+        self.scale_timer.pack(fill='x', padx=15, pady=(0, 5))
         self.scale_timer.bind("<ButtonRelease-1>", self._on_timer_release)
 
+        # Power
+        self.lbl_pwr_val = tk.Label(f_right, text="Power: 1800W", font=LABEL_FONT, bg=card_bg, fg=text_fg)
+        self.lbl_pwr_val.pack(pady=(5, 0))
+        
+        self.scale_pwr = tk.Scale(f_right, from_=0, to=3, orient='horizontal', 
+                                  length=SLIDER_LENGTH, width=SLIDER_WIDTH,
+                                  showvalue=0, command=self._on_pwr_slide, variable=self.var_power_idx,
+                                  bg=card_bg, activebackground=card_bg, fg=text_fg,
+                                  highlightthickness=0, troughcolor=trough_col)
+        self.scale_pwr.pack(fill='x', padx=15, pady=(0, 5))
+        self.scale_pwr.bind("<ButtonRelease-1>", self._on_pwr_release)
+
     def set_enabled(self, enabled):
-        """Disables/Enables the sliders and dims the text."""
         state = 'normal' if enabled else 'disabled'
         fg_col = '#0044CC' if enabled else '#bdc3c7'
         
         self.lbl_target_val.config(fg=fg_col)
         self.lbl_timer_val.config(fg=fg_col)
-        
+        self.lbl_vol_val.config(fg=fg_col)
+        self.lbl_pwr_val.config(fg=fg_col)
+
         self.scale_temp.config(state=state, fg=fg_col)
         self.scale_timer.config(state=state, fg=fg_col)
+        self.scale_vol.config(state=state, fg=fg_col)
+        self.scale_pwr.config(state=state, fg=fg_col)
 
     def refresh(self):
-        """Called by UI Loop. Force sync only if in Delayed Mode."""
-        if self.sequencer.status == SequenceStatus.DELAYED_WAIT:
+        # 1. Check for Unit Change (Metric <-> Imperial)
+        current_metric = UnitUtils.is_metric(self.settings)
+        if current_metric != self.last_is_metric:
             self._sync_from_sequencer()
+            
+        # 2. Sync if in Delayed Mode (Variables change externally)
+        elif self.sequencer.status == SequenceStatus.DELAYED_WAIT:
+            self._sync_from_sequencer()
+            
+        self._update_prediction()
 
     def _sync_from_sequencer(self):
+        # Update our tracker
+        is_metric = UnitUtils.is_metric(self.settings)
+        self.last_is_metric = is_metric
+        
+        # 1. Fetch Basic Settings (System Units: F, Gal)
         if self.sequencer.status == SequenceStatus.DELAYED_WAIT:
-            t = getattr(self.sequencer, 'delayed_target_temp', 150.0)
+            t_sys = getattr(self.sequencer, 'delayed_target_temp', 150.0)
             m = self.settings.get("manual_mode_settings", "last_timer_min", 60.0)
         else:
-            t = self.settings.get("manual_mode_settings", "last_setpoint_f", 150.0)
+            t_sys = self.settings.get("manual_mode_settings", "last_setpoint_f", 150.0)
             m = self.settings.get("manual_mode_settings", "last_timer_min", 60.0)
-        
-        self.var_target.set(t)
+
+        v_sys = self.settings.get("manual_mode_settings", "last_volume_gal", 6.0)
+
+        # 2. Convert to UI Units & Set Ranges
+        if is_metric:
+            # TEMP: Fahrenheit -> Celsius
+            t_ui = UnitUtils.to_user_temp(t_sys, self.settings)
+            self.scale_temp.config(from_=10, to=100)
+            temp_unit = "°C"
+
+            # VOL: Gallons -> Liters (8-32L, Step 1.0)
+            v_ui = v_sys * 3.78541
+            # Round to nearest 1.0 immediately to prevent float drift
+            v_ui = round(v_ui)
+            
+            self.scale_vol.config(from_=8.0, to=32.0, resolution=1.0)
+            vol_unit = "L"
+            
+            # Clamp Metric Vol
+            if v_ui < 8.0: v_ui = 8.0
+            if v_ui > 32.0: v_ui = 32.0
+            
+        else:
+            # TEMP: Fahrenheit
+            t_ui = t_sys
+            self.scale_temp.config(from_=50, to=212)
+            temp_unit = "°F"
+
+            # VOL: Gallons (2-9 Gal, Step 0.25)
+            v_ui = v_sys
+            # Force snap to nearest 0.25 immediately
+            v_ui = round(v_ui * 4) / 4.0
+            
+            self.scale_vol.config(from_=2.0, to=9.0, resolution=0.25)
+            vol_unit = "Gal"
+
+            # Clamp Imperial Vol
+            if v_ui < 2.0: v_ui = 2.0
+            if v_ui > 9.0: v_ui = 9.0
+
+        # 3. Configure Power
+        watts = self.settings.get("manual_mode_settings", "last_power_watts", 1800)
+        watts_map = [800, 1000, 1400, 1800]
+        try:
+            p_idx = watts_map.index(watts)
+        except ValueError:
+            p_idx = 3
+
+        # 4. Apply to Widgets
+        self.var_target.set(t_ui)
         self.var_timer.set(m)
+        self.var_vol.set(v_ui)
+        self.var_power_idx.set(p_idx)
         
-        # Sync labels with integer formatting
-        self.lbl_target_val.config(text=f"Target: {int(t)}°F")
+        self.lbl_target_val.config(text=f"Target: {int(t_ui)}{temp_unit}")
         self.lbl_timer_val.config(text=f"Timer: {int(m)}m")
+        self.lbl_vol_val.config(text=f"Volume: {v_ui:.2f} {vol_unit}")
+        self.lbl_pwr_val.config(text=f"Power: {watts}W")
+        
+        self._update_prediction()
 
     def _on_temp_slide(self, val):
-        self.lbl_target_val.config(text=f"Target: {int(float(val))}°F")
+        v = float(val)
+        is_metric = UnitUtils.is_metric(self.settings)
+        unit = "°C" if is_metric else "°F"
+        self.lbl_target_val.config(text=f"Target: {int(v)}{unit}")
+        self._update_prediction()
 
     def _on_temp_release(self, event):
         if self.sequencer.status == SequenceStatus.DELAYED_WAIT:
             self._sync_from_sequencer()
             return
-        val = self.var_target.get()
-        self.sequencer.set_manual_target(val)
+            
+        val_ui = self.var_target.get()
+        # Convert UI Value back to System (F)
+        val_sys = UnitUtils.to_system_temp(val_ui, self.settings)
+        self.sequencer.set_manual_target(val_sys)
 
     def _on_timer_slide(self, val):
         self.lbl_timer_val.config(text=f"Timer: {int(float(val))}m")
@@ -1172,82 +1407,212 @@ class ManualPanel(ttk.Frame):
             return
         val = self.var_timer.get()
         self.sequencer.set_manual_timer_duration(val)
+
+    def _on_vol_slide(self, val):
+        v = float(val)
+        is_metric = UnitUtils.is_metric(self.settings)
+        
+        if is_metric:
+            # Enforce snap to 1.0 L for display
+            v_snapped = round(v)
+            unit = "L"
+            text_str = f"{v_snapped:.2f}" # Display as 9.00
+        else:
+            # Enforce snap to 0.25 Gal for display
+            # Even if the slider is slightly off-pixel, we round the math here.
+            v_snapped = round(v * 4) / 4.0
+            unit = "Gal"
+            text_str = f"{v_snapped:.2f}" # Display as 2.25, 2.50, 2.75
+            
+        self.lbl_vol_val.config(text=f"Volume: {text_str} {unit}")
+        self._update_prediction()
+
+    def _on_vol_release(self, event):
+        # Determine current 'visual' value by running the same snap logic
+        val_raw = self.var_vol.get()
+        is_metric = UnitUtils.is_metric(self.settings)
+        
+        if is_metric:
+            val_ui = round(val_raw)
+            # Convert to System (Gal)
+            val_sys = val_ui / 3.78541
+        else:
+            val_ui = round(val_raw * 4) / 4.0
+            # System is Gal
+            val_sys = val_ui
+            
+        # Push the SNAPPED value back to the variable so the slider physically jumps to grid
+        self.var_vol.set(val_ui)
+            
+        if hasattr(self.sequencer, 'set_manual_volume'):
+            self.sequencer.set_manual_volume(val_sys)
+
+    def _on_pwr_slide(self, val):
+        idx = int(val)
+        watts_map = [800, 1000, 1400, 1800]
+        w = watts_map[idx]
+        self.lbl_pwr_val.config(text=f"Power: {w}W")
+        self._update_prediction()
+
+    def _on_pwr_release(self, event):
+        idx = self.var_power_idx.get()
+        watts_map = [800, 1000, 1400, 1800]
+        w = watts_map[idx]
+        if hasattr(self.sequencer, 'set_manual_power'):
+            self.sequencer.set_manual_power(w)
+
+    def _update_prediction(self):
+        if self.sequencer.status != SequenceStatus.MANUAL:
+            return
+
+        if not hasattr(self.sequencer, 'calculate_ramp_minutes'):
+            self.status_var.set("")
+            return
+
+        import time
+        from datetime import datetime
+
+        # Get Current System Temp (Always F)
+        curr_temp_sys = self.sequencer.current_temp if self.sequencer.current_temp else 60.0
+        
+        # Get Target from UI and convert to System (F)
+        target_ui = self.var_target.get()
+        target_sys = UnitUtils.to_system_temp(target_ui, self.settings)
+
+        # Get Volume (Use the snapped variable value)
+        vol_ui = self.var_vol.get()
+        is_metric = UnitUtils.is_metric(self.settings)
+        
+        if is_metric:
+            vol_ui_snapped = round(vol_ui)
+            vol_sys = vol_ui_snapped / 3.78541
+        else:
+            vol_ui_snapped = round(vol_ui * 4) / 4.0
+            vol_sys = vol_ui_snapped
+        
+        # Power
+        idx = self.var_power_idx.get()
+        watts = [800, 1000, 1400, 1800][idx]
+        
+        if target_sys > curr_temp_sys:
+            mins = self.sequencer.calculate_ramp_minutes(curr_temp_sys, target_sys, vol_sys, watts)
+            ready_epoch = time.time() + (mins * 60)
+            dt = datetime.fromtimestamp(ready_epoch)
+            self.status_var.set(f"Ready At: {dt.strftime('%H:%M')}")
+        else:
+            self.status_var.set("Ready At: Now")
+
+    def _schedule_prediction(self):
+        self._update_prediction()
+        self._pred_timer = self.after(5000, self._schedule_prediction)
         
 class DelayedStartActionDialog(tk.Toplevel):
-    """Custom Dialog for Cancel/Edit options."""
-    def __init__(self, parent, on_cancel, on_edit):
+    def __init__(self, parent, on_cancel, on_edit, on_cleanup=None):
         super().__init__(parent)
-        self.title("Cancel Delay")
-        self.geometry("420x180")
+        
+        # 1. HIDE IMMEDIATELY
+        self.withdraw()
+        
+        self.on_cleanup = on_cleanup
+        self.title("Delayed Start Active")
+        self.geometry("400x180")
         self.transient(parent)
         
-        self.on_cancel = on_cancel
-        self.on_edit = on_edit
+        # 2. BIND "X" BUTTON
+        self.protocol("WM_DELETE_WINDOW", self._safe_close)
         
-        # Center it
-        try:
-            x = parent.winfo_rootx() + (parent.winfo_width()//2) - 210
-            y = parent.winfo_rooty() + (parent.winfo_height()//2) - 90
-            self.geometry(f"+{x}+{y}")
-        except:
-            pass
-
-        # UI
-        lbl = ttk.Label(self, text="Cancel the Delayed Start?", font=('Arial', 14, 'bold'))
-        lbl.pack(pady=30)
+        # Layout
+        pad = 20
+        msg = "Delayed Start is currently ACTIVE.\nThe system is waiting to fire the heater.\n\nWhat would you like to do?"
+        ttk.Label(self, text=msg, justify='center', font=('Arial', 11)).pack(pady=pad, padx=pad)
         
         btn_frame = ttk.Frame(self)
-        btn_frame.pack(side='bottom', fill='x', pady=20, padx=10)
+        btn_frame.pack(side='bottom', fill='x', pady=20, padx=20)
         
-        ttk.Button(btn_frame, text="Yes", command=self._do_cancel).pack(side='left', padx=5, expand=True, fill='x')
-        ttk.Button(btn_frame, text="No", command=self._clean_close).pack(side='left', padx=5, expand=True, fill='x')
-        ttk.Button(btn_frame, text="Edit", command=self._do_edit).pack(side='left', padx=5, expand=True, fill='x')
-
-        self.protocol("WM_DELETE_WINDOW", self._clean_close)
-        self.grab_set()
-        self.focus_set()
-
-    def _clean_close(self):
+        # Buttons
+        # "Keep Waiting" is just a close action
+        ttk.Button(btn_frame, text="Keep Waiting", command=self._safe_close).pack(side='right', padx=5)
+        
+        # Edit and Cancel delegate to wrappers
+        ttk.Button(btn_frame, text="Edit Delay", command=lambda: self._do_edit(on_edit)).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Cancel Delay", command=lambda: self._do_cancel(on_cancel)).pack(side='left', padx=5)
+        
+        # 3. Build & Show
+        self.update_idletasks()
         try:
-            self.grab_release()
-            self.master.focus_set()
-        except: pass
-        self.destroy()
-
-    def _do_cancel(self):
-        self._clean_close()
-        self.on_cancel()
-
-    def _do_edit(self):
-        self._clean_close()
-        self.on_edit()
-        
-class DelayedStartPopup(tk.Toplevel):
-    def __init__(self, parent, sequencer, settings, initial_data=None):
-        super().__init__(parent)
-        self.sequencer = sequencer
-        self.settings = settings
-        self.title("Setup Delayed Start")
-        self.geometry("500x380")
-        
-        # Center Window
-        try:
-            x = parent.winfo_rootx() + 50
-            y = parent.winfo_rooty() + 50
+            x = parent.winfo_rootx() + (parent.winfo_width() // 2) - 200
+            y = parent.winfo_rooty() + (parent.winfo_height() // 2) - 90
             self.geometry(f"+{x}+{y}")
         except:
             pass
             
-        self.transient(parent)
-        self.grab_set()
+        self.deiconify()
+        self.lift()
+        self.focus_set()
         
-        # Initialize Vars
+        try:
+            self.grab_set()
+        except:
+            pass
+
+    def _safe_close(self):
+        """Standard teardown for 'X' or 'Keep Waiting'."""
+        try:
+            self.grab_release()
+        except:
+            pass
+        self.destroy()
+        
+        # Clear the reference in UIManager so it knows we are gone
+        if self.on_cleanup:
+            self.on_cleanup()
+
+    def _do_edit(self, callback):
+        """Teardown, then trigger edit logic."""
+        try:
+            self.grab_release()
+        except:
+            pass
+        self.destroy()
+        
+        # Important: clear the OLD reference before the callback creates the NEW one
+        if self.on_cleanup:
+            self.on_cleanup()
+            
+        callback()
+
+    def _do_cancel(self, callback):
+        """Teardown, then trigger cancel logic."""
+        try:
+            self.grab_release()
+        except:
+            pass
+        self.destroy()
+        
+        if self.on_cleanup:
+            self.on_cleanup()
+            
+        callback()
+        
+class DelayedStartPopup(tk.Toplevel):
+    def __init__(self, parent, sequencer, settings, initial_data=None, initial_context=None):
+        super().__init__(parent)
+        
+        # 1. HIDE IMMEDIATELY to prevent rendering race conditions
+        self.withdraw()
+        
+        self.sequencer = sequencer
+        self.settings = settings
+        self.initial_context = initial_context
+        
+        self.title("Setup Delayed Start")
+        self.geometry("500x380")
+        self.transient(parent)
+        
+        # 2. Initialize Variables
         if initial_data:
-            # Pre-fill for Edit Mode
             self.var_vol = tk.StringVar(value=str(initial_data.get('vol', "8.0")))
             self.var_temp = tk.StringVar(value=str(initial_data.get('temp', "154.0")))
-            
-            # Parse the "HH:MM" string back to vars
             rt_str = initial_data.get('time_str', "")
             if ":" in rt_str:
                 parts = rt_str.split(":")
@@ -1258,7 +1623,6 @@ class DelayedStartPopup(tk.Toplevel):
                 self.var_hr = tk.StringVar(value=now.strftime("%H"))
                 self.var_min = tk.StringVar(value=now.strftime("%M"))
         else:
-            # Defaults for New
             self.var_vol = tk.StringVar(value="8.0")
             self.var_temp = tk.StringVar(value="154.0")
             now = datetime.now()
@@ -1266,51 +1630,62 @@ class DelayedStartPopup(tk.Toplevel):
             self.var_hr = tk.StringVar(value=target.strftime("%H"))
             self.var_min = tk.StringVar(value=target.strftime("%M"))
         
+        # 3. Build UI
         self._build_ui()
+        
+        # 4. Center Window (Force geometry update first)
+        self.update_idletasks()
+        try:
+            x = parent.winfo_rootx() + 50
+            y = parent.winfo_rooty() + 50
+            self.geometry(f"+{x}+{y}")
+        except:
+            pass
+            
+        # 5. SAFE SHOW SEQUENCE (Replicates ProfileEditor pattern)
+        # We DO NOT use wait_visibility() here. We show it, then grab it.
+        self.deiconify()
+        self.lift()
+        self.focus_set()
+        
+        try:
+            self.grab_set()
+        except Exception as e:
+            print(f"Warning: DelayedStart grab failed: {e}")
 
     def _build_ui(self):
+        # (This remains unchanged)
         pad = 10
-        
-        # HEADER
         ttk.Label(self, text="Ready-By Timer", font=('Arial', 14, 'bold')).pack(pady=pad)
         
         container = ttk.Frame(self, padding=pad)
         container.pack(fill='both', expand=True)
         
-        # 1. VOLUME
         r1 = ttk.Frame(container)
         r1.pack(fill='x', pady=5)
         ttk.Label(r1, text="Total Water Volume (Gal):", width=25).pack(side='left')
         ttk.Entry(r1, textvariable=self.var_vol, width=8).pack(side='left')
         
-        # 2. TARGET TEMP
         r2 = ttk.Frame(container)
         r2.pack(fill='x', pady=5)
         ttk.Label(r2, text="Target Temperature (°F):", width=25).pack(side='left')
         ttk.Entry(r2, textvariable=self.var_temp, width=8).pack(side='left')
         
-        # 3. READY TIME
         r3 = ttk.Frame(container)
         r3.pack(fill='x', pady=20)
         ttk.Label(r3, text="Have water ready at:", width=20, font=('Arial', 11)).pack(side='left')
         
-        # Simple Spinboxes for 24h Time
         sb_h = ttk.Spinbox(r3, from_=0, to=23, textvariable=self.var_hr, width=3, 
-                           format="%02.0f", wrap=True, font=('Arial', 12))
+                          format="%02.0f", wrap=True, font=('Arial', 12))
         sb_h.pack(side='left')
-        
         ttk.Label(r3, text=":", font=('Arial', 12, 'bold')).pack(side='left', padx=2)
-        
         sb_m = ttk.Spinbox(r3, from_=0, to=59, textvariable=self.var_min, width=3, 
                            format="%02.0f", wrap=True, font=('Arial', 12))
         sb_m.pack(side='left')
-        
         ttk.Label(r3, text="(24h Format)").pack(side='left', padx=10)
 
-        # BUTTONS
         btn_frame = ttk.Frame(self)
         btn_frame.pack(side='bottom', fill='x', pady=10, padx=10)
-        
         ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(side='right', padx=5)
         
         b_start = tk.Button(btn_frame, text="ACTIVATE DELAY", bg='#34495e', fg='white', 
@@ -1325,15 +1700,12 @@ class DelayedStartPopup(tk.Toplevel):
             hr = int(self.var_hr.get())
             mn = int(self.var_min.get())
             
-            # Construct Target Datetime
             now = datetime.now()
             target = now.replace(hour=hr, minute=mn, second=0, microsecond=0)
             
-            # If target is in the past, assume Tomorrow
             if target < now:
                 target = target + timedelta(days=1)
                 
-            # VALIDATION
             diff = target - now
             hours_out = diff.total_seconds() / 3600.0
             
@@ -1345,8 +1717,7 @@ class DelayedStartPopup(tk.Toplevel):
                 messagebox.showerror("Error", "Time is too far (Over 24h).", parent=self)
                 return
                 
-            # EXECUTE
-            self.sequencer.start_delayed_mode(temp, vol, target)
+            self.sequencer.start_delayed_mode(temp, vol, target, from_auto_mode=self.initial_context)
             self.destroy()
             
         except ValueError:

@@ -18,24 +18,34 @@ from utils import UnitUtils
 class SettingsPopup(tk.Toplevel):
     def __init__(self, parent, settings_manager, hardware_interface, relay_control, sequencer):
         super().__init__(parent)
+        
+        # 1. HIDE IMMEDIATELY
+        self.withdraw()
+        
         self.settings = settings_manager
         self.hw = hardware_interface
         self.relay = relay_control
         self.sequencer = sequencer
         self.editor_window = None
         
-        # --- Dirty Flag and Index Tracking ---
         self.system_settings_dirty = False
-        self.suppress_dirty_flag = False # NEW: Prevents programmatic changes from marking dirty
+        self.suppress_dirty_flag = False
         self.original_tab_index = 0 
         self.system_settings_index = -1 
         self.relay_test_index = -1
-        # ---------------------------------------------
-
+        
         self.title("KettleBrain Settings")
         self.geometry("780x440")
         self.transient(parent)
         
+        # 2. Load Data & Build UI
+        self._load_data()
+        self._create_layout()
+        
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        
+        # 3. Center Window
+        self.update_idletasks()
         try:
             x = parent.winfo_rootx() + 10
             y = parent.winfo_rooty() + 10
@@ -43,14 +53,16 @@ class SettingsPopup(tk.Toplevel):
         except:
             pass
         
-        self._load_data()
-        self._create_layout()
-        
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        
-        self.wait_visibility()
-        self.grab_set()
+        # 4. SAFE SHOW SEQUENCE
+        # Removed self.wait_visibility()
+        self.deiconify()
+        self.lift()
         self.focus_set()
+        
+        try:
+            self.grab_set()
+        except Exception as e:
+            print(f"Warning: SettingsPopup grab failed: {e}")
 
     def _cleanup_and_close(self):
         try:
@@ -123,17 +135,22 @@ class SettingsPopup(tk.Toplevel):
         self.notebook.add(self.tab_system, text="System Settings")
         self._build_system_tab()
         
-        # 3. Updates (NEW)
+        # 3. Calibration (NEW)
+        self.tab_calibration = ttk.Frame(self.notebook, padding=15)
+        self.notebook.add(self.tab_calibration, text="Calibration")
+        self._build_calibration_tab()
+        
+        # 4. Updates
         self.tab_updates = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_updates, text="Updates")
         self._build_updates_tab()
         
-        # 4. Relay Test
+        # 5. Relay Test
         self.tab_relay_test = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_relay_test, text="Relay Test")
         self._build_relay_test_tab()
 
-        # 5. Developer
+        # 6. Developer
         self.tab_developer = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_developer, text="Developer")
         self._build_developer_tab()
@@ -589,6 +606,197 @@ class SettingsPopup(tk.Toplevel):
             self._safe_append_log(f"\nError running update utility: {e}\n")
             self.after(0, lambda: self.btn_check_updates.config(state='normal'))
     
+    # --- TAB 3: CALIBRATION ---
+
+    def _build_calibration_tab(self):
+        # 1. Init Variables
+        self.cal_vol_var = tk.StringVar()
+        self.cal_start_temp_var = tk.StringVar()
+        self.cal_end_temp_var = tk.StringVar()
+        self.cal_time_var = tk.StringVar()
+        self.cal_result_var = tk.StringVar(value="--")
+        
+        # Track the raw calculated factor (Fahrenheit) for saving
+        self.cal_calculated_factor_f = None
+
+        content = ttk.Frame(self.tab_calibration)
+        content.pack(fill='both', expand=True)
+        
+        # --- SECTION 1: Current Factor (Top) ---
+        info_frame = ttk.LabelFrame(content, text="Current Configuration", padding=10)
+        info_frame.pack(fill='x', pady=(0, 10))
+        
+        self.lbl_current_factor = ttk.Label(info_frame, text="Loading...", font=('Arial', 11, 'bold'))
+        self.lbl_current_factor.pack(anchor='w')
+        
+        ttk.Label(info_frame, text="(Used for Delayed Start calculations)", 
+                 font=('Arial', 9, 'italic')).pack(anchor='w', pady=(2,0))
+        
+        self._refresh_calibration_label()
+
+        # --- SECTION 2: Calculator (Main Area) ---
+        calc_frame = ttk.LabelFrame(content, text="Calculate Temperature Rise Factor", padding=10)
+        calc_frame.pack(fill='both', expand=True, pady=(0, 5))
+        
+        # Instructions (Top of Calculator)
+        is_metric = UnitUtils.is_metric(self.settings)
+        units_vol = "Liters" if is_metric else "Gallons"
+        units_temp = "°C" if is_metric else "°F"
+        
+        instr = (f"Heat 3-4 {units_vol} of water to ~120{units_temp} using Manual Mode.\n"
+                 "Enter the results below to calculate your system's efficiency.")
+        ttk.Label(calc_frame, text=instr, justify='left').pack(anchor='w', pady=(0, 10))
+
+        # --- SPLIT CONTAINER (Inputs Left / Buttons Right) ---
+        split_frame = ttk.Frame(calc_frame)
+        split_frame.pack(fill='both', expand=True)
+
+        # LEFT COLUMN: Inputs
+        input_pane = ttk.Frame(split_frame)
+        input_pane.pack(side='left', fill='both', expand=True, padx=(0, 10))
+        
+        row = 0
+        pad = 5
+        
+        ttk.Label(input_pane, text=f"Start Volume ({units_vol}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad)
+        ttk.Entry(input_pane, textvariable=self.cal_vol_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad)
+        
+        row += 1
+        ttk.Label(input_pane, text=f"Start Temp ({units_temp}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad)
+        ttk.Entry(input_pane, textvariable=self.cal_start_temp_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad)
+        
+        row += 1
+        ttk.Label(input_pane, text=f"End Temp ({units_temp}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad)
+        ttk.Entry(input_pane, textvariable=self.cal_end_temp_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad)
+        
+        row += 1
+        ttk.Label(input_pane, text="Elapsed Min:").grid(row=row, column=0, sticky='e', padx=pad, pady=pad)
+        ttk.Entry(input_pane, textvariable=self.cal_time_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad)
+
+        # RIGHT COLUMN: Actions
+        action_pane = ttk.Frame(split_frame)
+        action_pane.pack(side='right', fill='both', expand=False, padx=(10, 0))
+        
+        # Calculate Button
+        ttk.Button(action_pane, text="Calculate Heat Rise", command=self._calculate_calibration).pack(fill='x', pady=(0, 10))
+        
+        # Result Display (Centered in action pane)
+        lbl_res_title = ttk.Label(action_pane, text="Calculated Result:", font=('Arial', 9))
+        lbl_res_title.pack(anchor='center')
+        
+        lbl_res_val = ttk.Label(action_pane, textvariable=self.cal_result_var, foreground='#0044CC', font=('Arial', 11, 'bold'))
+        lbl_res_val.pack(anchor='center', pady=(0, 15))
+        
+        # Update Button
+        self.btn_update_cal = ttk.Button(action_pane, text="Update Factor", state='disabled', command=self._apply_calibration)
+        self.btn_update_cal.pack(fill='x', pady=(0, 5))
+        
+        # Restore Button
+        ttk.Button(action_pane, text="Restore Default", command=self._restore_calibration_default).pack(fill='x')
+
+        # --- SECTION 3: Bottom Close Button ---
+        btn_frame = ttk.Frame(self.tab_calibration)
+        btn_frame.pack(side='bottom', fill='x', pady=5)
+        
+        ttk.Button(btn_frame, text="Close", command=self._on_close).pack(side='right')
+        
+    def _refresh_calibration_label(self):
+        """Reads the current setting and formats it for display."""
+        raw_f = self.settings.get_system_setting("heater_ref_rate_fpm", 1.2)
+        ref_vol = self.settings.get_system_setting("heater_ref_volume_gal", 8.0)
+        
+        if UnitUtils.is_metric(self.settings):
+            # Convert F per min -> C per min
+            # Delta C = Delta F * 5/9
+            val_c = raw_f * 5.0 / 9.0
+            
+            # Display Vol in L? Usually kept as "Ref Volume" constant, 
+            # but user prompt said "with 8 gallons". We will stick to the prompt's text 
+            # for the constant part to avoid confusion, or convert if strict metric desired.
+            # Prompt: "with 8 gallons in vessel (programming note, this is a constant)"
+            
+            self.lbl_current_factor.config(text=f"{val_c:.2f}°C per minute (Ref: 8 Gallons)")
+        else:
+            self.lbl_current_factor.config(text=f"{raw_f:.2f}°F per minute (Ref: 8 Gallons)")
+
+    def _calculate_calibration(self):
+        try:
+            # 1. Get Inputs
+            vol = float(self.cal_vol_var.get())
+            start_t = float(self.cal_start_temp_var.get())
+            end_t = float(self.cal_end_temp_var.get())
+            mins = float(self.cal_time_var.get())
+            
+            if mins <= 0:
+                messagebox.showerror("Error", "Time must be greater than 0.", parent=self)
+                return
+
+            # 2. Convert to Standard Units (Gallons, F) if Metric
+            is_metric = UnitUtils.is_metric(self.settings)
+            
+            if is_metric:
+                # L -> Gal
+                vol_gal = vol * 0.264172
+                # C -> F
+                start_f = (start_t * 9.0/5.0) + 32
+                end_f = (end_t * 9.0/5.0) + 32
+            else:
+                vol_gal = vol
+                start_f = start_t
+                end_f = end_t
+                
+            # 3. Calculate Actual Rate (Delta T / Time)
+            delta_temp = end_f - start_f
+            if delta_temp <= 0:
+                messagebox.showerror("Error", "Ending temperature must be higher than starting temperature.", parent=self)
+                return
+                
+            actual_rate_fpm = delta_temp / mins
+            
+            # 4. Normalize to Reference Volume (8.0 Gal)
+            # Logic: Rate * (TestVol / RefVol)
+            # Example: 2.0 F/min at 4gal -> 2.0 * (4/8) = 1.0 F/min at 8gal
+            ref_vol = self.settings.get_system_setting("heater_ref_volume_gal", 8.0)
+            normalized_rate_fpm = actual_rate_fpm * (vol_gal / ref_vol)
+            
+            # Store internally for saving
+            self.cal_calculated_factor_f = normalized_rate_fpm
+            
+            # 5. Display Result
+            if is_metric:
+                norm_c = normalized_rate_fpm * 5.0 / 9.0
+                self.cal_result_var.set(f"{norm_c:.2f}°C per minute (Ref: 8 Gal)")
+            else:
+                self.cal_result_var.set(f"{normalized_rate_fpm:.2f}°F per minute (Ref: 8 Gal)")
+                
+            # Enable Update Button
+            self.btn_update_cal.config(state='normal')
+            
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter valid numeric values.", parent=self)
+
+    def _apply_calibration(self):
+        if self.cal_calculated_factor_f is None: return
+        
+        # Save to settings
+        self.settings.set_system_setting("heater_ref_rate_fpm", self.cal_calculated_factor_f)
+        
+        messagebox.showinfo("Success", "Calibration factor updated.", parent=self)
+        
+        # Refresh UI
+        self._refresh_calibration_label()
+        
+        # Reset Form
+        self.cal_calculated_factor_f = None
+        self.btn_update_cal.config(state='disabled')
+        self.cal_result_var.set("--")
+
+    def _restore_calibration_default(self):
+        if messagebox.askyesno("Confirm", "Restore default calibration factor (1.2°F/min)?", parent=self):
+            self.settings.set_system_setting("heater_ref_rate_fpm", 1.2)
+            self._refresh_calibration_label()
+            messagebox.showinfo("Restored", "Default calibration restored.", parent=self)
+            
     def _build_developer_tab(self):
         content_frame = ttk.Frame(self.tab_developer)
         content_frame.pack(fill='both', expand=True)
