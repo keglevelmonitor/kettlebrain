@@ -1016,7 +1016,10 @@ class UIManager:
             if hasattr(self, 'btn_mode_auto'): self._disable_custom_btn(self.btn_mode_auto)
             if hasattr(self, 'btn_mode_manual'): self._disable_custom_btn(self.btn_mode_manual)
             self.view_manual.set_enabled(False)
-            
+
+            # ### NEW LINE HERE: Force the big green digits to update ###
+            self.timer_var.set(self.sequencer.get_display_timer())
+                        
             self._update_indicators(st, time.time())
             return 
         else:
@@ -1508,6 +1511,13 @@ class ManualPanel(ttk.Frame):
             self.sequencer.set_manual_power(w)
 
     def _update_prediction(self):
+        # 1. SPECIAL CASE: DELAYED WAIT
+        # If we are waiting, show the exact target time from the sequencer logic
+        if self.sequencer.status == SequenceStatus.DELAYED_WAIT:
+            ready_str = getattr(self.sequencer, 'delayed_ready_time_str', "--:--")
+            self.status_var.set(f"Ready At: {ready_str}")
+            return
+
         if self.sequencer.status != SequenceStatus.MANUAL:
             return
 
@@ -1547,9 +1557,10 @@ class ManualPanel(ttk.Frame):
             self.status_var.set(f"Ready At: {dt.strftime('%H:%M')}")
         else:
             self.status_var.set("Ready At: Now")
-
+            
     def _schedule_prediction(self):
         self._update_prediction()
+        # Run again in 5 seconds
         self._pred_timer = self.after(5000, self._schedule_prediction)
         
 class DelayedStartActionDialog(tk.Toplevel):
@@ -1843,3 +1854,4 @@ class CustomConfirmDialog(tk.Toplevel):
     def _on_no(self):
         print("[UI] Dialog: NO clicked") # DEBUG
         self.destroy()
+

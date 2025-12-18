@@ -332,8 +332,7 @@ class SequenceManager:
         Calculates when to fire the heater so water is ready at ready_time_dt.
         Enters DELAYED_WAIT state.
         
-        :param from_auto_mode: If set (True/False), forces the context flag. 
-                               Used when editing an existing delay to preserve context.
+        Sets Manual Mode defaults (30m timer, 1800W) immediately so UI reflects the pending state.
         """
         # 1. Determine Context (Auto vs Manual)
         if from_auto_mode is not None:
@@ -367,19 +366,26 @@ class SequenceManager:
         start_epoch = ready_epoch - (duration_min * 60)
         
         # --- STORE DATA ---
+        self.delayed_ready_epoch = ready_epoch 
         self.delayed_start_epoch = start_epoch
         self.delayed_target_temp = float(target_temp)
         self.delayed_vol = float(volume_gal) 
         self.delayed_ready_time_str = ready_time_dt.strftime("%H:%M")
         self.delayed_start_time_str = datetime.fromtimestamp(start_epoch).strftime("%H:%M")
         
-        # Update Manual Mode Setpoint immediately
+        # --- UPDATE MANUAL SETTINGS IMMEDIATELY ---
+        # This ensures the UI sliders (Target, Timer, Power, Vol) update visually 
+        # to match what will happen when the delay triggers.
         self.set_manual_target(self.delayed_target_temp)
+        self.set_manual_volume(self.delayed_vol)
+        self.set_manual_timer_duration(30.0) # User Requested Default: 30 minutes
+        self.set_manual_power(1800)          # User Requested Default: 1800W
         
         self.status = SequenceStatus.DELAYED_WAIT
         print(f"[Sequence] Delayed Start Set (Auto Context: {self.delayed_is_auto}).")
         print(f"   Ready By: {self.delayed_ready_time_str}")
         print(f"   Heater Fires At: {self.delayed_start_time_str}")
+        print(f"   Configured Manual Mode: {self.delayed_target_temp}F, 30min, 1800W")
         
         self._save_recovery_snapshot()
 
@@ -400,8 +406,8 @@ class SequenceManager:
         """Returns the dynamic lines for the UI button."""
         if self.status != SequenceStatus.DELAYED_WAIT: return ""
         # The UI will prepend "DELAY ACTIVE" and "SLEEPING"
-        return f"Ready at: {self.delayed_ready_time_str}\nHeat starts at: {self.delayed_start_time_str}"
-
+        # REVERSED ORDER: Heat starts first, then Ready time
+        return f"Heat starts at: {self.delayed_start_time_str}\nReady at: {self.delayed_ready_time_str}"
     # --- MANUAL MODE METHODS ---
     
     # [Add setters for new manual controls]
@@ -473,6 +479,8 @@ class SequenceManager:
         pass 
 
     def _control_loop(self):
+        last_delay_calc = 0.0  # Track last recalculation time
+
         while not self._stop_event.is_set():
             time.sleep(0.1) 
             try:
@@ -487,11 +495,45 @@ class SequenceManager:
 
             # --- DELAYED START WAIT ---
             if self.status == SequenceStatus.DELAYED_WAIT:
-                # 1. Check if it's time to wake up
-                if time.time() >= self.delayed_start_epoch:
-                    print("[Sequence] Delayed Wait Over. Firing Heater (Transition to Manual Hold).")
+                now = time.time()
+                
+                # ADAPTIVE RECALCULATION (Every 30 seconds)
+                if now - last_delay_calc > 30.0:
+                    last_delay_calc = now
+                    
+                    # 1. Get Constants
+                    ref_vol = self.settings.get_system_setting("heater_ref_volume_gal", 8.0)
+                    ref_rate = self.settings.get_system_setting("heater_ref_rate_fpm", 1.2)
+                    
+                    # 2. Re-calculate rate based on stored volume
+                    try:
+                        adj_rate = ref_rate * (ref_vol / self.delayed_vol)
+                    except:
+                        adj_rate = ref_rate
+
+                    # 3. Calculate Rise needed from CURRENT temp
+                    current = self.current_temp if self.current_temp else 60.0
+                    rise = self.delayed_target_temp - current
+                    if rise < 0: rise = 0
+                    
+                    # 4. New Duration & Start Time
+                    duration_min = rise / adj_rate
+                    new_start_epoch = self.delayed_ready_epoch - (duration_min * 60)
+                    
+                    # 5. Update State
+                    self.delayed_start_epoch = new_start_epoch
+                    self.delayed_start_time_str = datetime.fromtimestamp(new_start_epoch).strftime("%H:%M")
+                    
+                # CHECK TRIGGER
+                if now >= self.delayed_start_epoch:
+                    print(f"[Sequence] Delayed Wait Over (Start Time: {self.delayed_start_time_str}). Firing Heater.")
+                    
+                    # Transition to Manual Mode
+                    # Since we pre-set the settings (30m, 1800W) in start_delayed_mode, 
+                    # enter_manual_mode will load those exact values.
                     self.enter_manual_mode()
-                    self.set_manual_target(self.delayed_target_temp)
+                    
+                    # Turn on the heater to begin the "Hold" process
                     self.toggle_manual_heater(True)
                 else:
                     # Keep relays off while sleeping
@@ -588,6 +630,7 @@ class SequenceManager:
         # 1. SAVE DELAY STATE
         if self.status == SequenceStatus.DELAYED_WAIT:
             state["mode_type"] = "DELAY"
+            state["delayed_ready_epoch"] = getattr(self, 'delayed_ready_epoch', 0) # <--- NEW
             state["delayed_start_epoch"] = getattr(self, 'delayed_start_epoch', 0)
             state["delayed_target_temp"] = getattr(self, 'delayed_target_temp', 0)
             state["delayed_vol"] = getattr(self, 'delayed_vol', 0)
@@ -648,6 +691,7 @@ class SequenceManager:
             
             # 1. Restore Variables
             self.delayed_is_auto = state_dict.get("delayed_is_auto", True)
+            self.delayed_ready_epoch = state_dict.get("delayed_ready_epoch", 0) # <--- NEW
             self.delayed_start_epoch = state_dict.get("delayed_start_epoch", 0)
             self.delayed_target_temp = state_dict.get("delayed_target_temp", 0)
             self.delayed_vol = state_dict.get("delayed_vol", 0)
@@ -702,7 +746,7 @@ class SequenceManager:
             # Only turn on if it was on previously
             if was_heating:
                 self.toggle_manual_heater(True)
-            
+
             return
 
         # --- RESTORE PROFILE ---
@@ -891,7 +935,19 @@ class SequenceManager:
         if self.status in [SequenceStatus.IDLE, SequenceStatus.COMPLETED]: 
             return "0:00:00"
 
-        # 2. Handle MANUAL MODE (New Logic)
+        # 2. Handle DELAYED_WAIT (Preview the pending manual timer)
+        if self.status == SequenceStatus.DELAYED_WAIT:
+            # We want to show the full duration (e.g. 30:00) that will start later
+            total_sec = getattr(self, 'manual_timer_duration', 1800.0)
+            
+            val = math.ceil(total_sec)
+            h = int(val // 3600)
+            rem_h = val % 3600
+            m = int(rem_h // 60)
+            s = int(rem_h % 60)
+            return f"{h}:{m:02d}:{s:02d}"
+
+        # 3. Handle MANUAL MODE (New Logic)
         if self.status == SequenceStatus.MANUAL:
             # Get the duration set by the slider (defaulting to 60m if missing)
             total_sec = getattr(self, 'manual_timer_duration', 3600.0)
@@ -919,7 +975,7 @@ class SequenceManager:
             s = int(rem_h % 60)
             return f"{h}:{m:02d}:{s:02d}"
 
-        # 3. Handle AUTO PROFILE MODE (Existing Logic)
+        # 4. Handle AUTO PROFILE MODE (Existing Logic)
         if not self.current_profile: return "0:00:00"
 
         # Calculating Total Duration for the "Heater Active but Timer Waiting" phase
@@ -940,7 +996,7 @@ class SequenceManager:
         if self.status == SequenceStatus.RUNNING:
             is_live = True
         elif self.status == SequenceStatus.WAITING_FOR_USER:
-            if self.last_pause_start == 0:
+             if self.last_pause_start == 0:
                 is_live = True
 
         if is_live:
