@@ -391,18 +391,21 @@ class SettingsPopup(tk.Toplevel):
         
         ttk.Label(lbl_frame, text="Select ID:").pack(side='left')
         
-        available_sensors = self.hw.scan_available_sensors()
-        if not available_sensors:
-            available_sensors = ["unassigned"]
-        else:
-            if "unassigned" not in available_sensors:
-                available_sensors.insert(0, "unassigned")
+        # 1. Fast Init: Populate ONLY with current setting to allow instant window opening
+        current_id = self.temp_sensor_var.get()
+        initial_values = ["unassigned"]
+        if current_id and current_id != "unassigned":
+            initial_values.insert(0, current_id)
                 
-        self.combo_sensor = ttk.Combobox(lbl_frame, textvariable=self.temp_sensor_var, values=available_sensors, state="readonly", width=25)
+        self.combo_sensor = ttk.Combobox(lbl_frame, textvariable=self.temp_sensor_var, values=initial_values, state="readonly", width=25)
         self.combo_sensor.pack(side='left', padx=10)
         self.temp_sensor_var.trace_add("write", self._set_dirty)
         
-        ttk.Button(lbl_frame, text="Refresh", command=self._refresh_sensors).pack(side='left')
+        ttk.Button(lbl_frame, text="Scan/Refresh", command=self._refresh_sensors).pack(side='left')
+        
+        # 2. Lazy Load: Automatically trigger the scan 500ms AFTER the window opens.
+        # This prevents the button freeze but ensures sensors are found automatically.
+        self.after(500, lambda: self._refresh_sensors() if self.winfo_exists() else None)
         
         # --- GENERAL CONFIG ---
         gen_frame = ttk.LabelFrame(content_frame, text="Configuration", padding=5)
@@ -448,8 +451,7 @@ class SettingsPopup(tk.Toplevel):
         vol_scale.set(80) 
         vol_scale.pack(side='left', fill='x', expand=True, padx=5)
 
-        # --- NEW: Bind mouse release to sound preview ---
-        # This triggers only when the user lets go of the slider handle
+        # Bind mouse release to sound preview
         vol_scale.bind("<ButtonRelease-1>", self._on_volume_release)
         
         # Numlock 

@@ -150,7 +150,13 @@ class UIManager:
         except: pass
 
         current_stat = self.sequencer.status
+        
+        # Check Auto States
         is_active = current_stat in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]
+
+        # FIX: Check Manual State (Only if heaters/timer are actually running)
+        if current_stat == SequenceStatus.MANUAL and self.sequencer.is_manual_running:
+            is_active = True
         
         # Define the actual switch logic
         def perform_switch():
@@ -600,7 +606,12 @@ class UIManager:
         elif st == SequenceStatus.PAUSED:
             self.sequencer.resume_sequence() # FIXED: Was .resume()
         elif st == SequenceStatus.WAITING_FOR_USER:
-            self.sequencer.advance_step()
+            # FIX: Distinguish between Step Completion and Mid-Step Alerts
+            if self.sequencer.current_alert_text == "Step Complete":
+                self.sequencer.advance_step()
+            else:
+                # Just an alert: Resume the timer/process
+                self.sequencer.resume_sequence()
 
     def _show_no_profile_dialog(self):
         dlg = tk.Toplevel(self.root)
@@ -694,7 +705,12 @@ class UIManager:
 
         # --- AUTO STOP LOGIC ---
         def do_auto_stop():
-            self.sequencer.stop() # Resets everything to IDLE
+            # FIX: Use reset_profile() to rewind to Step 0 and clear alerts
+            # instead of just stopping (which leaves Index at -1).
+            self.sequencer.reset_profile() 
+            
+            # Force immediate UI update to show Step 1 pending
+            self.update_ui_from_state()
 
         self._current_dialog = CustomConfirmDialog(
             self.root, 
@@ -888,6 +904,35 @@ class UIManager:
     def update_ui_from_state(self):
         import time 
         
+        # --- NEW: Periodic Prediction Refresh (Every 5s) ---
+        # Initialize timer if it doesn't exist
+        if not hasattr(self, 'last_pred_refresh'): self.last_pred_refresh = 0
+        
+        now = time.time()
+        if now - self.last_pred_refresh > 30.0: # changed from 5.0 sec to 30 sec
+            if self.sequencer.current_profile:
+                # 1. Run the math
+                self.sequencer.update_predictions()
+                
+                # 2. Lightweight Update: Only change the 'Ready At' column (Index 4)
+                for i, step in enumerate(self.sequencer.current_profile.steps):
+                    iid = str(i)
+                    if self.step_list.exists(iid):
+                        # Get current values tuple
+                        current_vals = self.step_list.item(iid, "values")
+                        new_ready = getattr(step, 'predicted_ready_time', "")
+                        
+                        # Only update if changed (prevents flickering)
+                        # Treeview values index 4 is 'Ready At'
+                        if current_vals and len(current_vals) > 4:
+                            if str(current_vals[4]) != str(new_ready):
+                                # Convert tuple to list to modify
+                                new_vals_list = list(current_vals)
+                                new_vals_list[4] = new_ready
+                                self.step_list.item(iid, values=new_vals_list)
+            self.last_pred_refresh = now
+        # ---------------------------------------------------
+        
         t = self.sequencer.current_temp
         st = self.sequencer.status
         tgt = self.sequencer.get_target_temp()
@@ -1013,7 +1058,7 @@ class UIManager:
 
         self.lbl_addition.pack(side='top', anchor='center') 
 
-        # --- 5. STEP LIST REFRESH ---
+        # --- 5. STEP LIST REFRESH (Visual Tags Only) ---
         if st != SequenceStatus.MANUAL:
             current_idx = self.sequencer.current_step_index
             profile = self.sequencer.current_profile
@@ -1060,6 +1105,7 @@ class UIManager:
                             for j, child_iid in enumerate(children):
                                 if j < len(sorted_adds):
                                     add_obj = sorted_adds[j]
+                                    
                                     if child_iid == active_cursor_iid:
                                         if is_mid_step_alert:
                                             self.step_list.item(child_iid, tags=('alert_step',))
@@ -1071,7 +1117,7 @@ class UIManager:
                                         self.step_list.item(child_iid, tags=('pending_step',))
                         else:
                              for child_iid in children:
-                                self.step_list.item(child_iid, tags=('pending_step',))
+                                  self.step_list.item(child_iid, tags=('pending_step',))
 
                 if active_cursor_iid != self.last_active_iid:
                     try:
