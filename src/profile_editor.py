@@ -17,6 +17,9 @@ class AdditionsDialog(tk.Toplevel):
         self.geometry("400x300")
         self.transient(parent)
         
+        # SAFETY PATTERN V3: Topmost to float over Editor
+        self.attributes('-topmost', True)
+        
         self.additions = additions_list 
         self.editing_index = None    
         
@@ -32,7 +35,8 @@ class AdditionsDialog(tk.Toplevel):
             pass
 
         self.deiconify()
-        self.focus_set()
+        self.lift()
+        self.focus_force()
         self.protocol("WM_DELETE_WINDOW", self.close)
 
     def close(self):
@@ -138,6 +142,9 @@ class ProfileEditor(tk.Toplevel):
         self.geometry("780x440")
         self.transient(parent)
         
+        # SAFETY PATTERN V3: Topmost, No Grabs
+        self.attributes('-topmost', True)
+        
         self.profile = profile
         self.settings = settings_manager
         self.on_save = on_save_callback
@@ -165,16 +172,13 @@ class ProfileEditor(tk.Toplevel):
         except:
             pass
 
-        self.focus_set()
-        self.grab_set() 
+        self.deiconify()
         self.lift()
-        self.deiconify() 
+        self.focus_force() 
 
     def close(self):
         try:
-            # Explicitly release grab (if any)
-            self.grab_release()
-            # CRITICAL: Force focus back to the parent (ProfileEditor)
+            # No grab_release needed
             if self.master:
                 self.master.focus_set()
         except:
@@ -293,8 +297,16 @@ class ProfileEditor(tk.Toplevel):
         self.lbl_temp = ttk.Label(f, text=t_label)
         self.lbl_temp.grid(row=row, column=0, sticky='e', padx=pad_x, pady=pad_y)
         
-        self.ent_temp = ttk.Entry(f, textvariable=self.var_temp, width=8)
-        self.ent_temp.grid(row=row, column=1, sticky='w', padx=pad_x, pady=pad_y)
+        # Temp Container to hold Entry AND the new Boiling Label
+        self.frm_temp = ttk.Frame(f)
+        self.frm_temp.grid(row=row, column=1, sticky='w', padx=pad_x, pady=pad_y)
+        
+        self.ent_temp = ttk.Entry(self.frm_temp, textvariable=self.var_temp, width=8)
+        self.ent_temp.pack(side='left')
+        
+        # NEW: Boiling Indicator (Hidden by default)
+        self.lbl_boiling_indicator = ttk.Label(self.frm_temp, text="BOILING", foreground='red', font=('Arial', 9, 'bold'))
+        # We don't pack it yet; _on_type_change handles visibility
         
         self.lbl_dur = ttk.Label(f, text="Duration (min):")
         self.lbl_dur.grid(row=row, column=2, sticky='e', padx=pad_x, pady=pad_y)
@@ -353,7 +365,7 @@ class ProfileEditor(tk.Toplevel):
         self.txt_note.grid(row=row, column=1, columnspan=3, sticky='ew', padx=pad_x, pady=pad_y)
         row += 1
         
-        # --- ROW 6: Alerts Preview (REDUCED to 5 lines) ---
+        # --- ROW 6: Alerts Preview ---
         ttk.Label(f, text="Alerts:").grid(row=row, column=0, sticky='ne', padx=pad_x, pady=pad_y)
         self.lb_alerts_preview = tk.Listbox(f, height=5, font=('Arial', 10), bg='white', bd=1, relief='sunken')
         self.lb_alerts_preview.grid(row=row, column=1, columnspan=3, sticky='ew', padx=pad_x, pady=pad_y)
@@ -459,11 +471,18 @@ class ProfileEditor(tk.Toplevel):
         self.var_name.set(step.name)
         self.var_type.set(step.step_type.value) 
         
+        # --- TYPE CHANGE LOGIC TRIGGER ---
+        # We manually trigger this to ensure Boil Steps get locked/labeled correctly on load
+        self._on_type_change() 
+        # ---------------------------------
+        
         if step.setpoint_f is not None:
             user_t = UnitUtils.to_user_temp(step.setpoint_f, self.settings)
             self.var_temp.set(f"{user_t:.1f}")
         else:
-            self.var_temp.set("")
+            # If it's a BOIL step but somehow has no setpoint, defaults are handled by _on_type_change
+            if step.step_type != StepType.BOIL:
+                self.var_temp.set("")
         
         self.var_duration.set(str(step.duration_min) if step.duration_min is not None else "")
         
@@ -477,8 +496,6 @@ class ProfileEditor(tk.Toplevel):
             self.var_volume.set("")
             
         self.var_timeout.set(step.timeout_behavior.value)
-        
-        # REMOVED DELAYED_START LOADING BLOCK
         
         self.txt_note.delete('1.0', tk.END)
         self.txt_note.insert('1.0', step.note)
@@ -556,16 +573,28 @@ class ProfileEditor(tk.Toplevel):
         self.ent_dur.pack(fill='x', expand=True)
         self.frm_delay.pack_forget()
 
-        # REMOVED DELAYED_START BLOCK HERE
+        # Hide Boiling label by default
+        self.lbl_boiling_indicator.pack_forget()
 
         if t == StepType.BOIL:
-            self._set_state(self.ent_temp, True)
-            if self.var_temp.get() == "":
-                is_metric = UnitUtils.is_metric(self.settings)
-                self.var_temp.set("100" if is_metric else "212")
+            # 1. Disable Temp Entry
+            self._set_state(self.ent_temp, False)
+            
+            # 2. Set to System Boil Temp
+            sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
+            
+            # Convert to user units if needed
+            user_boil = UnitUtils.to_user_temp(sys_boil, self.settings)
+            
+            is_metric = UnitUtils.is_metric(self.settings)
+            self.var_temp.set(f"{user_boil:.1f}")
+            
+            # 3. Show Boiling Label
+            self.lbl_boiling_indicator.pack(side='left', padx=(5, 0))
             
         elif t == StepType.CHILL:
             self._set_state(self.cb_pwr, False)
+            self.var_power_idx = tk.IntVar(value=3) # Logic handled elsewhere, just visual
             self.var_power.set("")
 
     def _set_state(self, widget, enabled):
@@ -634,7 +663,7 @@ class ProfileEditor(tk.Toplevel):
                 self.on_save(self.profile)
             
             try:
-                self.grab_release()
+                # No grab_release needed
                 if self.master:
                     self.master.focus_set()
             except:

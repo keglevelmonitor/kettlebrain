@@ -38,6 +38,9 @@ class SettingsPopup(tk.Toplevel):
         self.geometry("780x440")
         self.transient(parent)
         
+        # SAFETY PATTERN V3: Topmost, No Grabs
+        self.attributes('-topmost', True)
+        
         # 2. Load Data & Build UI
         self._load_data()
         self._create_layout()
@@ -54,19 +57,13 @@ class SettingsPopup(tk.Toplevel):
             pass
         
         # 4. SAFE SHOW SEQUENCE
-        # Removed self.wait_visibility()
         self.deiconify()
         self.lift()
-        self.focus_set()
+        self.focus_force()
         
-        try:
-            self.grab_set()
-        except Exception as e:
-            print(f"Warning: SettingsPopup grab failed: {e}")
-
     def _cleanup_and_close(self):
         try:
-            self.grab_release()
+            # No grab_release needed
             if self.master:
                 self.master.focus_set()
         except:
@@ -78,44 +75,69 @@ class SettingsPopup(tk.Toplevel):
         # 1. Fetch values from SettingsManager
         units = self.settings.get_system_setting("units", "imperial")
         sensor = self.settings.get_system_setting("temp_sensor_id", "unassigned")
-        alt = str(self.settings.get_system_setting("altitude_ft", "0"))
-        numlock = self.settings.get_system_setting("force_numlock", True)
         
-        # NEW: Dev Mode
-        dev_mode = self.settings.get_system_setting("dev_mode", False)
+        # CHANGED: Load Boil Temp instead of Altitude
+        boil = str(self.settings.get_system_setting("boil_temp_f", "212"))
+        
+        numlock = self.settings.get_system_setting("force_numlock", True)
         
         auto_start = self.settings.get_system_setting("auto_start_enabled", True)
         auto_resume = self.settings.get_system_setting("auto_resume_enabled", False)
-
+        csv_logging = self.settings.get_system_setting("enable_csv_logging", False)
+        
         # 2. Suppress dirty flag while loading/reverting
         self.suppress_dirty_flag = True
 
         try:
+            # SECTION: NO SPARGE SETTINGS
+            # We fetch these individually to avoid hash errors with SettingsManager.get()
+            ns_grain_wt = self.settings.get("no_sparge_settings", "grain_weight", 10.0)
+            ns_grain_temp = self.settings.get("no_sparge_settings", "grain_temp", 65.0)
+            ns_mash_temp = self.settings.get("no_sparge_settings", "mash_temp", 152.0)
+            ns_target_vol = self.settings.get("no_sparge_settings", "target_vol", 5.5)
+            ns_boil_time = self.settings.get("no_sparge_settings", "boil_time", 60.0)
+            ns_boiloff = self.settings.get("no_sparge_settings", "boiloff_rate", 0.5)
+            ns_trub = self.settings.get("no_sparge_settings", "trub_loss", 0.25)
+            ns_abs = self.settings.get("no_sparge_settings", "abs_rate", 0.6)
+
             if hasattr(self, 'units_var'):
                 self.units_var.set(units)
                 self.temp_sensor_var.set(sensor)
-                self.altitude_var.set(alt)
+                self.boil_temp_var.set(boil) # CHANGED
                 self.numlock_var.set(numlock)
-                self.dev_mode_var.set(dev_mode) # Update existing
                 self.auto_start_var.set(auto_start)
                 self.auto_resume_var.set(auto_resume)
+                self.csv_log_var.set(csv_logging)
                 
-                self.relay_h1_var.set(False)
-                self.relay_h2_var.set(False)
-                self.relay_aux_var.set(False)
+                # Calc Vars
+                self.calc_grain_wt.set(ns_grain_wt)
+                self.calc_grain_temp.set(ns_grain_temp)
+                self.calc_mash_temp.set(ns_mash_temp)
+                self.calc_target_vol.set(ns_target_vol)
+                self.calc_boil_time.set(ns_boil_time)
+                self.calc_boiloff.set(ns_boiloff)
+                self.calc_trub.set(ns_trub)
+                self.calc_abs.set(ns_abs)
+                
             else:
                 self.units_var = tk.StringVar(value=units)
                 self.temp_sensor_var = tk.StringVar(value=sensor)
-                self.altitude_var = tk.StringVar(value=alt)
+                self.boil_temp_var = tk.StringVar(value=boil) # CHANGED
                 self.numlock_var = tk.BooleanVar(value=numlock)
-                self.dev_mode_var = tk.BooleanVar(value=dev_mode) # Create new
-                
                 self.auto_start_var = tk.BooleanVar(value=auto_start)
                 self.auto_resume_var = tk.BooleanVar(value=auto_resume)
+                self.csv_log_var = tk.BooleanVar(value=csv_logging)
                 
-                self.relay_h1_var = tk.BooleanVar(value=False)
-                self.relay_h2_var = tk.BooleanVar(value=False)
-                self.relay_aux_var = tk.BooleanVar(value=False)
+                # Init Calc Vars (First Run)
+                self.calc_grain_wt = tk.DoubleVar(value=ns_grain_wt)
+                self.calc_grain_temp = tk.DoubleVar(value=ns_grain_temp)
+                self.calc_mash_temp = tk.DoubleVar(value=ns_mash_temp)
+                self.calc_target_vol = tk.DoubleVar(value=ns_target_vol)
+                self.calc_boil_time = tk.DoubleVar(value=ns_boil_time)
+                self.calc_boiloff = tk.DoubleVar(value=ns_boiloff)
+                self.calc_trub = tk.DoubleVar(value=ns_trub)
+                self.calc_abs = tk.DoubleVar(value=ns_abs)
+
         finally:
             self.suppress_dirty_flag = False
 
@@ -130,36 +152,29 @@ class SettingsPopup(tk.Toplevel):
         self.notebook.add(self.tab_profiles, text="Profile Library")
         self._build_profiles_tab()
         
-        # 2. System Settings
+        # 2. No Sparge Calculator (RENAMED)
+        self.tab_calc = ttk.Frame(self.notebook, padding=15)
+        self.notebook.add(self.tab_calc, text="No Sparge Calculator")
+        self._build_calculator_tab()
+        
+        # 3. System Settings
         self.tab_system = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_system, text="System Settings")
         self._build_system_tab()
         
-        # 3. Calibration (NEW)
+        # 4. Calibration
         self.tab_calibration = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_calibration, text="Calibration")
         self._build_calibration_tab()
         
-        # 4. Updates
+        # 5. Updates
         self.tab_updates = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_updates, text="Updates")
         self._build_updates_tab()
         
-        # 5. Relay Test
-        self.tab_relay_test = ttk.Frame(self.notebook, padding=15)
-        self.notebook.add(self.tab_relay_test, text="Relay Test")
-        self._build_relay_test_tab()
-
-        # 6. Developer
-        self.tab_developer = ttk.Frame(self.notebook, padding=15)
-        self.notebook.add(self.tab_developer, text="Developer")
-        self._build_developer_tab()
-        
         # Indices for tab change logic
         self.system_settings_index = self.notebook.index(self.tab_system)
-        self.relay_test_index = self.notebook.index(self.tab_relay_test)
-        self.developer_index = self.notebook.index(self.tab_developer)
-
+        
     def _on_tab_change(self, event):
         """Intercepts tab change to warn user about unsaved settings."""
         
@@ -381,6 +396,330 @@ class SettingsPopup(tk.Toplevel):
         else:
             print(f"[UI] Warning: Could not find '{sound_file}' to preview volume.")
     
+    # --- TAB 2: CALCULATOR ---
+    
+    def _build_calculator_tab(self):
+        """
+        Builds the No Sparge Calculator UI.
+        Auto-adapts labels based on Imperial/Metric setting.
+        """
+        # --- 1. BOTTOM BUTTONS (Pack First to Anchor) ---
+        # Increased top pady slightly to 10 to push visually away from the boxes
+        btn_frame = ttk.Frame(self.tab_calc)
+        btn_frame.pack(side='bottom', fill='x', pady=(10, 10), padx=10)
+        
+        ttk.Button(btn_frame, text="Close", command=self._on_close).pack(side='right')
+        ttk.Button(btn_frame, text="Save Calculator Settings", command=self._save_calculator_settings).pack(side='right', padx=10)
+
+        # --- 2. MAIN CONTAINER (Fills Remaining Space) ---
+        container = ttk.Frame(self.tab_calc)
+        container.pack(side='top', fill='both', expand=True)
+
+        is_metric = UnitUtils.is_metric(self.settings)
+        
+        # Unit Strings
+        u_wt = "kg" if is_metric else "lbs"
+        u_temp = "°C" if is_metric else "°F"
+        u_vol = "L" if is_metric else "Gal"
+        u_boiloff = "L/hr" if is_metric else "Gal/hr"
+        u_abs = "L/kg" if is_metric else "qt/lb"
+
+        # --- LEFT PANE: INPUTS ---
+        # CHANGED: relheight=0.96 to leave a gap at the bottom before the buttons
+        left_pane = ttk.LabelFrame(container, text="Inputs", padding=10)
+        left_pane.place(relx=0.0, rely=0.0, relwidth=0.45, relheight=0.96)
+        
+        row = 0
+        pad = 3
+        
+        # Grain Bill
+        ttk.Label(left_pane, text=f"Grain Bill ({u_wt}):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.calc_grain_wt, width=8).grid(row=row, column=1, sticky='w', padx=5)
+        
+        row += 1
+        ttk.Label(left_pane, text=f"Grain Temp ({u_temp}):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.calc_grain_temp, width=8).grid(row=row, column=1, sticky='w', padx=5)
+        
+        row += 1
+        ttk.Label(left_pane, text=f"Target Mash ({u_temp}):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.calc_mash_temp, width=8).grid(row=row, column=1, sticky='w', padx=5)
+
+        row += 1
+        ttk.Separator(left_pane, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=5)
+        
+        row += 1
+        ttk.Label(left_pane, text=f"Fermenter Vol ({u_vol}):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.calc_target_vol, width=8).grid(row=row, column=1, sticky='w', padx=5)
+        
+        row += 1
+        ttk.Label(left_pane, text=f"Trub Loss ({u_vol}):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.calc_trub, width=8).grid(row=row, column=1, sticky='w', padx=5)
+
+        row += 1
+        ttk.Label(left_pane, text=f"Boil Time (min):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.calc_boil_time, width=8).grid(row=row, column=1, sticky='w', padx=5)
+        
+        row += 1
+        ttk.Label(left_pane, text=f"Boiloff Rate ({u_boiloff}):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.calc_boiloff, width=8).grid(row=row, column=1, sticky='w', padx=5)
+
+        row += 1
+        ttk.Label(left_pane, text=f"Grain Abs ({u_abs}):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.calc_abs, width=8).grid(row=row, column=1, sticky='w', padx=5)
+
+        # --- CALCULATE BUTTON ---
+        row += 1
+        # CHANGED: Reduced bottom padding to (10, 2) as requested
+        ttk.Button(left_pane, text="CALCULATE", command=self._calculate_no_sparge).grid(row=row, column=0, columnspan=2, sticky='ew', pady=(10, 2))
+
+
+        # --- RIGHT PANE: RESULTS ---
+        # CHANGED: relheight=0.96 here as well
+        right_pane = ttk.LabelFrame(container, text="Water Requirements", padding=10)
+        right_pane.place(relx=0.46, rely=0.0, relwidth=0.54, relheight=0.96)
+        
+        # Result Variables
+        self.res_strike_vol = tk.StringVar(value="--")
+        self.res_strike_temp = tk.StringVar(value="--")
+        self.res_mash_vol = tk.StringVar(value="--")
+        self.res_pre_boil = tk.StringVar(value="--")
+        self.res_post_boil = tk.StringVar(value="--")
+        
+        # Hero Results
+        f_hero = ttk.Frame(right_pane)
+        f_hero.pack(fill='x', pady=5)
+        
+        ttk.Label(f_hero, text=f"Total Strike Water:", font=('Arial', 11)).pack(anchor='center')
+        ttk.Label(f_hero, textvariable=self.res_strike_vol, font=('Arial', 24, 'bold'), foreground='#0044CC').pack(anchor='center')
+        
+        ttk.Label(f_hero, text=f"Strike Temperature:", font=('Arial', 11)).pack(anchor='center', pady=(10, 0))
+        ttk.Label(f_hero, textvariable=self.res_strike_temp, font=('Arial', 24, 'bold'), foreground='#e74c3c').pack(anchor='center')
+
+        ttk.Separator(right_pane, orient='horizontal').pack(fill='x', pady=10)
+        
+        # Breakdown
+        f_break = ttk.Frame(right_pane)
+        f_break.pack(fill='x', padx=10)
+        
+        # Grid layout for breakdown
+        # Row 0: Total Mash Volume
+        ttk.Label(f_break, text="Total Mash Volume:", font=('Arial', 10, 'bold')).grid(row=0, column=0, sticky='w', pady=2)
+        ttk.Label(f_break, textvariable=self.res_mash_vol).grid(row=0, column=1, sticky='e')
+        
+        # Row 1: Pre-Boil
+        ttk.Label(f_break, text="Pre-Boil Volume:", font=('Arial', 10, 'bold')).grid(row=1, column=0, sticky='w', pady=2)
+        ttk.Label(f_break, textvariable=self.res_pre_boil).grid(row=1, column=1, sticky='e')
+        
+        # Row 2: Post-Boil
+        ttk.Label(f_break, text="Post-Boil Volume:", font=('Arial', 10, 'bold')).grid(row=2, column=0, sticky='w', pady=2)
+        ttk.Label(f_break, textvariable=self.res_post_boil).grid(row=2, column=1, sticky='e')
+
+        f_break.columnconfigure(1, weight=1)
+        
+    # def _build_calculator_tab(self):
+        # """
+        # Builds the No Sparge Calculator UI.
+        # Auto-adapts labels based on Imperial/Metric setting.
+        # """
+        # # --- 1. BOTTOM BUTTONS (Pack First to Anchor) ---
+        # # We pack these to the bottom first so they are never pushed off screen
+        # btn_frame = ttk.Frame(self.tab_calc)
+        # btn_frame.pack(side='bottom', fill='x', pady=(5, 10), padx=10)
+        
+        # ttk.Button(btn_frame, text="Close", command=self._on_close).pack(side='right')
+        # ttk.Button(btn_frame, text="Save Calculator Settings", command=self._save_calculator_settings).pack(side='right', padx=10)
+
+        # # --- 2. MAIN CONTAINER (Fills Remaining Space) ---
+        # container = ttk.Frame(self.tab_calc)
+        # container.pack(side='top', fill='both', expand=True)
+
+        # is_metric = UnitUtils.is_metric(self.settings)
+        
+        # # Unit Strings
+        # u_wt = "kg" if is_metric else "lbs"
+        # u_temp = "°C" if is_metric else "°F"
+        # u_vol = "L" if is_metric else "Gal"
+        # u_boiloff = "L/hr" if is_metric else "Gal/hr"
+        # u_abs = "L/kg" if is_metric else "qt/lb"
+
+        # # --- LEFT PANE: INPUTS ---
+        # # Set relheight=1.0 to fill the entire container down to the buttons
+        # left_pane = ttk.LabelFrame(container, text="Inputs", padding=10)
+        # left_pane.place(relx=0.0, rely=0.0, relwidth=0.45, relheight=1.0)
+        
+        # row = 0
+        # pad = 3  # Reduced padding to fit 480px height comfortably
+        
+        # # Grain Bill
+        # ttk.Label(left_pane, text=f"Grain Bill ({u_wt}):").grid(row=row, column=0, sticky='e', pady=pad)
+        # ttk.Entry(left_pane, textvariable=self.calc_grain_wt, width=8).grid(row=row, column=1, sticky='w', padx=5)
+        
+        # row += 1
+        # ttk.Label(left_pane, text=f"Grain Temp ({u_temp}):").grid(row=row, column=0, sticky='e', pady=pad)
+        # ttk.Entry(left_pane, textvariable=self.calc_grain_temp, width=8).grid(row=row, column=1, sticky='w', padx=5)
+        
+        # row += 1
+        # ttk.Label(left_pane, text=f"Target Mash ({u_temp}):").grid(row=row, column=0, sticky='e', pady=pad)
+        # ttk.Entry(left_pane, textvariable=self.calc_mash_temp, width=8).grid(row=row, column=1, sticky='w', padx=5)
+
+        # row += 1
+        # ttk.Separator(left_pane, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=5)
+        
+        # row += 1
+        # ttk.Label(left_pane, text=f"Fermenter Vol ({u_vol}):").grid(row=row, column=0, sticky='e', pady=pad)
+        # ttk.Entry(left_pane, textvariable=self.calc_target_vol, width=8).grid(row=row, column=1, sticky='w', padx=5)
+        
+        # row += 1
+        # ttk.Label(left_pane, text=f"Trub Loss ({u_vol}):").grid(row=row, column=0, sticky='e', pady=pad)
+        # ttk.Entry(left_pane, textvariable=self.calc_trub, width=8).grid(row=row, column=1, sticky='w', padx=5)
+
+        # row += 1
+        # ttk.Label(left_pane, text=f"Boil Time (min):").grid(row=row, column=0, sticky='e', pady=pad)
+        # ttk.Entry(left_pane, textvariable=self.calc_boil_time, width=8).grid(row=row, column=1, sticky='w', padx=5)
+        
+        # row += 1
+        # ttk.Label(left_pane, text=f"Boiloff Rate ({u_boiloff}):").grid(row=row, column=0, sticky='e', pady=pad)
+        # ttk.Entry(left_pane, textvariable=self.calc_boiloff, width=8).grid(row=row, column=1, sticky='w', padx=5)
+
+        # row += 1
+        # ttk.Label(left_pane, text=f"Grain Abs ({u_abs}):").grid(row=row, column=0, sticky='e', pady=pad)
+        # ttk.Entry(left_pane, textvariable=self.calc_abs, width=8).grid(row=row, column=1, sticky='w', padx=5)
+
+        # # --- CALCULATE BUTTON ---
+        # row += 1
+        # # Use sticky='s' (south) to push it down if there's extra space, but grid keeps it sequential
+        # ttk.Button(left_pane, text="CALCULATE", command=self._calculate_no_sparge).grid(row=row, column=0, columnspan=2, sticky='ew', pady=(10, 5))
+
+
+        # # --- RIGHT PANE: RESULTS ---
+        # right_pane = ttk.LabelFrame(container, text="Water Requirements", padding=10)
+        # right_pane.place(relx=0.46, rely=0.0, relwidth=0.54, relheight=1.0)
+        
+        # # Result Variables
+        # self.res_strike_vol = tk.StringVar(value="--")
+        # self.res_strike_temp = tk.StringVar(value="--")
+        # self.res_mash_vol = tk.StringVar(value="--")
+        # self.res_pre_boil = tk.StringVar(value="--")
+        # self.res_post_boil = tk.StringVar(value="--")
+        
+        # # Hero Results
+        # f_hero = ttk.Frame(right_pane)
+        # f_hero.pack(fill='x', pady=5)
+        
+        # ttk.Label(f_hero, text=f"Total Strike Water:", font=('Arial', 11)).pack(anchor='center')
+        # ttk.Label(f_hero, textvariable=self.res_strike_vol, font=('Arial', 24, 'bold'), foreground='#0044CC').pack(anchor='center')
+        
+        # ttk.Label(f_hero, text=f"Strike Temperature:", font=('Arial', 11)).pack(anchor='center', pady=(10, 0))
+        # ttk.Label(f_hero, textvariable=self.res_strike_temp, font=('Arial', 24, 'bold'), foreground='#e74c3c').pack(anchor='center')
+
+        # ttk.Separator(right_pane, orient='horizontal').pack(fill='x', pady=10)
+        
+        # # Breakdown
+        # f_break = ttk.Frame(right_pane)
+        # f_break.pack(fill='x', padx=10)
+        
+        # # Grid layout for breakdown
+        # # Row 0: Total Mash Volume
+        # ttk.Label(f_break, text="Total Mash Volume:", font=('Arial', 10, 'bold')).grid(row=0, column=0, sticky='w', pady=2)
+        # ttk.Label(f_break, textvariable=self.res_mash_vol).grid(row=0, column=1, sticky='e')
+        
+        # # Row 1: Pre-Boil
+        # ttk.Label(f_break, text="Pre-Boil Volume:", font=('Arial', 10, 'bold')).grid(row=1, column=0, sticky='w', pady=2)
+        # ttk.Label(f_break, textvariable=self.res_pre_boil).grid(row=1, column=1, sticky='e')
+        
+        # # Row 2: Post-Boil
+        # ttk.Label(f_break, text="Post-Boil Volume:", font=('Arial', 10, 'bold')).grid(row=2, column=0, sticky='w', pady=2)
+        # ttk.Label(f_break, textvariable=self.res_post_boil).grid(row=2, column=1, sticky='e')
+
+        # f_break.columnconfigure(1, weight=1)
+        
+    def _calculate_no_sparge(self):
+        try:
+            # 1. Get Inputs
+            grain_wt = self.calc_grain_wt.get()
+            grain_temp = self.calc_grain_temp.get()
+            mash_temp = self.calc_mash_temp.get()
+            target_fermenter_vol = self.calc_target_vol.get()
+            trub_loss = self.calc_trub.get()
+            boil_time = self.calc_boil_time.get()
+            boiloff_rate = self.calc_boiloff.get()
+            abs_rate = self.calc_abs.get()
+            
+            is_metric = UnitUtils.is_metric(self.settings)
+            
+            # 2. Calculate Volumes (Working Backwards)
+            # Post Boil = Fermenter + Trub
+            post_boil_vol = target_fermenter_vol + trub_loss
+            
+            # Boiloff Total
+            boil_hours = boil_time / 60.0
+            total_boiloff = boiloff_rate * boil_hours
+            
+            # Pre-Boil (Mash Out) Vol
+            pre_boil_vol = post_boil_vol + total_boiloff
+            
+            # Grain Absorption
+            # Imperial: Rate is qt/lb -> convert to Gal ( / 4 )
+            # Metric: Rate is L/kg -> already compatible
+            if is_metric:
+                total_abs = grain_wt * abs_rate
+            else:
+                total_abs_qts = grain_wt * abs_rate
+                total_abs = total_abs_qts / 4.0
+            
+            # Total Strike Water
+            strike_vol = pre_boil_vol + total_abs
+            
+            # --- NEW: CALCULATE TOTAL MASH VOLUME (Water + Grain) ---
+            # Displacement constants: ~0.08 gal/lb or ~0.67 L/kg
+            if is_metric:
+                grain_disp = grain_wt * 0.67
+            else:
+                grain_disp = grain_wt * 0.08
+                
+            total_mash_vol = strike_vol + grain_disp
+            # --------------------------------------------------------
+            
+            # 3. Calculate Strike Temp
+            # Formula: Strike = Target + (Constant / Ratio) * (Target - Grain)
+            # We calculate actual ratio based on the Total Strike Water we just found.
+            
+            if is_metric:
+                # Metric: Ratio r (L/kg) = Water(L) / Grain(kg)
+                # Constant approx 0.41 (specific heat ratio)
+                if grain_wt > 0:
+                    ratio = strike_vol / grain_wt
+                    strike_temp = mash_temp + (0.41 / ratio) * (mash_temp - grain_temp)
+                else:
+                    strike_temp = mash_temp
+            else:
+                # Imperial: Ratio r (qt/lb) = Water(qts) / Grain(lbs)
+                # Constant 0.2
+                if grain_wt > 0:
+                    strike_vol_qts = strike_vol * 4.0
+                    ratio = strike_vol_qts / grain_wt
+                    strike_temp = mash_temp + (0.2 / ratio) * (mash_temp - grain_temp)
+                else:
+                    strike_temp = mash_temp
+
+            # 4. Format Output
+            u_vol = "L" if is_metric else "Gal"
+            u_temp = "°C" if is_metric else "°F"
+            
+            self.res_strike_vol.set(f"{strike_vol:.2f} {u_vol}")
+            self.res_strike_temp.set(f"{strike_temp:.1f} {u_temp}")
+            
+            self.res_mash_vol.set(f"{total_mash_vol:.2f} {u_vol}")
+            self.res_pre_boil.set(f"{pre_boil_vol:.2f} {u_vol}")
+            self.res_post_boil.set(f"{post_boil_vol:.2f} {u_vol}")
+            
+            self._set_dirty()
+
+        except ZeroDivisionError:
+             messagebox.showerror("Math Error", "Grain weight cannot be zero.", parent=self)
+        except Exception as e:
+             messagebox.showerror("Error", f"Calculation failed: {e}", parent=self)
+
     def _build_system_tab(self):
         content_frame = ttk.Frame(self.tab_system)
         content_frame.pack(fill='both', expand=True)
@@ -404,7 +743,6 @@ class SettingsPopup(tk.Toplevel):
         ttk.Button(lbl_frame, text="Scan/Refresh", command=self._refresh_sensors).pack(side='left')
         
         # 2. Lazy Load: Automatically trigger the scan 500ms AFTER the window opens.
-        # This prevents the button freeze but ensures sensors are found automatically.
         self.after(500, lambda: self._refresh_sensors() if self.winfo_exists() else None)
         
         # --- GENERAL CONFIG ---
@@ -418,14 +756,14 @@ class SettingsPopup(tk.Toplevel):
         ttk.Radiobutton(u_frame, text="US Imperial (°F / Gal)", variable=self.units_var, value="imperial", command=self._set_dirty).pack(side='left')
         ttk.Radiobutton(u_frame, text="Metric (°C / L)", variable=self.units_var, value="metric", command=self._set_dirty).pack(side='left', padx=15)
         
-        # Altitude
-        a_frame = ttk.Frame(gen_frame)
-        a_frame.pack(fill='x', pady=2)
-        ttk.Label(a_frame, text="Altitude (ft):", width=15).pack(side='left')
-        self.altitude_entry = ttk.Entry(a_frame, textvariable=self.altitude_var, width=10)
-        self.altitude_entry.pack(side='left')
-        self.altitude_var.trace_add("write", self._set_dirty)
-        ttk.Label(a_frame, text="(For boiling point calculation)").pack(side='left', padx=5)
+        # CHANGED: System Boil Temp (Replaces Altitude)
+        b_frame = ttk.Frame(gen_frame)
+        b_frame.pack(fill='x', pady=2)
+        ttk.Label(b_frame, text="Sys Boil Temp:", width=15).pack(side='left')
+        self.boil_entry = ttk.Entry(b_frame, textvariable=self.boil_temp_var, width=10)
+        self.boil_entry.pack(side='left')
+        self.boil_temp_var.trace_add("write", self._set_dirty)
+        ttk.Label(b_frame, text="°F  (Set to your observed boiling point)").pack(side='left', padx=5)
         
         # Autostart / Resume
         r_frame = ttk.Frame(gen_frame)
@@ -459,6 +797,11 @@ class SettingsPopup(tk.Toplevel):
         n_frame.pack(fill='x', pady=2)
         ttk.Checkbutton(n_frame, text="Force NumLock ON at startup", variable=self.numlock_var, command=self._set_dirty).pack(anchor='w')
 
+        # CSV Logging Checkbox
+        c_frame = ttk.Frame(gen_frame)
+        c_frame.pack(fill='x', pady=2)
+        ttk.Checkbutton(c_frame, text="Enable CSV Data Logging", variable=self.csv_log_var, command=self._set_dirty).pack(anchor='w')
+        
         # --- BUTTONS ---
         sys_btn_frame = ttk.Frame(self.tab_system)
         sys_btn_frame.pack(fill='x', side='bottom', pady=10)
@@ -799,24 +1142,6 @@ class SettingsPopup(tk.Toplevel):
             self._refresh_calibration_label()
             messagebox.showinfo("Restored", "Default calibration restored.", parent=self)
             
-    def _build_developer_tab(self):
-        content_frame = ttk.Frame(self.tab_developer)
-        content_frame.pack(fill='both', expand=True)
-
-        dev_frame = ttk.LabelFrame(content_frame, text="Developer Configuration", padding=10)
-        dev_frame.pack(fill='x', pady=(0, 10))
-        
-        ttk.Checkbutton(dev_frame, text="Allow Developer Mode (interlocked - for developer use only)", variable=self.dev_mode_var, command=self._set_dirty).pack(anchor='w')
-
-        # Warning/Info text
-        ttk.Label(dev_frame, text="Enables hardware simulation sliders in the main UI.", font=("Arial", 9, "italic")).pack(anchor='w', pady=(5,0))
-
-        # Buttons
-        btn_frame = ttk.Frame(self.tab_developer)
-        btn_frame.pack(fill='x', side='bottom', pady=10)
-        ttk.Button(btn_frame, text="Close", command=self._on_close).pack(side='right')
-        ttk.Button(btn_frame, text="Save Settings", command=self._save_settings).pack(side='right', padx=10)
-
     def _reload_system_widgets(self):
         """Forces the System Settings and Relay Test widgets to visually reload their state."""
         # Temporarily suppress dirty flag because we are just refreshing the UI to match data
@@ -845,33 +1170,6 @@ class SettingsPopup(tk.Toplevel):
             # Enable the Auto-Resume checkbox
             self.auto_resume_check.config(state='normal')
 
-    # --- TAB 3: RELAY TEST ---
-
-    def _build_relay_test_tab(self):
-        relay_frame = ttk.LabelFrame(self.tab_relay_test, text="Manual Relay Control", padding=10)
-        relay_frame.pack(fill='x', pady=(0, 10))
-        
-        is_safe = (self.sequencer.status == SequenceStatus.IDLE)
-        state_str = 'normal' if is_safe else 'disabled'
-        
-        if is_safe:
-            ttk.Label(relay_frame, text="WARNING: Buttons toggle real hardware immediately.", foreground="red").pack(anchor='w', pady=(0,5))
-        else:
-            ttk.Label(relay_frame, text="Relay testing disabled while Sequence is Active.", foreground="red").pack(anchor='w', pady=(0,5))
-
-        btn_box = ttk.Frame(relay_frame)
-        btn_box.pack(fill='x')
-        
-        ttk.Checkbutton(btn_box, text="HEATER 1", variable=self.relay_h1_var, command=lambda: self._toggle_relay("Heater1", self.relay_h1_var), state=state_str).pack(side='left', padx=10)
-        ttk.Checkbutton(btn_box, text="HEATER 2", variable=self.relay_h2_var, command=lambda: self._toggle_relay("Heater2", self.relay_h2_var), state=state_str).pack(side='left', padx=10)
-        ttk.Checkbutton(btn_box, text="AUX", variable=self.relay_aux_var, command=lambda: self._toggle_relay("Aux", self.relay_aux_var), state=state_str).pack(side='left', padx=10)
-        
-        # --- BUTTONS ---
-        test_btn_frame = ttk.Frame(self.tab_relay_test)
-        test_btn_frame.pack(fill='x', side='bottom', pady=10)
-        
-        ttk.Button(test_btn_frame, text="Close", command=self._on_close).pack(side='right')
-
     # --- HELPER METHODS ---
 
     def _save_settings_no_popup(self):
@@ -882,19 +1180,33 @@ class SettingsPopup(tk.Toplevel):
             self.settings.set_system_setting("force_numlock", self.numlock_var.get())
             self.settings.set_system_setting("auto_start_enabled", self.auto_start_var.get())
             self.settings.set_system_setting("auto_resume_enabled", self.auto_resume_var.get())
+            self.settings.set_system_setting("enable_csv_logging", self.csv_log_var.get())
             
-            # --- NEW: Save Dev Mode ---
-            new_dev_mode = self.dev_mode_var.get()
-            self.settings.set_system_setting("dev_mode", new_dev_mode)
-            # Push change to hardware interface immediately
-            self.hw.set_dev_mode(new_dev_mode)
-            
+            # CHANGED: Save Boil Temp
             try:
-                alt = int(self.altitude_var.get())
-                self.settings.set_system_setting("altitude_ft", alt)
+                b_val = float(self.boil_temp_var.get())
+                self.settings.set_system_setting("boil_temp_f", b_val)
             except ValueError:
-                messagebox.showerror("Input Error", "Altitude must be a whole number.", parent=self); 
+                messagebox.showerror("Input Error", "Boil Temp must be a number.", parent=self)
                 return False
+
+            # --- SAVE CALCULATOR INPUTS ---
+            try:
+                calc_data = {
+                    "grain_weight": self.calc_grain_wt.get(),
+                    "grain_temp": self.calc_grain_temp.get(),
+                    "mash_temp": self.calc_mash_temp.get(),
+                    "target_vol": self.calc_target_vol.get(),
+                    "boil_time": self.calc_boil_time.get(),
+                    "boiloff_rate": self.calc_boiloff.get(),
+                    "trub_loss": self.calc_trub.get(),
+                    "abs_rate": self.calc_abs.get()
+                }
+                for k, v in calc_data.items():
+                    self.settings.set("no_sparge_settings", k, v)
+                    
+            except Exception as e:
+                print(f"Error saving calc settings: {e}")
                 
             self._manage_autostart_file(self.auto_start_var.get())
             self.system_settings_dirty = False
@@ -908,6 +1220,10 @@ class SettingsPopup(tk.Toplevel):
         if self._save_settings_no_popup():
             messagebox.showinfo("Saved", "System Settings saved successfully.", parent=self)
 
+    def _save_calculator_settings(self):
+        """Saves values from the No Sparge Calculator tab."""
+        if self._save_settings_no_popup():
+            messagebox.showinfo("Saved", "Calculator settings saved.", parent=self)
 
     def _refresh_sensors(self):
         sensors = self.hw.scan_available_sensors()
@@ -916,13 +1232,6 @@ class SettingsPopup(tk.Toplevel):
         self.combo_sensor['values'] = sensors
         if self.temp_sensor_var.get() not in sensors:
             self.temp_sensor_var.set(sensors[0])
-
-    def _toggle_relay(self, name, var):
-        state = var.get()
-        if state:
-            self.relay.set_relay(name, True)
-        else:
-            self.relay.set_relay(name, False)
 
     def _manage_autostart_file(self, enable):
         """Creates or removes the XDG autostart file for Bookworm/Trixie."""
@@ -996,8 +1305,6 @@ Categories=Utility;
             elif response is None:
                 return 
 
-        # 2. Safety: Turn off relays on close
-        self.relay.set_relay("Heater1", False)
-        self.relay.set_relay("Heater2", False)
-        self.relay.set_relay("Aux", False)
+        # 2. Cleanup and Close
+        # (We no longer force relays off because manual test controls are gone)
         self._cleanup_and_close()

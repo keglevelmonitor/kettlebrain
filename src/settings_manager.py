@@ -22,8 +22,7 @@ DEFAULT_SETTINGS = {
         "buzzer_gpio": 13,
         "sensor_type": "DS18B20",
         "screen_timeout": 300,
-        "altitude_ft": 0,
-        "boil_temp_f": 212,
+        "boil_temp_f": 212,            # <--- REPLACED altitude_ft with this source of truth
         "relay_active_high": False,
         "relay_logic_configured": False,
         "force_numlock": True,
@@ -31,17 +30,28 @@ DEFAULT_SETTINGS = {
         "controlled_shutdown": False,
         "auto_start_enabled": True,
         "auto_resume_enabled": False,
-        # --- NEW HEATING CONSTANTS ---
+        "enable_csv_logging": False,
         "heater_ref_volume_gal": 8.0,
-        "heater_ref_rate_fpm": 1.2,  # Degrees F per minute
+        "heater_ref_rate_fpm": 1.2,
     },
     # --- NEW MANUAL MODE MEMORY ---
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
         "last_timer_min": 60.0,
-        "last_power_watts": 1800,   # <--- NEW
-        "last_volume_gal": 6.0,     # <--- NEW
+        "last_power_watts": 1800,
+        "last_volume_gal": 6.0,
         "heater_enabled": False
+    },
+    # --- NO SPARGE CALCULATOR MEMORY ---
+    "no_sparge_settings": {
+        "grain_weight": 10.0,
+        "grain_temp": 65.0,
+        "mash_temp": 152.0,
+        "target_vol": 5.5,
+        "boil_time": 60.0,
+        "boiloff_rate": 0.5,
+        "trub_loss": 0.25,
+        "abs_rate": 0.6
     },
     "pid_settings": {
         "kp": 50.0,

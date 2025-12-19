@@ -4,6 +4,7 @@ kettlebrain/src/sequence_manager.py
 import time
 import threading
 import math
+import csv
 from datetime import datetime # <--- ADD THIS
 from profile_data import BrewProfile, StepType, TimeoutBehavior, SequenceStatus
 import subprocess
@@ -45,6 +46,8 @@ class SequenceManager:
         self.last_recovery_save = 0.0
         self.RECOVERY_SAVE_INTERVAL = 30.0 
         
+        self.last_log_write = 0.0  # <--- NEW: CSV Log Timer
+        
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._control_loop, daemon=True)
         self._thread.start()
@@ -69,7 +72,19 @@ class SequenceManager:
         self.current_profile = profile
         self.current_step_index = 0
         self.status = SequenceStatus.IDLE
+        
+        # --- NEW: Persist this selection for next startup ---
+        if self.settings:
+            self.settings.set_system_setting("last_profile_id", profile.id)
+            
         print(f"[Sequence] Loaded profile: {profile.name}")
+    
+    # def load_profile(self, profile: BrewProfile):
+        # self.stop()
+        # self.current_profile = profile
+        # self.current_step_index = 0
+        # self.status = SequenceStatus.IDLE
+        # print(f"[Sequence] Loaded profile: {profile.name}")
 
     def start_sequence(self):
         if not self.current_profile: return
@@ -106,6 +121,10 @@ class SequenceManager:
             self._save_recovery_snapshot()
 
     def stop(self):
+        # Log the final state before we go IDLE
+        if self.status != SequenceStatus.IDLE:
+             self._log_csv()
+
         self.status = SequenceStatus.IDLE
         self.current_step_index = -1
         self.relay.turn_off_all_relays()
@@ -493,6 +512,14 @@ class SequenceManager:
                 self.relay.set_relays(False, False, False)
                 continue
 
+            # --- NEW: CSV LOGGING (Every 30s) ---
+            # We use monotonic time for the interval check so it is robust
+            now_mono = time.monotonic()
+            if now_mono - self.last_log_write > 30.0:
+                self._log_csv()
+                self.last_log_write = now_mono
+            # ------------------------------------
+
             # --- DELAYED START WAIT ---
             if self.status == SequenceStatus.DELAYED_WAIT:
                 now = time.time()
@@ -565,7 +592,7 @@ class SequenceManager:
                 if now - self.last_recovery_save > self.RECOVERY_SAVE_INTERVAL:
                     self._save_recovery_snapshot()
                     self.last_recovery_save = now
-                
+            
                 continue
             
             # --- AUTO / PROFILE LOGIC ---
@@ -602,19 +629,26 @@ class SequenceManager:
             self.relay.set_relays(False, False, False)
             return
 
+        # --- FIX: CLAMP TRIGGER TO BOIL TEMP ---
+        # If the user sets 212F but system boils at 208F, trigger at 208F.
+        sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
+        trigger_threshold = min(target, sys_boil)
+        # ---------------------------------------
+
         # Check if we reached target to start timer
         if not self.temp_reached:
-             if self.current_temp >= target:
+             # Compare current temp against the CLAMPED threshold
+             if self.current_temp >= trigger_threshold:
                  self.temp_reached = True
                  self.step_start_time = time.monotonic()
                  
                  # RULE B (Manual): Only beep if we started below target
                  start_t = getattr(self, 'initial_manual_temp', 0.0)
-                 if start_t < (target - 0.5):
-                     self._play_alert_sound() 
+                 if start_t < (trigger_threshold - 0.5):
+                     self._play_alert_sound()
                      print(f"[Sequence] Manual Target Reached ({self.current_temp}). Timer Started.")
 
-        # Power Logic (Hysteresis)
+        # Power Logic (Hysteresis) - Continues to aim for the actual target (to keep rolling boil)
         if self.current_temp < (target - 0.5):
             self._apply_power_logic(self.manual_power_watts) 
         elif self.current_temp > target:
@@ -674,6 +708,77 @@ class SequenceManager:
             state["global_elapsed"] = self._get_total_elapsed_seconds()
             
             self.settings.save_recovery_state(state)
+            
+    def _log_csv(self):
+        """Appends a row to the CSV log if enabled."""
+        # 1. Check if enabled
+        if not self.settings.get_system_setting("enable_csv_logging", False):
+            return
+
+        # 2. Skip if IDLE (User requested only Active modes)
+        if self.status == SequenceStatus.IDLE:
+            return
+
+        try:
+            # 3. Gather Data points
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            mode = "UNKNOWN"
+            status = self.status.value
+            
+            # Determine Mode & Step Info
+            step_info = "-"
+            if self.status == SequenceStatus.DELAYED_WAIT:
+                mode = "DELAY"
+                step_info = f"Starts: {self.delayed_start_time_str}"
+            elif self.status == SequenceStatus.MANUAL:
+                mode = "MANUAL"
+                step_info = "Manual Hold"
+            elif self.current_profile:
+                mode = "AUTO"
+                if 0 <= self.current_step_index < len(self.current_profile.steps):
+                    step_info = self.current_profile.steps[self.current_step_index].name
+
+            # Temperatures
+            curr_t = f"{self.current_temp:.2f}" if self.current_temp else "0.00"
+            
+            # Determine Target Temp
+            if self.status == SequenceStatus.DELAYED_WAIT:
+                tgt = getattr(self, 'delayed_target_temp', 0.0)
+            else:
+                tgt = self.target_temp
+            tgt_t = f"{tgt:.2f}"
+
+            # Determine Power (Watts)
+            watts = 0
+            if self.is_heating:
+                if self.status == SequenceStatus.MANUAL:
+                    watts = getattr(self, 'manual_power_watts', 1800)
+                elif self.current_profile and 0 <= self.current_step_index < len(self.current_profile.steps):
+                    s = self.current_profile.steps[self.current_step_index]
+                    watts = s.power_watts if s.power_watts is not None else 1800
+                else:
+                    watts = 1800 # Default fallback
+            
+            # Determine Timer
+            timer_str = self.get_display_timer()
+
+            # 4. Write to File
+            data_dir = self.settings.data_dir
+            log_file = os.path.join(data_dir, "kettlebrain-log.csv")
+            file_exists = os.path.isfile(log_file)
+            
+            with open(log_file, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                
+                # Write Header if new file
+                if not file_exists:
+                    writer.writerow(["Timestamp", "Mode", "Status", "Temp(F)", "Target(F)", "Power(W)", "Step", "Timer"])
+                
+                # Write Data
+                writer.writerow([timestamp, mode, status, curr_t, tgt_t, watts, step_info, timer_str])
+                
+        except Exception as e:
+            print(f"[Sequence] Log Error: {e}")
             
     def _get_total_elapsed_seconds(self):
         if self.global_start_time is None: return 0
@@ -814,13 +919,20 @@ class SequenceManager:
         # ----------------------------------------------
 
         if step.step_type == StepType.BOIL:
+            # BOIL LOGIC: Use configured boil temp as trigger
             if not self.temp_reached:
                 watt_target = 1800 
-                boil_target = step.setpoint_f if step.setpoint_f else 212.0
+                
+                # CHANGED: Use boil_temp_f from settings instead of hardcoded 212
+                # Allow step.setpoint_f to override if explicitly set (unlikely in UI, but good for backend safety)
+                boil_target = step.setpoint_f if step.setpoint_f else self.settings.get_system_setting("boil_temp_f", 212.0)
+                
                 if self.current_temp >= boil_target:
                     trigger_temp_reached()
                 heat_needed = True 
             else:
+                # LATCH LOGIC: Once temp_reached is True, we stay here.
+                # We continue heating (Heat needed = True) to maintain boil.
                 heat_needed = True
 
         elif step.step_type == StepType.CHILL:

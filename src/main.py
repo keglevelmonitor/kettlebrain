@@ -116,13 +116,29 @@ class KettleBrainApp:
         # --- DEFAULT STARTUP (If not resuming) ---
         if not resume_success:
             print("[Main] Performing Standard Startup...")
-            # 1. Load Default Profile (so Auto mode isn't empty if they switch)
+            
             profiles = self.settings_mgr.get_all_profiles()
+            target_p = None
+            
             if profiles:
-                # Try to find "Default Profile", else take the first one
-                default_p = next((p for p in profiles if p.name == "Default Profile"), profiles[0])
-                self.sequencer.load_profile(default_p)
-                print(f"[Main] Loaded startup profile: {default_p.name}")
+                # [cite_start]1. Try to load the LAST USED profile [cite: 75, 105]
+                last_id = self.settings_mgr.get_system_setting("last_profile_id")
+                if last_id:
+                    target_p = next((p for p in profiles if p.id == last_id), None)
+                    if target_p:
+                        print(f"[Main] Found last used profile: {target_p.name}")
+
+                # 2. Fallback to "Default Profile"
+                if not target_p:
+                    target_p = next((p for p in profiles if p.name == "Default Profile"), None)
+
+                # 3. Fallback to index 0
+                if not target_p:
+                    target_p = profiles[0]
+
+                # Load whatever we found
+                self.sequencer.load_profile(target_p)
+                print(f"[Main] Loaded startup profile: {target_p.name}")
             else:
                 print("[Main] No profiles found to load.")
             
@@ -142,6 +158,91 @@ class KettleBrainApp:
             print(f"\n[{APP_NAME}] CRITICAL MAIN LOOP ERROR: {e}")
             self._emergency_cleanup()
             raise
+    
+    # def run(self):
+        # # --- 1. HARDWARE STABILIZATION DELAY (Conditional) ---
+        # if "--auto-start" in sys.argv:
+            # print(f"[{APP_NAME}] Auto-Start detected. Waiting {STARTUP_DELAY_S}s for drivers...")
+            # time.sleep(STARTUP_DELAY_S)
+        # else:
+            # print(f"[{APP_NAME}] Normal start detected. Skipping boot delay.")
+
+        # self.root = tk.Tk()
+        # base_dir = os.path.expanduser("~")
+        # self.settings_mgr = SettingsManager(base_dir)
+
+        # # --- UNCONTROLLED SHUTDOWN CHECK ---
+        # uncontrolled = not self.settings_mgr.last_shutdown_was_clean
+        # auto_resume = self.settings_mgr.get_system_setting("auto_resume_enabled", False)
+        # recovery_data = self.settings_mgr.get_recovery_state()
+        
+        # resume_success = False
+
+        # self.hardware = HardwareInterface(self.settings_mgr)
+        # self.relay = RelayControl(self.settings_mgr)
+
+        # # --- WIZARD CHECK ---
+        # if not self.settings_mgr.get_system_setting("relay_logic_configured"):
+            # print("[Main] Relay logic not configured. Launching Startup Wizard...")
+            # wizard = StartupWizard(self.root, self.settings_mgr, self.relay)
+            # self.root.wait_window(wizard.window)
+
+        # self.sequencer = SequenceManager(self.settings_mgr, self.relay, self.hardware)
+        # self.ui = UIManager(self.root, self.sequencer, self.hardware)
+
+        # # --- RECOVERY LOGIC ---
+        # if uncontrolled and auto_resume and recovery_data:
+            # print("[Main] Attempting Auto-Resume from Power Loss...")
+            
+            # mode_type = recovery_data.get("mode_type", "PROFILE")
+            
+            # if mode_type in ["DELAY", "MANUAL"]:
+                # self.sequencer.restore_from_recovery(recovery_data)
+                # resume_success = True
+                # print(f"[Main] Auto-Resume Successful ({mode_type} Mode).")
+            
+            # elif mode_type == "PROFILE":
+                # p_id = recovery_data.get("profile_id")
+                # profiles = self.settings_mgr.get_all_profiles()
+                # target_profile = next((p for p in profiles if p.id == p_id), None)
+                
+                # if target_profile:
+                    # self.sequencer.load_profile(target_profile)
+                    # self.sequencer.restore_from_recovery(recovery_data)
+                    # resume_success = True
+                    # print("[Main] Auto-Resume Successful (Profile Mode).")
+                # else:
+                    # print("[Main] Recovery failed: Profile not found.")
+        
+        # # --- DEFAULT STARTUP (If not resuming) ---
+        # if not resume_success:
+            # print("[Main] Performing Standard Startup...")
+            # # 1. Load Default Profile (so Auto mode isn't empty if they switch)
+            # profiles = self.settings_mgr.get_all_profiles()
+            # if profiles:
+                # # Try to find "Default Profile", else take the first one
+                # default_p = next((p for p in profiles if p.name == "Default Profile"), profiles[0])
+                # self.sequencer.load_profile(default_p)
+                # print(f"[Main] Loaded startup profile: {default_p.name}")
+            # else:
+                # print("[Main] No profiles found to load.")
+            
+            # # 2. Enter Manual Mode immediately (This will now preserve the loaded profile)
+            # self.sequencer.enter_manual_mode()
+
+        # # Handle "X" Button
+        # self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
+
+        # print(f"[{APP_NAME} {VERSION}] Starting Main Loop...")
+        # try:
+            # self.root.mainloop()
+        # except KeyboardInterrupt:
+            # print(f"\n[{APP_NAME}] KeyboardInterrupt (Ctrl+C).")
+            # self.shutdown()
+        # except Exception as e:
+            # print(f"\n[{APP_NAME}] CRITICAL MAIN LOOP ERROR: {e}")
+            # self._emergency_cleanup()
+            # raise
 
     def shutdown(self):
         if self.is_shutting_down: return
