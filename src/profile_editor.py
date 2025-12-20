@@ -334,6 +334,8 @@ class ProfileEditor(tk.Toplevel):
         # --- ROW 0: Type & Name ---
         type_opts = [e.value for e in StepType]
         self.cb_type = ttk.Combobox(f, textvariable=self.var_type, values=type_opts, state='readonly', width=12)
+        # FIX: Force focus
+        self.cb_type.bind("<Button-1>", lambda e: self.after(1, self.cb_type.focus_set))
         
         ttk.Label(f, text="Type:").grid(row=row, column=0, sticky='e', padx=pad_x, pady=pad_y)
         self.cb_type.grid(row=row, column=1, sticky='ew', padx=pad_x, pady=pad_y)
@@ -366,6 +368,8 @@ class ProfileEditor(tk.Toplevel):
         # --- ROW 2: Power & Volume ---
         pwr_values = ["1800", "1400", "1000", "800"]
         self.cb_pwr = ttk.Combobox(f, textvariable=self.var_power, values=pwr_values, state='readonly', width=8)
+        # FIX: Force focus
+        self.cb_pwr.bind("<Button-1>", lambda e: self.after(1, self.cb_pwr.focus_set))
         
         self.lbl_pwr = ttk.Label(f, text="Watts:")
         self.lbl_pwr.grid(row=row, column=0, sticky='e', padx=pad_x, pady=pad_y)
@@ -383,6 +387,8 @@ class ProfileEditor(tk.Toplevel):
         ttk.Label(f, text="Timeout:").grid(row=row, column=0, sticky='e', padx=pad_x, pady=pad_y)
         to_opts = [e.value for e in TimeoutBehavior]
         self.cb_to = ttk.Combobox(f, textvariable=self.var_timeout, values=to_opts, state='readonly')
+        # FIX: Force focus
+        self.cb_to.bind("<Button-1>", lambda e: self.after(1, self.cb_to.focus_set))
         self.cb_to.grid(row=row, column=1, columnspan=3, sticky='ew', padx=pad_x, pady=pad_y)
         row += 1
         
@@ -536,9 +542,12 @@ class ProfileEditor(tk.Toplevel):
         
         r=0
         pad=4 
-        ttk.Label(lf, text=f"Total Water ({u_vol}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(lf, textvariable=self.chem_vol, width=6).grid(row=r, column=1, sticky='w'); r+=1
-        ttk.Label(lf, text="Beer SRM:").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(lf, textvariable=self.chem_srm, width=6).grid(row=r, column=1, sticky='w'); r+=1
-        ttk.Label(lf, text="Target pH:").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(lf, textvariable=self.chem_target_ph, width=6).grid(row=r, column=1, sticky='w'); r+=1
+        ttk.Label(lf, text=f"Total Water ({u_vol}):").grid(row=r, column=0, sticky='e', pady=pad);
+        ttk.Entry(lf, textvariable=self.chem_vol, width=6).grid(row=r, column=1, sticky='w'); r+=1
+        ttk.Label(lf, text="Beer SRM:").grid(row=r, column=0, sticky='e', pady=pad);
+        ttk.Entry(lf, textvariable=self.chem_srm, width=6).grid(row=r, column=1, sticky='w'); r+=1
+        ttk.Label(lf, text="Target pH:").grid(row=r, column=0, sticky='e', pady=pad);
+        ttk.Entry(lf, textvariable=self.chem_target_ph, width=6).grid(row=r, column=1, sticky='w'); r+=1
         
         # --- NEW: Water Profile Dropdown ---
         r+=1
@@ -552,20 +561,13 @@ class ProfileEditor(tk.Toplevel):
         self.cb_water_profile.grid(row=r, column=1, sticky='w', pady=(10, 2), padx=0)
         self.cb_water_profile.bind("<<ComboboxSelected>>", self._on_water_profile_select)
         
-        # Focus Handler
-        def _handle_click(event):
-            try:
-                event.widget.focus_set()
-                event.widget.event_generate('<Down>')
-                return 'break'
-            except: pass
-        self.cb_water_profile.bind('<Button-1>', _handle_click)
+        # FIX: Force focus on click
+        self.cb_water_profile.bind('<Button-1>', lambda e: self.after(1, self.cb_water_profile.focus_set))
         
         r+=1
         # -----------------------------------
         
         # Define Targets with Traces
-        # If user types in these boxes, the dropdown will clear.
         targets = [
             ("Target Ca (ppm):", self.chem_tgt_ca),
             ("Target Mg (ppm):", self.chem_tgt_mg),
@@ -589,16 +591,23 @@ class ProfileEditor(tk.Toplevel):
         
         r=0
         res_pad = 6
-        ttk.Label(rf, text="Gypsum (CaSO4):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_gypsum, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
-        ttk.Label(rf, text="Calc. Chlor (CaCl2):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_cacl2, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
-        ttk.Label(rf, text="Epsom Salt (MgSO4):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_epsom, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
-        ttk.Label(rf, text="Table Salt (NaCl):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_salt, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
-        ttk.Label(rf, text="Slaked Lime (CaOH2):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_lime, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Gypsum (CaSO4):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad);
+        ttk.Label(rf, textvariable=self.res_gypsum, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Calc. Chlor (CaCl2):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad);
+        ttk.Label(rf, textvariable=self.res_cacl2, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Epsom Salt (MgSO4):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad);
+        ttk.Label(rf, textvariable=self.res_epsom, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Table Salt (NaCl):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad);
+        ttk.Label(rf, textvariable=self.res_salt, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Slaked Lime (CaOH2):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad);
+        ttk.Label(rf, textvariable=self.res_lime, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
         
-        ttk.Separator(rf, orient='horizontal').grid(row=r, column=0, columnspan=2, sticky='ew', pady=10); r+=1 
+        ttk.Separator(rf, orient='horizontal').grid(row=r, column=0, columnspan=2, sticky='ew', pady=10);
+        r+=1 
         
-        ttk.Label(rf, text="Lactic Acid (88%):", font=('Arial', 10, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_acid, font=('Arial', 12, 'bold'), foreground='#e74c3c').grid(row=r, column=1, sticky='w', padx=10); r+=1
-                              
+        ttk.Label(rf, text="Lactic Acid (88%):", font=('Arial', 10, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad);
+        ttk.Label(rf, textvariable=self.res_acid, font=('Arial', 12, 'bold'), foreground='#e74c3c').grid(row=r, column=1, sticky='w', padx=10); r+=1
+                                      
     def _on_water_profile_select(self, event):
         selection = self.cb_water_profile.get()
         if not selection: return

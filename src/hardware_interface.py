@@ -55,6 +55,54 @@ class HardwareInterface:
             print(f"[HARDWARE] Error scanning sensors: {e}")
             return []
 
+    def scan_audio_devices(self):
+        """
+        Parses 'aplay -l' to find audio devices.
+        Returns a list of tuples: (friendly_name, device_string)
+        e.g. [("Default (System)", "default"), ("Headphones (3.5mm)", "plughw:0,0"), ("USB Audio", "plughw:1,0")]
+        """
+        devices = [("Default (System)", "default")]
+        
+        if self._dev_mode_active:
+            devices.append(("Virtual Speaker", "default"))
+            return devices
+
+        try:
+            import subprocess
+            import re
+            
+            # Run aplay -l to list hardware devices
+            result = subprocess.run(["aplay", "-l"], capture_output=True, text=True)
+            output = result.stdout
+            
+            # Regex to find: card X: [Name], device Y: [Description]
+            # Output format example: 
+            # card 1: Device [USB Audio Device], device 0: USB Audio [USB Audio]
+            pattern = re.compile(r'card (\d+): (.*?) \[.*\], device (\d+): (.*?) \[.*\]')
+            
+            for line in output.split('\n'):
+                match = pattern.search(line)
+                if match:
+                    card_num = match.group(1)
+                    card_name = match.group(2)
+                    dev_num = match.group(3)
+                    dev_desc = match.group(4)
+                    
+                    # Construct a friendly name
+                    # e.g. "USB Audio Device (USB Audio)"
+                    friendly = f"{card_name} - {dev_desc}"
+                    
+                    # Construct ALSA device string
+                    # plughw:X,Y allows software resampling if needed (safer than hw:X,Y)
+                    dev_str = f"plughw:{card_num},{dev_num}"
+                    
+                    devices.append((friendly, dev_str))
+                    
+        except Exception as e:
+            print(f"[HARDWARE] Error scanning audio: {e}")
+            
+        return devices
+
     def read_temperature(self):
         """
         Returns the SMOOTHED temperature in Fahrenheit.

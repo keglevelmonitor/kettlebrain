@@ -53,15 +53,29 @@ class SequenceManager:
         self._thread.start()
 
     def _play_alert_sound(self):
-        """Plays alert.wav using aplay (non-blocking)."""
+        """Plays the configured alert sound using aplay (non-blocking)."""
         try:
-            # Locate the asset relative to this file
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            sound_file = os.path.join(base_dir, "assets", "alert.wav")
+            
+            # Retrieve configured filename (default to alert.wav)
+            sound_filename = self.settings.get_system_setting("alert_sound_file", "alert.wav")
+            sound_file = os.path.join(base_dir, "assets", sound_filename)
             
             if os.path.exists(sound_file):
-                # Use Popen to fire-and-forget (avoids pausing the control loop)
-                subprocess.Popen(["aplay", "-q", sound_file], stderr=subprocess.DEVNULL)
+                dev_friendly = self.settings.get_system_setting("audio_device", "default")
+                dev_str = "default"
+                
+                if dev_friendly != "default":
+                    devices = self.hw.scan_audio_devices()
+                    found = next((d_str for friendly, d_str in devices if friendly == dev_friendly), "default")
+                    dev_str = found
+                
+                cmd = ["aplay", "-q"]
+                if dev_str != "default":
+                    cmd.extend(["-D", dev_str])
+                
+                cmd.append(sound_file)
+                subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
             else:
                 print(f"[Sequence] Alert sound missing: {sound_file}")
         except Exception as e:

@@ -47,9 +47,6 @@ class SettingsPopup(tk.Toplevel):
         self.notebook.add(self.tab_profiles, text="Profile Library")
         self._build_profiles_tab()
         
-        # [REMOVED] Quick Water
-        # [REMOVED] Quick Chemistry
-        
         # 2. System Settings
         self.tab_system = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tab_system, text="System Settings")
@@ -78,8 +75,16 @@ class SettingsPopup(tk.Toplevel):
             pass
         
         self.deiconify()
-        self.lift()
-        self.focus_force()
+        
+        # Safe Focus Lock: Wait 100ms for window manager to register window
+        self.after(100, self._safe_focus_lock)
+
+    def _safe_focus_lock(self):
+        try:
+            self.grab_set()
+            self.focus_force()
+        except:
+            pass
         
     def _cleanup_and_close(self):
         try:
@@ -91,6 +96,8 @@ class SettingsPopup(tk.Toplevel):
         # System Settings
         units = self.settings.get_system_setting("units", "imperial")
         sensor = self.settings.get_system_setting("temp_sensor_id", "unassigned")
+        audio_dev = self.settings.get_system_setting("audio_device", "default")
+        sound_file = self.settings.get_system_setting("alert_sound_file", "alert.wav") # <--- NEW
         boil = str(self.settings.get_system_setting("boil_temp_f", "212"))
         numlock = self.settings.get_system_setting("force_numlock", True)
         auto_start = self.settings.get_system_setting("auto_start_enabled", True)
@@ -103,6 +110,8 @@ class SettingsPopup(tk.Toplevel):
             if not hasattr(self, 'units_var'):
                 self.units_var = tk.StringVar(value=units)
                 self.temp_sensor_var = tk.StringVar(value=sensor)
+                self.audio_device_var = tk.StringVar(value=audio_dev)
+                self.sound_file_var = tk.StringVar(value=sound_file) # <--- NEW
                 self.boil_temp_var = tk.StringVar(value=boil)
                 self.numlock_var = tk.BooleanVar(value=numlock)
                 self.auto_start_var = tk.BooleanVar(value=auto_start)
@@ -111,12 +120,14 @@ class SettingsPopup(tk.Toplevel):
             else:
                 self.units_var.set(units)
                 self.temp_sensor_var.set(sensor)
+                self.audio_device_var.set(audio_dev)
+                self.sound_file_var.set(sound_file) # <--- NEW
                 self.boil_temp_var.set(boil)
                 self.numlock_var.set(numlock)
                 self.auto_start_var.set(auto_start)
                 self.auto_resume_var.set(auto_resume)
                 self.csv_log_var.set(csv_logging)
-                
+            
         finally:
             self.suppress_dirty_flag = False
 
@@ -305,81 +316,249 @@ class SettingsPopup(tk.Toplevel):
         
     # --- TAB 4: SYSTEM SETTINGS ---
     def _set_system_volume(self, val):
+        """
+        Sets volume using amixer, targeting the specific card if selected.
+        """
         try:
             vol_int = int(float(val))
-            subprocess.run(["amixer", "sset", "PCM", f"{vol_int}%"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(["amixer", "sset", "HDMI", f"{vol_int}%"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(["amixer", "sset", "Master", f"{vol_int}%"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # 1. Determine which card to target
+            card_flag = [] # Default to system default (no flag)
+            
+            # Resolve the friendly name to the device string (e.g. "plughw:1,0")
+            selection = self.audio_device_var.get()
+            if not hasattr(self, 'audio_map') or not self.audio_map:
+                self.audio_map = self.hw.scan_audio_devices()
+            
+            dev_str = next((dev for friendly, dev in self.audio_map if friendly == selection), "default")
+            
+            # If we have a specific hardware target like "plughw:1,0", extract the card index "1"
+            if dev_str.startswith("plughw:"):
+                import re
+                match = re.search(r'plughw:(\d+),', dev_str)
+                if match:
+                    card_index = match.group(1)
+                    card_flag = ["-c", card_index]
+
+            # 2. Define the controls to try setting
+            # Different drivers use different mixer names (Speaker, PCM, Master, HDMI)
+            controls = ["PCM", "Master", "Speaker", "HDMI"]
+
+            # 3. Apply volume to all candidates on that card
+            for control in controls:
+                cmd = ["amixer"] + card_flag + ["sset", control, f"{vol_int}%"]
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
         except Exception as e:
             print(f"Error setting volume: {e}")
             
     def _on_volume_release(self, event):
-        import os
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        sound_file = os.path.join(current_dir, "assets", "alert.wav")
-        if os.path.exists(sound_file):
-            try: subprocess.Popen(["aplay", "-q", sound_file])
-            except: pass
+        """
+        Plays the selected sound on release of the volume slider, 
+        using the CURRENTLY selected audio device.
+        """
+        try:
+            selection = self.audio_device_var.get()
+            sound_filename = self.sound_file_var.get() # <--- Use selected file
+
+            if not hasattr(self, 'audio_map') or not self.audio_map:
+                self.audio_map = self.hw.scan_audio_devices()
+
+            dev_str = next((dev for friendly, dev in self.audio_map if friendly == selection), "default")
+
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            sound_file = os.path.join(current_dir, "assets", sound_filename)
+            
+            if os.path.exists(sound_file):
+                cmd = ["aplay", "-q"]
+                if dev_str != "default":
+                    cmd.extend(["-D", dev_str])
+                cmd.append(sound_file)
+                
+                subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
+                
+        except Exception as e:
+            print(f"[Settings] Error playing volume test: {e}")
     
+    def _refresh_audio_devices(self):
+        # Tuple format: (Friendly Name, Device String)
+        self.audio_map = self.hw.scan_audio_devices()
+        
+        # Only show the Friendly Names in the dropdown
+        names = [x[0] for x in self.audio_map]
+        self.combo_audio['values'] = names
+        
+        # If current value isn't in list (or is just "default"), try to match it
+        current_val = self.audio_device_var.get()
+        
+        # If the settings has the raw string (e.g. "plughw:1,0"), we need to find the friendly name for the UI
+        found_name = next((friendly for friendly, dev in self.audio_map if dev == current_val), None)
+        
+        if found_name:
+            self.audio_device_var.set(found_name)
+        elif current_val not in names:
+            # If completely unknown, default to first item
+            if names: self.audio_device_var.set(names[0])
+            
+    def _scan_sound_files(self):
+        """Scans src/assets for .wav files."""
+        try:
+            import glob
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            assets_dir = os.path.join(current_dir, "assets")
+            
+            # Find all wav files
+            files = glob.glob(os.path.join(assets_dir, "*.wav"))
+            
+            # Extract just filenames
+            filenames = [os.path.basename(f) for f in files]
+            
+            # Ensure at least alert.wav is there if nothing found
+            if not filenames:
+                return ["alert.wav"]
+                
+            return sorted(filenames)
+        except Exception as e:
+            print(f"Error scanning sounds: {e}")
+            return ["alert.wav"]
+
+    def _test_audio_output(self):
+        """Plays the CURRENTLY SELECTED sound on the CURRENTLY SELECTED device."""
+        selection = self.audio_device_var.get()
+        sound_filename = self.sound_file_var.get() # <--- Use selected file
+        
+        # Lookup the actual device string (plughw:...)
+        dev_str = next((dev for friendly, dev in self.audio_map if friendly == selection), "default")
+        
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            sound_file = os.path.join(current_dir, "assets", sound_filename)
+            
+            if os.path.exists(sound_file):
+                cmd = ["aplay", "-q"]
+                if dev_str != "default":
+                    cmd.extend(["-D", dev_str])
+                cmd.append(sound_file)
+                subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
+            else:
+                print(f"Sound file not found: {sound_file}")
+                
+        except Exception as e:
+            print(f"Audio test failed: {e}")
+
     def _build_system_tab(self):
-        content_frame = ttk.Frame(self.tab_system)
+        content_frame = ttk.Frame(self.tab_system, padding=5)
         content_frame.pack(fill='both', expand=True)
 
-        lbl_frame = ttk.LabelFrame(content_frame, text="Temperature Sensor", padding=5)
-        lbl_frame.pack(fill='x', pady=(0, 5))
+        # ==========================================
+        # 1. HARDWARE CONFIGURATION
+        # ==========================================
+        hw_frame = ttk.LabelFrame(content_frame, text="Hardware Config", padding=5)
+        hw_frame.pack(fill='x', pady=(0, 5))
+
+        hw_frame.columnconfigure(0, weight=1)
+        hw_frame.columnconfigure(1, weight=1)
+
+        # --- LEFT COLUMN: SENSOR ---
+        f_left = ttk.Frame(hw_frame)
+        f_left.grid(row=0, column=0, sticky='nw', padx=5, pady=5)
         
-        ttk.Label(lbl_frame, text="Select ID:").pack(side='left')
+        ttk.Label(f_left, text="Temp Sensor:").pack(side='left', padx=(0, 5))
+        
         current_id = self.temp_sensor_var.get()
         initial_values = ["unassigned"]
         if current_id and current_id != "unassigned": initial_values.insert(0, current_id)
-        self.combo_sensor = ttk.Combobox(lbl_frame, textvariable=self.temp_sensor_var, values=initial_values, state="readonly", width=25)
-        self.combo_sensor.pack(side='left', padx=10)
+        
+        self.combo_sensor = ttk.Combobox(f_left, textvariable=self.temp_sensor_var, values=initial_values, state="readonly", width=17)
+        self.combo_sensor.pack(side='left', padx=(0, 5))
+        # FIX: Force focus on click
+        self.combo_sensor.bind("<Button-1>", lambda e: self.after(1, self.combo_sensor.focus_set))
         self.temp_sensor_var.trace_add("write", self._set_dirty)
-        ttk.Button(lbl_frame, text="Scan/Refresh", command=self._refresh_sensors).pack(side='left')
+        
+        ttk.Button(f_left, text="Scan", width=5, command=self._refresh_sensors).pack(side='left')
+
+        # --- RIGHT COLUMN: AUDIO ---
+        f_right = ttk.Frame(hw_frame)
+        f_right.grid(row=0, column=1, sticky='nw', padx=5, pady=0)
+        
+        # Row 0: Audio Out
+        ttk.Label(f_right, text="Audio Out:").grid(row=0, column=0, sticky='e', padx=(0, 5), pady=3)
+        
+        self.combo_audio = ttk.Combobox(f_right, textvariable=self.audio_device_var, state="readonly", width=22)
+        self.combo_audio.grid(row=0, column=1, sticky='w', pady=3)
+        # FIX: Force focus on click
+        self.combo_audio.bind("<Button-1>", lambda e: self.after(1, self.combo_audio.focus_set))
+        self.audio_device_var.trace_add("write", self._set_dirty)
+        
+        ttk.Button(f_right, text="Test", width=5, command=self._test_audio_output).grid(row=0, column=2, padx=(5,0), pady=3)
+
+        # Row 1: Sound Selection
+        ttk.Label(f_right, text="Sound:").grid(row=1, column=0, sticky='e', padx=(0, 5), pady=3)
+        
+        self.combo_sound = ttk.Combobox(f_right, textvariable=self.sound_file_var, state="readonly", width=22)
+        self.combo_sound.grid(row=1, column=1, sticky='w', pady=3)
+        # FIX: Force focus on click
+        self.combo_sound.bind("<Button-1>", lambda e: self.after(1, self.combo_sound.focus_set))
+        self.combo_sound['values'] = self._scan_sound_files()
+        self.sound_file_var.trace_add("write", self._set_dirty)
+
+        self._refresh_audio_devices()
         self.after(500, lambda: self._refresh_sensors() if self.winfo_exists() else None)
-        
-        gen_frame = ttk.LabelFrame(content_frame, text="Configuration", padding=5)
+
+
+        # ==========================================
+        # 2. GENERAL OPTIONS
+        # ==========================================
+        gen_frame = ttk.LabelFrame(content_frame, text="General Options", padding=5)
         gen_frame.pack(fill='x', pady=(0, 5))
+
+        gen_frame.columnconfigure(1, weight=1)
         
-        u_frame = ttk.Frame(gen_frame)
-        u_frame.pack(fill='x', pady=2)
-        ttk.Label(u_frame, text="Display Units:", width=15).pack(side='left')
-        ttk.Radiobutton(u_frame, text="US Imperial (°F / Gal)", variable=self.units_var, value="imperial", command=self._set_dirty).pack(side='left')
-        ttk.Radiobutton(u_frame, text="Metric (°C / L)", variable=self.units_var, value="metric", command=self._set_dirty).pack(side='left', padx=15)
-        
-        b_frame = ttk.Frame(gen_frame)
-        b_frame.pack(fill='x', pady=2)
-        ttk.Label(b_frame, text="Sys Boil Temp:", width=15).pack(side='left')
-        self.boil_entry = ttk.Entry(b_frame, textvariable=self.boil_temp_var, width=10)
+        r = 0
+        pad_y = 2
+
+        # Units
+        ttk.Label(gen_frame, text="Display Units:").grid(row=r, column=0, sticky='e', padx=(0, 10), pady=pad_y)
+        f_units = ttk.Frame(gen_frame)
+        f_units.grid(row=r, column=1, columnspan=3, sticky='w', pady=pad_y)
+        ttk.Radiobutton(f_units, text="US Imperial (°F / Gal)", variable=self.units_var, value="imperial", command=self._set_dirty).pack(side='left')
+        ttk.Radiobutton(f_units, text="Metric (°C / L)", variable=self.units_var, value="metric", command=self._set_dirty).pack(side='left', padx=15)
+        r += 1
+
+        # Boil Temp
+        ttk.Label(gen_frame, text="Sys Boil Temp:").grid(row=r, column=0, sticky='e', padx=(0, 10), pady=pad_y)
+        f_boil = ttk.Frame(gen_frame)
+        f_boil.grid(row=r, column=1, columnspan=3, sticky='w', pady=pad_y)
+        self.boil_entry = ttk.Entry(f_boil, textvariable=self.boil_temp_var, width=8)
         self.boil_entry.pack(side='left')
         self.boil_temp_var.trace_add("write", self._set_dirty)
-        ttk.Label(b_frame, text="°F  (Set to your observed boiling point)").pack(side='left', padx=5)
+        ttk.Label(f_boil, text="°F  (Set to your observed boiling point)").pack(side='left', padx=5)
+        r += 1
+
+        # Auto Checks
+        self.auto_start_check = ttk.Checkbutton(gen_frame, text="Auto-Start App on Boot", variable=self.auto_start_var, command=self._set_dirty)
+        self.auto_start_check.grid(row=r, column=1, sticky='w', pady=pad_y)
         
-        r_frame = ttk.Frame(gen_frame)
-        r_frame.pack(fill='x', pady=2)
-        self.auto_start_check = ttk.Checkbutton(r_frame, text="Auto-Start App on Boot", variable=self.auto_start_var, command=self._set_dirty)
-        self.auto_start_check.pack(anchor='w')
-        self.auto_resume_check = ttk.Checkbutton(r_frame, text="Auto-Resume after Power Loss", variable=self.auto_resume_var, command=self._set_dirty)
-        self.auto_resume_check.pack(anchor='w')
+        self.auto_resume_check = ttk.Checkbutton(gen_frame, text="Auto-Resume after Power Loss", variable=self.auto_resume_var, command=self._set_dirty)
+        self.auto_resume_check.grid(row=r, column=2, columnspan=2, sticky='w', padx=10, pady=pad_y)
         self.auto_start_var.trace_add("write", self._toggle_resume_dependency)
         self._toggle_resume_dependency()
-        
-        v_frame = ttk.Frame(gen_frame)
-        v_frame.pack(fill='x', pady=2)
-        ttk.Label(v_frame, text="System Volume:", width=15).pack(side='left')
-        vol_scale = tk.Scale(v_frame, from_=0, to=100, orient='horizontal', command=self._set_system_volume, width=15)
-        vol_scale.set(80) 
-        vol_scale.pack(side='left', fill='x', expand=True, padx=5)
-        vol_scale.bind("<ButtonRelease-1>", self._on_volume_release)
-        
-        n_frame = ttk.Frame(gen_frame)
-        n_frame.pack(fill='x', pady=2)
-        ttk.Checkbutton(n_frame, text="Force NumLock ON at startup", variable=self.numlock_var, command=self._set_dirty).pack(anchor='w')
+        r += 1
 
-        c_frame = ttk.Frame(gen_frame)
-        c_frame.pack(fill='x', pady=2)
-        ttk.Checkbutton(c_frame, text="Enable CSV Data Logging", variable=self.csv_log_var, command=self._set_dirty).pack(anchor='w')
-        
+        # Numlock / CSV
+        ttk.Checkbutton(gen_frame, text="Force NumLock ON at startup", variable=self.numlock_var, command=self._set_dirty).grid(row=r, column=1, sticky='w', pady=pad_y)
+        ttk.Checkbutton(gen_frame, text="Enable CSV Data Logging", variable=self.csv_log_var, command=self._set_dirty).grid(row=r, column=2, columnspan=2, sticky='w', padx=10, pady=pad_y)
+        r += 1
+
+        # Volume
+        ttk.Label(gen_frame, text="System Volume:").grid(row=r, column=0, sticky='e', padx=(0, 10), pady=(10, 5))
+        vol_scale = tk.Scale(gen_frame, from_=0, to=100, orient='horizontal', command=self._set_system_volume, 
+                             showvalue=0, width=15)
+        vol_scale.set(80) 
+        vol_scale.grid(row=r, column=1, columnspan=3, sticky='ew', padx=(0, 10), pady=(10, 5))
+        vol_scale.bind("<ButtonRelease-1>", self._on_volume_release)
+
+        # Buttons
         sys_btn_frame = ttk.Frame(self.tab_system)
         sys_btn_frame.pack(fill='x', side='bottom', pady=10)
         ttk.Button(sys_btn_frame, text="Close", command=self._on_close).pack(side='right')
@@ -605,6 +784,8 @@ class SettingsPopup(tk.Toplevel):
     def _save_settings_no_popup(self):
         try:
             self.settings.set_system_setting("temp_sensor_id", self.temp_sensor_var.get())
+            self.settings.set_system_setting("audio_device", self.audio_device_var.get())
+            self.settings.set_system_setting("alert_sound_file", self.sound_file_var.get()) # <--- NEW
             self.settings.set_system_setting("units", self.units_var.get())
             self.settings.set_system_setting("force_numlock", self.numlock_var.get())
             self.settings.set_system_setting("auto_start_enabled", self.auto_start_var.get())
