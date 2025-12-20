@@ -9,6 +9,7 @@ from datetime import datetime # <--- ADD THIS
 from profile_data import BrewProfile, StepType, TimeoutBehavior, SequenceStatus
 import subprocess
 import os
+from pid_controller import PIDController  # <--- NEW IMPORT
 
 class SequenceManager:
     def __init__(self, settings_manager, relay_control, hardware_interface):
@@ -20,6 +21,17 @@ class SequenceManager:
         self.current_step_index = -1
         self.status = SequenceStatus.IDLE
         
+        # --- PID SETUP ---
+        # CORRECTED: Use get_section() to retrieve the full dict
+        pid_cfg = self.settings.get_section("pid_settings") 
+        self.pid = PIDController(
+            kp=pid_cfg.get("kp", 50.0),
+            ki=pid_cfg.get("ki", 0.1),
+            kd=pid_cfg.get("kd", 2.0),
+            output_limits=(0, 100)
+        )
+        self.last_pid_update = 0.0
+
         # Track if Delayed Start was launched from Auto (IDLE) or Manual context
         self.delayed_is_auto = True
         
@@ -909,75 +921,72 @@ class SequenceManager:
             self.relay.set_relays(False, False, False)
             return
 
-        heat_needed = False
-        watt_target = 1800 
-        
-        if step.power_watts is not None:
-            watt_target = step.power_watts
+        # Define Target
+        target = 0.0
+        if step.setpoint_f is not None:
+            target = step.setpoint_f
+        elif step.lauter_temp_f is not None:
+            target = step.lauter_temp_f
 
-        # --- HELPER: Handle Temp Reached Transition ---
-        def trigger_temp_reached():
-            self.temp_reached = True
-            self.step_start_time = time.monotonic()
-            
-            # RULE B: Only play sound if we started BELOW the target
-            # (Avoids instant beeping if moving from 152F -> 150F step)
-            start_t = getattr(self, 'initial_step_temp', 0.0)
-            target = self.target_temp if self.target_temp else 0.0
-            
-            # Use small buffer (0.5F) to handle noise
-            if start_t < (target - 0.5):
-                self._play_alert_sound()
-
-            self._save_recovery_snapshot()
-        # ----------------------------------------------
-
+        # Special Case: BOIL steps usually just want 100% power if not at boil
         if step.step_type == StepType.BOIL:
-            # BOIL LOGIC: Use configured boil temp as trigger
-            if not self.temp_reached:
-                watt_target = 1800 
-                
-                # CHANGED: Use boil_temp_f from settings instead of hardcoded 212
-                # Allow step.setpoint_f to override if explicitly set (unlikely in UI, but good for backend safety)
-                boil_target = step.setpoint_f if step.setpoint_f else self.settings.get_system_setting("boil_temp_f", 212.0)
-                
-                if self.current_temp >= boil_target:
-                    trigger_temp_reached()
-                heat_needed = True 
-            else:
-                # LATCH LOGIC: Once temp_reached is True, we stay here.
-                # We continue heating (Heat needed = True) to maintain boil.
-                heat_needed = True
+             target = step.setpoint_f if step.setpoint_f else self.settings.get_system_setting("boil_temp_f", 212.0)
 
-        elif step.step_type == StepType.CHILL:
-            heat_needed = False
-            if not self.temp_reached:
-                # Chill steps start timer immediately (no sound usually desired for chill start)
-                self.temp_reached = True
-                self.step_start_time = time.monotonic()
-                self._save_recovery_snapshot()
-
-        elif self.target_temp > 0:
-            if self.current_temp < (self.target_temp - 0.5):
-                heat_needed = True
-            elif self.current_temp > self.target_temp:
-                heat_needed = False
-            else:
-                heat_needed = self.is_heating 
-            
-            if not self.temp_reached and self.current_temp >= self.target_temp:
-                trigger_temp_reached()
+        # --- PID CALCULATION ---
+        watts_to_apply = 0
         
+        if target > 0:
+            # Check for Temp Reached (Timer Trigger) logic
+            if not self.temp_reached:
+                # Clamp trigger to system boil temp so timer starts even if we can't hit 212F
+                sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
+                if self.current_temp >= min(target, sys_boil):
+                    self.temp_reached = True
+                    self.step_start_time = time.monotonic()
+                    
+                    # Alert sound logic
+                    start_t = getattr(self, 'initial_step_temp', 0.0)
+                    if start_t < (target - 0.5):
+                        self._play_alert_sound()
+                    self._save_recovery_snapshot()
+
+            # Execute PID
+            pid_out = self.pid.compute(self.current_temp, target)
+            self.is_heating = (pid_out > 0)
+            
+            # --- MAP PID % TO DISCRETE POWER LEVELS ---
+            # This creates a "Stepped" output safe for relays
+            if pid_out <= 0:
+                watts_to_apply = 0
+            elif pid_out < 20:
+                watts_to_apply = 0  # Deadband at very low error
+            elif pid_out < 50:
+                watts_to_apply = 800
+            elif pid_out < 75:
+                watts_to_apply = 1000
+            elif pid_out < 90:
+                watts_to_apply = 1400
+            else:
+                watts_to_apply = 1800
+                
+            # Override for Manual Max Power Limit (if step has a limit)
+            step_limit = step.power_watts if step.power_watts is not None else 1800
+            if watts_to_apply > step_limit:
+                watts_to_apply = step_limit
+                
         else:
-            # Steps with 0 target (like "Add Grains" with no heat) start immediately
+            # Target is 0, turn off
+            watts_to_apply = 0
+            self.is_heating = False
+            # If step has 0 target (e.g. "Add Grains"), mark reached immediately
             if not self.temp_reached:
                 self.temp_reached = True
                 self.step_start_time = time.monotonic()
                 self._save_recovery_snapshot()
 
-        self.is_heating = heat_needed
-        if heat_needed:
-            self._apply_power_logic(watt_target)
+        # Apply the Calculated Power
+        if watts_to_apply > 0:
+            self._apply_power_logic(watts_to_apply)
         else:
             self.relay.set_relays(False, False, False)
 
