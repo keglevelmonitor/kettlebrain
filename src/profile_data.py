@@ -11,7 +11,6 @@ class StepType(Enum):
     MASH_OUT = "Mash-out"
     BOIL = "Boil"
     CHILL = "Chill"
-    # DELAYED_START Removed
 
 class TimeoutBehavior(Enum):
     AUTO_ADVANCE = "Auto Advance"
@@ -24,9 +23,8 @@ class SequenceStatus(Enum):
     PAUSED = "PAUSED"
     WAITING_FOR_USER = "WAITING"
     COMPLETED = "COMPLETED"
-    # --- NEW STATES ---
-    MANUAL = "MANUAL"           # Manual Mode Active
-    DELAYED_WAIT = "DELAY_WAIT" # Sleeping/Waiting for start time
+    MANUAL = "MANUAL"
+    DELAYED_WAIT = "DELAY_WAIT"
 
 class BrewAddition:
     def __init__(self, id=None, name="Alert", time_point_min=0, triggered=False):
@@ -94,10 +92,14 @@ class BrewStep:
         }
 
 class BrewProfile:
-    def __init__(self, id=None, name="New Profile", steps=None):
+    def __init__(self, id=None, name="New Profile", steps=None, water_data=None, chemistry_data=None):
         self.id = id if id else str(uuid.uuid4())
         self.name = name
         self.steps = steps if steps else []
+        
+        # NEW: Dictionaries to store calculator inputs/results
+        self.water_data = water_data if water_data else {}
+        self.chemistry_data = chemistry_data if chemistry_data else {}
 
     def add_step(self, step):
         self.steps.append(step)
@@ -106,6 +108,8 @@ class BrewProfile:
         return {
             "id": self.id,
             "name": self.name,
+            "water_data": self.water_data,
+            "chemistry_data": self.chemistry_data,
             "steps": [step.to_dict() for step in self.steps]
         }
 
@@ -113,6 +117,8 @@ class BrewProfile:
     def from_dict(cls, data):
         profile = cls(
             id=data.get("id"),
-            name=data.get("name", "Unknown Profile")
+            name=data.get("name", "Unknown Profile"),
+            water_data=data.get("water_data", {}),
+            chemistry_data=data.get("chemistry_data", {})
         )
         return profile

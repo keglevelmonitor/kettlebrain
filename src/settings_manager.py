@@ -7,6 +7,7 @@ import json
 import os
 import threading
 import uuid
+import copy
 from datetime import datetime
 from profile_data import BrewProfile, BrewStep, BrewAddition, StepType, TimeoutBehavior
 
@@ -22,7 +23,7 @@ DEFAULT_SETTINGS = {
         "buzzer_gpio": 13,
         "sensor_type": "DS18B20",
         "screen_timeout": 300,
-        "boil_temp_f": 212,            # <--- REPLACED altitude_ft with this source of truth
+        "boil_temp_f": 212,         
         "relay_active_high": False,
         "relay_logic_configured": False,
         "force_numlock": True,
@@ -32,9 +33,8 @@ DEFAULT_SETTINGS = {
         "auto_resume_enabled": False,
         "enable_csv_logging": False,
         "heater_ref_volume_gal": 8.0,
-        "heater_ref_rate_fpm": 1.2,
+        "heater_ref_rate_fpm": 1.3,
     },
-    # --- NEW MANUAL MODE MEMORY ---
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
         "last_timer_min": 60.0,
@@ -42,16 +42,28 @@ DEFAULT_SETTINGS = {
         "last_volume_gal": 6.0,
         "heater_enabled": False
     },
-    # --- NO SPARGE CALCULATOR MEMORY ---
+    # Default values for Quick Calculators
     "no_sparge_settings": {
+        "calc_method": "no_sparge",
         "grain_weight": 10.0,
         "grain_temp": 65.0,
         "mash_temp": 152.0,
         "target_vol": 5.5,
+        "trub_loss": 0.50,
         "boil_time": 60.0,
         "boiloff_rate": 0.5,
-        "trub_loss": 0.25,
-        "abs_rate": 0.6
+        "abs_rate": 0.6,
+        "mash_thickness": 1.5
+    },
+    "chemistry_settings": {
+        "water_vol": 8.0,
+        "beer_srm": 5.0,
+        "target_ph": 5.4,
+        "target_ca": 80.0,
+        "target_mg": 5.0,
+        "target_na": 25.0,
+        "target_so4": 80.0,
+        "target_cl": 75.0
     },
     "pid_settings": {
         "kp": 50.0,
@@ -73,7 +85,6 @@ class SettingsManager:
         self.settings = {}
         self.profiles = {}
         
-        # Dead Man's Switch: Assumed Clean until loaded otherwise
         self.last_shutdown_was_clean = True 
         
         self._ensure_data_dir()
@@ -92,11 +103,11 @@ class SettingsManager:
     def _create_default_profile_dict(self):
         """Creates the 'Default Profile'."""
         p_id = str(uuid.uuid4())
-        profile = BrewProfile(
-            id=p_id, 
-            name="Default Profile"
-        )
+        profile = BrewProfile(id=p_id, name="Default Profile")
         
+        # Add basic default water data
+        profile.water_data = copy.deepcopy(DEFAULT_SETTINGS["no_sparge_settings"])
+
         # --- STEP 1: Heat to Strike ---
         s1 = BrewStep(
             id=str(uuid.uuid4()), 
@@ -179,11 +190,7 @@ class SettingsManager:
         profile.add_step(s5)
         
         return {
-            p_id: {
-                "id": profile.id,
-                "name": profile.name,
-                "steps": [step.to_dict() for step in profile.steps]
-            }
+            p_id: profile.to_dict()
         }
 
     def _load_settings(self):
@@ -196,7 +203,7 @@ class SettingsManager:
                 try:
                     with open(self.settings_file, 'r') as f:
                         self.settings = json.load(f)
-                    # Merge defaults
+                    
                     defaults = copy.deepcopy(DEFAULT_SETTINGS)
                     for section, data in defaults.items():
                         if section not in self.settings:
@@ -209,10 +216,8 @@ class SettingsManager:
                     print(f"[SettingsManager] Error loading settings: {e}. Reverting to defaults.")
                     self.settings = copy.deepcopy(DEFAULT_SETTINGS)
             
-            # --- DEAD MAN'S SWITCH LOGIC ---
             self.last_shutdown_was_clean = self.settings.get("system_settings", {}).get("controlled_shutdown", False)
             
-            # Mark current session as Dirty (False) immediately
             if "system_settings" not in self.settings: self.settings["system_settings"] = {}
             self.settings["system_settings"]["controlled_shutdown"] = False
             self._save_settings()
@@ -263,6 +268,11 @@ class SettingsManager:
     def get(self, section, key, default=None):
         with self._data_lock:
             return self.settings.get(section, {}).get(key, default)
+            
+    def get_section(self, section):
+        """Returns the entire dictionary for a section."""
+        with self._data_lock:
+            return self.settings.get(section, {})
 
     def set(self, section, key, value):
         with self._data_lock:
@@ -278,24 +288,20 @@ class SettingsManager:
         self.set("system_settings", key, value)
         
     def set_controlled_shutdown(self, is_controlled):
-        """Called by main.py only during a successful shutdown sequence."""
         self.set("system_settings", "controlled_shutdown", is_controlled)
 
     # --- RECOVERY STATE METHODS ---
 
     def save_recovery_state(self, state_dict):
-        """Saves a snapshot of the running brew."""
         with self._data_lock:
             self.settings["recovery_state"] = state_dict
             self._save_settings()
 
     def get_recovery_state(self):
-        """Retrieves the last saved snapshot."""
         with self._data_lock:
             return self.settings.get("recovery_state")
 
     def clear_recovery_state(self):
-        """Clears the snapshot (used when brew finishes or stops cleanly)."""
         with self._data_lock:
             self.settings["recovery_state"] = None
             self._save_settings()
@@ -304,12 +310,7 @@ class SettingsManager:
 
     def save_profile(self, profile: BrewProfile):
         with self._data_lock:
-            profile_data = {
-                "id": profile.id,
-                "name": profile.name,
-                "steps": [step.to_dict() for step in profile.steps]
-            }
-            self.profiles[profile.id] = profile_data
+            self.profiles[profile.id] = profile.to_dict()
             self._save_profiles()
             print(f"[SettingsManager] Saved profile: {profile.name}")
 
@@ -332,7 +333,9 @@ class SettingsManager:
                 try:
                     profile = BrewProfile(
                         id=p_data.get("id", pid),
-                        name=p_data.get("name", "Unknown Profile")
+                        name=p_data.get("name", "Unknown Profile"),
+                        water_data=p_data.get("water_data", {}),
+                        chemistry_data=p_data.get("chemistry_data", {})
                     )
                     
                     raw_steps = p_data.get("steps", [])

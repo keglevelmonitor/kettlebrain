@@ -7,7 +7,7 @@ from tkinter import ttk, messagebox
 import copy
 from datetime import datetime, timedelta
 from profile_data import BrewProfile, BrewStep, StepType, TimeoutBehavior, BrewAddition
-from utils import UnitUtils 
+from utils import UnitUtils, BrewMath, WaterProfileLoader
 
 class AdditionsDialog(tk.Toplevel):
     def __init__(self, parent, step_name, additions_list):
@@ -16,8 +16,6 @@ class AdditionsDialog(tk.Toplevel):
         self.title(f"Alerts for: {step_name}")
         self.geometry("400x300")
         self.transient(parent)
-        
-        # SAFETY PATTERN V3: Topmost to float over Editor
         self.attributes('-topmost', True)
         
         self.additions = additions_list 
@@ -45,7 +43,7 @@ class AdditionsDialog(tk.Toplevel):
     def _layout(self):
         list_frame = ttk.Frame(self, padding=5)
         list_frame.pack(fill='both', expand=True)
-        
+         
         self.lb_additions = tk.Listbox(list_frame, height=6, font=('Arial', 11))
         self.lb_additions.pack(side='left', fill='both', expand=True)
         
@@ -136,13 +134,10 @@ class ProfileEditor(tk.Toplevel):
         super().__init__(parent)
         self.withdraw()
         
-        self.title(f"Editing Profile")
-        
-        # INCREASED HEIGHT: 780x440
-        self.geometry("780x440")
+        self.title(f"Editing Profile: {profile.name}")
+        # REDUCED HEIGHT: 780x480 (Standard Pi Touchscreen Size)
+        self.geometry("780x480") 
         self.transient(parent)
-        
-        # SAFETY PATTERN V3: Topmost, No Grabs
         self.attributes('-topmost', True)
         
         self.profile = profile
@@ -151,14 +146,18 @@ class ProfileEditor(tk.Toplevel):
         
         self.steps_working_copy = copy.deepcopy(profile.steps) 
         self.current_step_index = None 
-        
         self.list_map = [] 
         self.loading_step = False 
+
+        # Init variables for all tabs
+        self._init_form_vars()
+        self._init_water_vars()
+        self._init_chem_vars()
         
         self._configure_styles()
         self._create_layout()
-        self._refresh_step_list()
         
+        self._refresh_step_list()
         if self.steps_working_copy:
             self._select_visual_row(0)
         
@@ -178,7 +177,6 @@ class ProfileEditor(tk.Toplevel):
 
     def close(self):
         try:
-            # No grab_release needed
             if self.master:
                 self.master.focus_set()
         except:
@@ -192,40 +190,118 @@ class ProfileEditor(tk.Toplevel):
         s.configure('Header.TLabel', font=('Arial', 12, 'bold'))
         s.configure('SubHeader.TLabel', font=('Arial', 10, 'bold'), foreground='#555555')
 
-    def _create_layout(self):
-        # 1. PACK BUTTONS FIRST (Bottom) - Ensures they are never pushed off screen
-        bot_frame = ttk.Frame(self)
-        bot_frame.pack(side='bottom', fill='x', padx=10, pady=5)
-        
-        ttk.Button(bot_frame, text="Cancel", command=self.close).pack(side='right', padx=5)
-        ttk.Button(bot_frame, text="Save Profile", command=self._save_and_close).pack(side='right', padx=5)
+    def _init_form_vars(self):
+        # Step Details
+        self.var_name = tk.StringVar()
+        self.var_type = tk.StringVar()
+        self.var_temp = tk.StringVar()
+        self.var_duration = tk.StringVar()
+        self.var_power = tk.StringVar(value="1800")
+        self.var_volume = tk.StringVar()
+        self.var_timeout = tk.StringVar()
+        self.var_type.trace_add('write', self._on_type_change)
 
-        # 2. PACK MAIN CONTENT (Fills remaining space)
-        self.main_frame = ttk.Frame(self, padding=5)
-        self.main_frame.pack(side='top', fill='both', expand=True)
+    def _init_water_vars(self):
+        # Load from profile.water_data or defaults
+        wd = self.profile.water_data
         
-        # TOP ROW: Name Input
-        top_frame = ttk.Frame(self.main_frame)
-        top_frame.pack(fill='x', pady=(0, 5))
+        self.calc_method_var = tk.StringVar(value=wd.get("calc_method", "no_sparge"))
+        self.calc_grain_wt = tk.DoubleVar(value=wd.get("grain_weight", 10.0))
+        self.calc_grain_temp = tk.DoubleVar(value=wd.get("grain_temp", 65.0))
+        self.calc_mash_temp = tk.DoubleVar(value=wd.get("mash_temp", 152.0))
+        self.calc_target_vol = tk.DoubleVar(value=wd.get("target_vol", 5.5))
+        self.calc_trub = tk.DoubleVar(value=wd.get("trub_loss", 0.25))
+        self.calc_boil_time = tk.DoubleVar(value=wd.get("boil_time", 60.0))
+        self.calc_boiloff = tk.DoubleVar(value=wd.get("boiloff_rate", 0.5))
+        self.calc_abs = tk.DoubleVar(value=wd.get("abs_rate", 0.6))
+        self.calc_thickness = tk.DoubleVar(value=wd.get("mash_thickness", 1.5))
         
+        # Results
+        self.res_strike_vol = tk.StringVar(value="--")
+        self.res_strike_temp = tk.StringVar(value="--")
+        self.res_sparge_vol = tk.StringVar(value="--")
+        self.res_mash_vol = tk.StringVar(value="--")
+        self.res_pre_boil = tk.StringVar(value="--")
+        self.res_post_boil = tk.StringVar(value="--")
+
+    def _init_chem_vars(self):
+        # Load from profile.chemistry_data or defaults
+        cd = self.profile.chemistry_data
+        
+        # New: Track the source profile name (default to empty)
+        self.var_chem_profile_name = tk.StringVar(value=cd.get("source_profile_name", ""))
+        self.loading_chem_profile = False # Safety flag for change detection
+        
+        self.chem_vol = tk.DoubleVar(value=cd.get("water_vol", 8.0))
+        self.chem_srm = tk.DoubleVar(value=cd.get("beer_srm", 5.0))
+        self.chem_target_ph = tk.DoubleVar(value=cd.get("target_ph", 5.4))
+        
+        self.chem_tgt_ca = tk.DoubleVar(value=cd.get("target_ca", 50.0))
+        self.chem_tgt_mg = tk.DoubleVar(value=cd.get("target_mg", 10.0))
+        self.chem_tgt_na = tk.DoubleVar(value=cd.get("target_na", 0.0))
+        self.chem_tgt_so4 = tk.DoubleVar(value=cd.get("target_so4", 70.0))
+        self.chem_tgt_cl = tk.DoubleVar(value=cd.get("target_cl", 50.0))
+        
+        # Results
+        self.res_gypsum = tk.StringVar(value="--")
+        self.res_cacl2 = tk.StringVar(value="--")
+        self.res_epsom = tk.StringVar(value="--")
+        self.res_salt = tk.StringVar(value="--")
+        self.res_lime = tk.StringVar(value="--")
+        self.res_acid = tk.StringVar(value="--")
+
+    def _create_layout(self):
+        # 1. PROFILE NAME (Global to all tabs)
+        top_frame = ttk.Frame(self)
+        top_frame.pack(fill='x', padx=10, pady=5)
         ttk.Label(top_frame, text="Profile Name:", style='Header.TLabel').pack(side='left')
         self.var_profile_name = tk.StringVar(value=self.profile.name)
         ent_name = ttk.Entry(top_frame, textvariable=self.var_profile_name, font=('Arial', 11))
         ent_name.pack(side='left', fill='x', expand=True, padx=10)
+
+        # 2. GLOBAL BUTTONS (Bottom)
+        bot_frame = ttk.Frame(self)
+        bot_frame.pack(side='bottom', fill='x', padx=10, pady=5)
+        ttk.Button(bot_frame, text="Cancel", command=self.close).pack(side='right', padx=5)
+        ttk.Button(bot_frame, text="Save Profile", command=self._save_and_close).pack(side='right', padx=5)
+
+        # 3. NOTEBOOK (Main Content)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(side='top', fill='both', expand=True, padx=5, pady=5)
         
-        content_frame = ttk.Frame(self.main_frame)
+        # TAB 1: Sequence Editor
+        self.tab_seq = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_seq, text="Brew Sequence")
+        self._build_sequence_tab()
+        
+        # TAB 2: Profile Water
+        self.tab_calc = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_calc, text="Profile Water")
+        self._build_water_tab()
+        
+        # TAB 3: Profile Chemistry
+        self.tab_chem = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_chem, text="Profile Chemistry")
+        self._build_chem_tab()
+
+    # ==========================
+    # TAB 1: SEQUENCE EDITOR
+    # ==========================
+    def _build_sequence_tab(self):
+        content_frame = ttk.Frame(self.tab_seq, padding=5)
         content_frame.pack(fill='both', expand=True)
 
         # LEFT PANE (List)
         left_pane = ttk.Frame(content_frame, width=220)
         left_pane.pack(side='left', fill='both', padx=(0, 5), expand=False)
         
-        ttk.Label(left_pane, text="Sequence", style='SubHeader.TLabel').pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_pane, text="Steps", style='SubHeader.TLabel').pack(anchor='w', pady=(0, 2))
         
         list_container = ttk.Frame(left_pane)
         list_container.pack(fill='both', expand=True)
         
-        self.step_listbox = tk.Listbox(list_container, font=('Arial', 10), selectmode=tk.SINGLE, activator=None, height=10)
+        # REDUCED HEIGHT: height=8 (was 10) to fit 480px screen
+        self.step_listbox = tk.Listbox(list_container, font=('Arial', 10), selectmode=tk.SINGLE, activator=None, height=8)
         self.step_listbox.pack(side='left', fill='both', expand=True)
         self.step_listbox.bind('<<ListboxSelect>>', self._on_step_select)
         
@@ -235,8 +311,8 @@ class ProfileEditor(tk.Toplevel):
         
         btn_row = ttk.Frame(left_pane)
         btn_row.pack(fill='x', pady=2)
-        ttk.Button(btn_row, text="+ Add", width=5, command=self._add_step).pack(side='left', expand=True, fill='x', padx=1)
-        ttk.Button(btn_row, text="- Del", width=5, command=self._delete_step).pack(side='left', expand=True, fill='x', padx=1)
+        ttk.Button(btn_row, text="+", width=4, command=self._add_step).pack(side='left', expand=True, fill='x')
+        ttk.Button(btn_row, text="-", width=4, command=self._delete_step).pack(side='left', expand=True, fill='x')
         ttk.Button(btn_row, text="▲", width=3, command=self._move_up).pack(side='left', padx=1)
         ttk.Button(btn_row, text="▼", width=3, command=self._move_down).pack(side='left', padx=1)
 
@@ -244,31 +320,7 @@ class ProfileEditor(tk.Toplevel):
         self.right_pane = ttk.LabelFrame(content_frame, text="Selected Step Details", padding=5)
         self.right_pane.pack(side='right', fill='both', expand=True)
         
-        self._init_form_vars()
         self._build_form_widgets()
-
-    def _init_form_vars(self):
-        self.var_name = tk.StringVar()
-        self.var_type = tk.StringVar()
-        self.var_temp = tk.StringVar()
-        self.var_duration = tk.StringVar()
-        self.var_power = tk.StringVar(value="1800")
-        self.var_volume = tk.StringVar()
-        self.var_timeout = tk.StringVar()
-        
-        self.var_ds_date = tk.StringVar()
-        self.var_ds_hour = tk.StringVar(value="00")
-        self.var_ds_min = tk.StringVar(value="00")
-        
-        self.var_type.trace_add('write', self._on_type_change)
-
-    def _generate_date_options(self):
-        dates = []
-        now = datetime.now()
-        for i in range(31):
-            d = now + timedelta(days=i)
-            dates.append(d.strftime("%Y-%m-%d %a"))
-        return dates
 
     def _build_form_widgets(self):
         f = self.right_pane
@@ -297,38 +349,18 @@ class ProfileEditor(tk.Toplevel):
         self.lbl_temp = ttk.Label(f, text=t_label)
         self.lbl_temp.grid(row=row, column=0, sticky='e', padx=pad_x, pady=pad_y)
         
-        # Temp Container to hold Entry AND the new Boiling Label
         self.frm_temp = ttk.Frame(f)
         self.frm_temp.grid(row=row, column=1, sticky='w', padx=pad_x, pady=pad_y)
         
         self.ent_temp = ttk.Entry(self.frm_temp, textvariable=self.var_temp, width=8)
         self.ent_temp.pack(side='left')
-        
-        # NEW: Boiling Indicator (Hidden by default)
         self.lbl_boiling_indicator = ttk.Label(self.frm_temp, text="BOILING", foreground='red', font=('Arial', 9, 'bold'))
-        # We don't pack it yet; _on_type_change handles visibility
         
         self.lbl_dur = ttk.Label(f, text="Duration (min):")
         self.lbl_dur.grid(row=row, column=2, sticky='e', padx=pad_x, pady=pad_y)
         
-        self.frm_dur_container = ttk.Frame(f)
-        self.frm_dur_container.grid(row=row, column=3, sticky='ew', padx=pad_x, pady=pad_y)
-        
-        self.ent_dur = ttk.Entry(self.frm_dur_container, textvariable=self.var_duration)
-        self.ent_dur.pack(fill='x', expand=True)
-        
-        self.frm_delay = ttk.Frame(self.frm_dur_container)
-        date_opts = self._generate_date_options()
-        self.cb_date = ttk.Combobox(self.frm_delay, textvariable=self.var_ds_date, values=date_opts, state='readonly', width=12)
-        self.cb_date.pack(side='left', padx=(0, 2))
-        if date_opts: self.cb_date.set(date_opts[0])
-        
-        sb_h = ttk.Spinbox(self.frm_delay, from_=0, to=23, textvariable=self.var_ds_hour, width=3, format="%02.0f", wrap=True)
-        sb_h.pack(side='left')
-        ttk.Label(self.frm_delay, text=":").pack(side='left')
-        sb_m = ttk.Spinbox(self.frm_delay, from_=0, to=59, textvariable=self.var_ds_min, width=3, format="%02.0f", wrap=True)
-        sb_m.pack(side='left')
-        
+        self.ent_dur = ttk.Entry(f, textvariable=self.var_duration)
+        self.ent_dur.grid(row=row, column=3, sticky='ew', padx=pad_x, pady=pad_y)
         row += 1
 
         # --- ROW 2: Power & Volume ---
@@ -359,7 +391,7 @@ class ProfileEditor(tk.Toplevel):
         self.btn_additions.grid(row=row, column=1, columnspan=3, sticky='ew', padx=pad_x, pady=pad_y)
         row += 1
         
-        # --- ROW 5: Notes (Multi-line Text) ---
+        # --- ROW 5: Notes ---
         ttk.Label(f, text="Notes:").grid(row=row, column=0, sticky='ne', padx=pad_x, pady=pad_y)
         self.txt_note = tk.Text(f, height=2, width=30, font=('Arial', 10))
         self.txt_note.grid(row=row, column=1, columnspan=3, sticky='ew', padx=pad_x, pady=pad_y)
@@ -367,21 +399,283 @@ class ProfileEditor(tk.Toplevel):
         
         # --- ROW 6: Alerts Preview ---
         ttk.Label(f, text="Alerts:").grid(row=row, column=0, sticky='ne', padx=pad_x, pady=pad_y)
-        self.lb_alerts_preview = tk.Listbox(f, height=5, font=('Arial', 10), bg='white', bd=1, relief='sunken')
+        self.lb_alerts_preview = tk.Listbox(f, height=3, font=('Arial', 10), bg='white', bd=1, relief='sunken')
         self.lb_alerts_preview.grid(row=row, column=1, columnspan=3, sticky='ew', padx=pad_x, pady=pad_y)
         row += 1
         
         self._toggle_form_state(False)
 
+    # ==========================
+    # TAB 2: PROFILE WATER
+    # ==========================
+    def _build_water_tab(self):
+        is_metric = UnitUtils.is_metric(self.settings)
+        u_wt = "kg" if is_metric else "lbs"
+        u_temp = "°C" if is_metric else "°F"
+        u_vol = "L" if is_metric else "Gal"
+        u_boiloff = "L/hr" if is_metric else "Gal/hr"
+        u_abs = "L/kg" if is_metric else "qt/lb"
+        u_thick = "L/kg" if is_metric else "qt/lb"
+
+        # 1. TOP FRAME: Method Selection (Moved out of column to save height)
+        f_top = ttk.Frame(self.tab_calc, padding=5)
+        f_top.pack(fill='x')
+        ttk.Label(f_top, text="Method:", font=('Arial', 10, 'bold')).pack(side='left', padx=(0, 10))
+        ttk.Radiobutton(f_top, text="No Sparge", variable=self.calc_method_var, value="no_sparge", command=self._toggle_calc_inputs).pack(side='left')
+        ttk.Radiobutton(f_top, text="Sparge", variable=self.calc_method_var, value="sparge", command=self._toggle_calc_inputs).pack(side='left', padx=10)
+
+        # 2. SPLIT PANE
+        paned = ttk.PanedWindow(self.tab_calc, orient='horizontal')
+        paned.pack(fill='both', expand=True, padx=10, pady=(0, 10))
+        
+        # LEFT: Inputs
+        f_in = ttk.LabelFrame(paned, text="Recipe Inputs", padding=5)
+        paned.add(f_in, weight=1)
+        
+        r = 0
+        pad = 2 # Tight padding
+        
+        # Inputs - Compact Layout
+        ttk.Label(f_in, text=f"Grain ({u_wt}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_grain_wt, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
+        ttk.Label(f_in, text=f"Grain T ({u_temp}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_grain_temp, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
+        ttk.Label(f_in, text=f"Mash T ({u_temp}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_mash_temp, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
+        ttk.Separator(f_in, orient='horizontal').grid(row=r, column=0, columnspan=2, sticky='ew', pady=2); r+=1
+        ttk.Label(f_in, text=f"Ferm Vol ({u_vol}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_target_vol, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
+        ttk.Label(f_in, text=f"Trub ({u_vol}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_trub, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
+        ttk.Label(f_in, text=f"Boil Min:").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_boil_time, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
+        ttk.Label(f_in, text=f"Boiloff ({u_boiloff}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_boiloff, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
+        ttk.Label(f_in, text=f"Abs ({u_abs}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_abs, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
+        ttk.Label(f_in, text=f"Thick ({u_thick}):").grid(row=r, column=0, sticky='e', pady=pad)
+        self.ent_thickness = ttk.Entry(f_in, textvariable=self.calc_thickness, width=6)
+        self.ent_thickness.grid(row=r, column=1, sticky='w', padx=5); r+=1
+        
+        ttk.Button(f_in, text="CALCULATE", command=self._calculate_water_req).grid(row=r, column=0, columnspan=2, sticky='ew', pady=5)
+        
+        # RIGHT: Results
+        f_out = ttk.LabelFrame(paned, text="Requirements", padding=10)
+        paned.add(f_out, weight=1)
+        
+        f_hero = ttk.Frame(f_out)
+        f_hero.pack(fill='x', pady=5)
+        
+        ttk.Label(f_hero, text="Strike Water:", font=('Arial', 10)).pack()
+        ttk.Label(f_hero, textvariable=self.res_strike_vol, font=('Arial', 20, 'bold'), foreground='#0044CC').pack()
+        ttk.Label(f_hero, text="Strike Temp:", font=('Arial', 10)).pack(pady=(5,0))
+        ttk.Label(f_hero, textvariable=self.res_strike_temp, font=('Arial', 20, 'bold'), foreground='#e74c3c').pack()
+        
+        ttk.Separator(f_out, orient='horizontal').pack(fill='x', pady=10)
+        
+        f_det = ttk.Frame(f_out)
+        f_det.pack(fill='x')
+        ttk.Label(f_det, text="Sparge Water:").grid(row=0, column=0, sticky='e')
+        ttk.Label(f_det, textvariable=self.res_sparge_vol, font=('Arial', 10, 'bold')).grid(row=0, column=1, sticky='w', padx=5)
+        
+        ttk.Label(f_det, text="Total Mash Vol:").grid(row=1, column=0, sticky='e')
+        ttk.Label(f_det, textvariable=self.res_mash_vol).grid(row=1, column=1, sticky='w', padx=5)
+        
+        ttk.Label(f_det, text="Pre-Boil Vol:").grid(row=2, column=0, sticky='e')
+        ttk.Label(f_det, textvariable=self.res_pre_boil).grid(row=2, column=1, sticky='w', padx=5)
+        
+        self._toggle_calc_inputs()
+
+    def _toggle_calc_inputs(self):
+        if self.calc_method_var.get() == "sparge":
+            self.ent_thickness.config(state='normal')
+        else:
+            self.ent_thickness.config(state='disabled')
+
+    def _calculate_water_req(self):
+        try:
+            grain_wt = self.calc_grain_wt.get()
+            grain_temp = self.calc_grain_temp.get()
+            mash_temp = self.calc_mash_temp.get()
+            target_vol = self.calc_target_vol.get()
+            trub = self.calc_trub.get()
+            boil_time = self.calc_boil_time.get()
+            boiloff = self.calc_boiloff.get()
+            abs_rate = self.calc_abs.get()
+            method = self.calc_method_var.get()
+            thickness = self.calc_thickness.get()
+            
+            is_metric = UnitUtils.is_metric(self.settings)
+            
+            # --- USE SHARED MATH ---
+            res = BrewMath.calculate_water(
+                grain_wt, grain_temp, mash_temp, target_vol, trub,
+                boil_time, boiloff, abs_rate, method, thickness, is_metric
+            )
+
+            u_vol = "L" if is_metric else "Gal"
+            u_temp = "°C" if is_metric else "°F"
+            
+            self.res_strike_vol.set(f"{res['strike_vol']:.2f} {u_vol}")
+            self.res_strike_temp.set(f"{res['strike_temp']:.1f} {u_temp}")
+            self.res_sparge_vol.set(f"{res['sparge_vol']:.2f} {u_vol}")
+            self.res_mash_vol.set(f"{res['total_mash_vol']:.2f} {u_vol}")
+            self.res_pre_boil.set(f"{res['pre_boil_vol']:.2f} {u_vol}")
+            self.res_post_boil.set(f"{res['post_boil_vol']:.2f} {u_vol}")
+            
+            # Auto-populate chemistry volume
+            self.chem_vol.set(round(res['total_water'], 2))
+            
+        except Exception as e:
+            messagebox.showerror("Calc Error", str(e), parent=self)
+
+    # ==========================
+    # TAB 3: PROFILE CHEMISTRY
+    # ==========================
+    def _build_chem_tab(self):
+        u_vol = "L" if UnitUtils.is_metric(self.settings) else "Gal"
+        
+        f = ttk.Frame(self.tab_chem, padding=10)
+        f.pack(fill='both', expand=True)
+        
+        # Left: Targets
+        lf = ttk.LabelFrame(f, text="Targets & Stats", padding=10)
+        lf.place(relx=0, rely=0, relwidth=0.45, relheight=1.0)
+        
+        r=0
+        pad=4 
+        ttk.Label(lf, text=f"Total Water ({u_vol}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(lf, textvariable=self.chem_vol, width=6).grid(row=r, column=1, sticky='w'); r+=1
+        ttk.Label(lf, text="Beer SRM:").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(lf, textvariable=self.chem_srm, width=6).grid(row=r, column=1, sticky='w'); r+=1
+        ttk.Label(lf, text="Target pH:").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(lf, textvariable=self.chem_target_ph, width=6).grid(row=r, column=1, sticky='w'); r+=1
+        
+        # --- NEW: Water Profile Dropdown ---
+        r+=1
+        ttk.Label(lf, text="Load Profile:").grid(row=r, column=0, sticky='e', pady=(10, 2))
+        
+        self.water_profiles = WaterProfileLoader.load_profiles()
+        self.profile_names = [p['name'] for p in self.water_profiles]
+        
+        # Bind to self.var_chem_profile_name so it loads saved values
+        self.cb_water_profile = ttk.Combobox(lf, textvariable=self.var_chem_profile_name, values=self.profile_names, state='readonly', width=18)
+        self.cb_water_profile.grid(row=r, column=1, sticky='w', pady=(10, 2), padx=0)
+        self.cb_water_profile.bind("<<ComboboxSelected>>", self._on_water_profile_select)
+        
+        # Focus Handler
+        def _handle_click(event):
+            try:
+                event.widget.focus_set()
+                event.widget.event_generate('<Down>')
+                return 'break'
+            except: pass
+        self.cb_water_profile.bind('<Button-1>', _handle_click)
+        
+        r+=1
+        # -----------------------------------
+        
+        # Define Targets with Traces
+        # If user types in these boxes, the dropdown will clear.
+        targets = [
+            ("Target Ca (ppm):", self.chem_tgt_ca),
+            ("Target Mg (ppm):", self.chem_tgt_mg),
+            ("Target Na (ppm):", self.chem_tgt_na),
+            ("Target SO4 (ppm):", self.chem_tgt_so4),
+            ("Target Cl (ppm):", self.chem_tgt_cl)
+        ]
+
+        for label, var in targets:
+            ttk.Label(lf, text=label).grid(row=r, column=0, sticky='e', pady=pad)
+            ttk.Entry(lf, textvariable=var, width=6).grid(row=r, column=1, sticky='w')
+            # Add listener for manual edits
+            var.trace_add("write", self._on_chem_manual_edit)
+            r+=1
+        
+        ttk.Button(lf, text="CALCULATE ADDITIONS", command=self._calculate_chemistry).grid(row=r, column=0, columnspan=2, sticky='ew', pady=10)
+
+        # Right: Results
+        rf = ttk.LabelFrame(f, text="Additions (to Total Water)", padding=10)
+        rf.place(relx=0.46, rely=0, relwidth=0.54, relheight=1.0)
+        
+        r=0
+        res_pad = 6
+        ttk.Label(rf, text="Gypsum (CaSO4):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_gypsum, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Calc. Chlor (CaCl2):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_cacl2, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Epsom Salt (MgSO4):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_epsom, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Table Salt (NaCl):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_salt, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        ttk.Label(rf, text="Slaked Lime (CaOH2):", font=('Arial', 9, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_lime, foreground='#0044CC').grid(row=r, column=1, sticky='w', padx=10); r+=1
+        
+        ttk.Separator(rf, orient='horizontal').grid(row=r, column=0, columnspan=2, sticky='ew', pady=10); r+=1 
+        
+        ttk.Label(rf, text="Lactic Acid (88%):", font=('Arial', 10, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad); ttk.Label(rf, textvariable=self.res_acid, font=('Arial', 12, 'bold'), foreground='#e74c3c').grid(row=r, column=1, sticky='w', padx=10); r+=1
+                              
+    def _on_water_profile_select(self, event):
+        selection = self.cb_water_profile.get()
+        if not selection: return
+        
+        profile = next((p for p in self.water_profiles if p['name'] == selection), None)
+        if profile:
+            try:
+                # Set flag so the trace listeners know this is an automatic update
+                self.loading_chem_profile = True
+                
+                self.chem_tgt_ca.set(profile.get('ca', 0))
+                self.chem_tgt_mg.set(profile.get('mg', 0))
+                self.chem_tgt_na.set(profile.get('na', 0))
+                self.chem_tgt_so4.set(profile.get('so4', 0))
+                self.chem_tgt_cl.set(profile.get('cl', 0))
+                
+            except Exception as e:
+                print(f"Error applying profile: {e}")
+            finally:
+                # Release flag
+                self.loading_chem_profile = False
+
+    def _on_chem_manual_edit(self, *args):
+        # If we are programmatically loading a profile, ignore the changes
+        if self.loading_chem_profile:
+            return
+            
+        # Otherwise, the user typed something manually.
+        # Clear the dropdown to indicate "Custom" state.
+        if self.cb_water_profile.get() != "":
+            self.cb_water_profile.set("")
+
+    def _calculate_chemistry(self):
+        try:
+            vol = self.chem_vol.get()
+            if vol <= 0: raise ValueError("Volume must be > 0")
+            
+            srm = self.chem_srm.get()
+            tgt_ph = self.chem_target_ph.get()
+            
+            # Get grain weight dynamically from the other tab
+            grain_wt = self.calc_grain_wt.get() 
+            
+            tgt_ca = self.chem_tgt_ca.get()
+            tgt_mg = self.chem_tgt_mg.get()
+            tgt_na = self.chem_tgt_na.get()
+            tgt_so4 = self.chem_tgt_so4.get()
+            tgt_cl = self.chem_tgt_cl.get()
+
+            is_metric = UnitUtils.is_metric(self.settings)
+
+            # --- USE SHARED MATH ---
+            res = BrewMath.calculate_chemistry(
+                vol, srm, tgt_ph, grain_wt, 
+                tgt_ca, tgt_mg, tgt_na, tgt_so4, tgt_cl, is_metric
+            )
+
+            self.res_gypsum.set(f"{res['gypsum']:.1f} g")
+            self.res_cacl2.set(f"{res['cacl2']:.1f} g")
+            self.res_epsom.set(f"{res['epsom']:.1f} g")
+            self.res_salt.set(f"{res['salt']:.1f} g")
+            self.res_lime.set(f"{res['lime']:.1f} g")
+            self.res_acid.set(f"{res['acid']:.1f} ml")
+            
+        except Exception as e:
+            messagebox.showerror("Calc Error", str(e), parent=self)
+
+    # ==========================
+    # LOGIC: SAVE & CLOSE
+    # ==========================
     def _refresh_step_list(self):
         self.step_listbox.delete(0, tk.END)
         self.list_map = [] 
-        
         for i, step in enumerate(self.steps_working_copy):
             desc = f"{i+1}. {step.name} [{step.step_type.value}]"
             self.step_listbox.insert(tk.END, desc)
             self.list_map.append(i) 
-            
             if step.additions:
                 sorted_adds = sorted(step.additions, key=lambda x: x.time_point_min, reverse=True)
                 for add in sorted_adds:
@@ -395,7 +689,6 @@ class ProfileEditor(tk.Toplevel):
         if not step.additions:
             self.lb_alerts_preview.insert(0, "(None)")
             return
-            
         sorted_adds = sorted(step.additions, key=lambda x: x.time_point_min, reverse=True)
         for add in sorted_adds:
             self.lb_alerts_preview.insert(tk.END, f"{add.time_point_min}m: {add.name}")
@@ -405,7 +698,6 @@ class ProfileEditor(tk.Toplevel):
         if not (0 <= self.current_step_index < len(self.steps_working_copy)): return True
         
         step = self.steps_working_copy[self.current_step_index]
-        
         try:
             step.name = self.var_name.get()
             step.step_type = StepType(self.var_type.get())
@@ -413,38 +705,22 @@ class ProfileEditor(tk.Toplevel):
             step.note = self.txt_note.get("1.0", tk.END).strip()
             
             t_val = self.var_temp.get().strip()
-            if t_val != "":
-                step.setpoint_f = UnitUtils.to_system_temp(float(t_val), self.settings)
-            else:
-                step.setpoint_f = None
-                
-            step.lauter_temp_f = None
+            step.setpoint_f = UnitUtils.to_system_temp(float(t_val), self.settings) if t_val else None
             
             p_val = self.var_power.get().strip()
-            step.power_watts = int(p_val) if p_val != "" else None
+            step.power_watts = int(p_val) if p_val else None
             
             v_val = self.var_volume.get().strip()
-            if v_val != "":
-                step.lauter_volume = UnitUtils.to_system_vol(float(v_val), self.settings)
-            else:
-                step.lauter_volume = None
+            step.lauter_volume = UnitUtils.to_system_vol(float(v_val), self.settings) if v_val else None
             
             d_val = self.var_duration.get().strip()
-            
-            # REMOVED DELAYED_START IF/ELSE BLOCK
-            if d_val == "":
-                 step.duration_min = 0.0
+            if d_val == "": step.duration_min = 0.0
             else:
-                 f_val = float(d_val)
-                 if f_val < 0:
-                     messagebox.showerror("Error", "Duration cannot be negative.", parent=self)
-                     return False
-                 step.duration_min = f_val
-                 
-            step.target_completion_time = None
-                 
+                f_val = float(d_val)
+                if f_val < 0: raise ValueError("Negative duration")
+                step.duration_min = f_val
+                
             return True
-            
         except ValueError as e:
             messagebox.showerror("Validation Error", f"Invalid input: {e}", parent=self)
             return False
@@ -456,38 +732,26 @@ class ProfileEditor(tk.Toplevel):
 
         sel = self.step_listbox.curselection()
         if not sel: return
-        
         visual_index = sel[0]
-        if visual_index < len(self.list_map):
-            real_index = self.list_map[visual_index]
-        else:
-            return
+        if visual_index >= len(self.list_map): return
 
+        real_index = self.list_map[visual_index]
         step = self.steps_working_copy[real_index]
         self.current_step_index = real_index 
         
         self.loading_step = True
-        
         self.var_name.set(step.name)
         self.var_type.set(step.step_type.value) 
-        
-        # --- TYPE CHANGE LOGIC TRIGGER ---
-        # We manually trigger this to ensure Boil Steps get locked/labeled correctly on load
         self._on_type_change() 
-        # ---------------------------------
         
         if step.setpoint_f is not None:
             user_t = UnitUtils.to_user_temp(step.setpoint_f, self.settings)
             self.var_temp.set(f"{user_t:.1f}")
-        else:
-            # If it's a BOIL step but somehow has no setpoint, defaults are handled by _on_type_change
-            if step.step_type != StepType.BOIL:
-                self.var_temp.set("")
+        elif step.step_type != StepType.BOIL:
+            self.var_temp.set("")
         
         self.var_duration.set(str(step.duration_min) if step.duration_min is not None else "")
-        
-        pwr = str(step.power_watts) if step.power_watts is not None else "1800"
-        self.var_power.set(pwr)
+        self.var_power.set(str(step.power_watts) if step.power_watts is not None else "1800")
         
         if step.lauter_volume is not None:
             user_v = UnitUtils.to_user_vol(step.lauter_volume, self.settings)
@@ -496,14 +760,11 @@ class ProfileEditor(tk.Toplevel):
             self.var_volume.set("")
             
         self.var_timeout.set(step.timeout_behavior.value)
-        
         self.txt_note.delete('1.0', tk.END)
         self.txt_note.insert('1.0', step.note)
-        
         self._refresh_alerts_preview(step)
         
         self.loading_step = False
-        
         self._toggle_form_state(True)
 
     def _select_visual_row(self, visual_idx):
@@ -522,16 +783,12 @@ class ProfileEditor(tk.Toplevel):
 
     def _open_additions(self):
         self._save_current_edit()
-        
         if self.current_step_index is None: return
         step = self.steps_working_copy[self.current_step_index]
-        
         self._toggle_interaction(False)
         dlg = AdditionsDialog(self, step.name, step.additions)
         self.wait_window(dlg)
-        
         if not self.winfo_exists(): return
-
         self._toggle_interaction(True)
         self._refresh_step_list()
         self._select_visual_row_by_step_index(self.current_step_index)
@@ -539,62 +796,37 @@ class ProfileEditor(tk.Toplevel):
 
     def _toggle_interaction(self, enable):
         state = '!disabled' if enable else 'disabled'
-        for child in self.main_frame.winfo_children():
+        for child in self.tab_seq.winfo_children():
             self._recursive_state(child, state)
 
     def _recursive_state(self, widget, state):
-        try:
-            widget.state([state])
-        except:
-            pass
+        try: widget.state([state])
+        except: pass
         for child in widget.winfo_children():
             self._recursive_state(child, state)
 
     def _on_type_change(self, *args):
         t_val = self.var_type.get()
-        try:
-            t = StepType(t_val)
-        except:
-            return
+        try: t = StepType(t_val)
+        except: return
 
-        if not self.loading_step:
-            self.var_name.set(t_val)
+        if not self.loading_step: self.var_name.set(t_val)
 
-        # Default State: Everything Enabled
         self._set_state(self.ent_temp, True)
         self._set_state(self.ent_dur, True)
         self._set_state(self.cb_pwr, True) 
         self._set_state(self.ent_vol, True) 
-        
-        self.lbl_dur.config(text="Duration (min):")
-        self.lbl_pwr.config(text="Watts:")
         self._set_state(self.btn_additions, True)
-        
-        self.ent_dur.pack(fill='x', expand=True)
-        self.frm_delay.pack_forget()
-
-        # Hide Boiling label by default
         self.lbl_boiling_indicator.pack_forget()
 
         if t == StepType.BOIL:
-            # 1. Disable Temp Entry
             self._set_state(self.ent_temp, False)
-            
-            # 2. Set to System Boil Temp
             sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
-            
-            # Convert to user units if needed
             user_boil = UnitUtils.to_user_temp(sys_boil, self.settings)
-            
-            is_metric = UnitUtils.is_metric(self.settings)
             self.var_temp.set(f"{user_boil:.1f}")
-            
-            # 3. Show Boiling Label
             self.lbl_boiling_indicator.pack(side='left', padx=(5, 0))
-            
         elif t == StepType.CHILL:
             self._set_state(self.cb_pwr, False)
-            self.var_power_idx = tk.IntVar(value=3) # Logic handled elsewhere, just visual
             self.var_power.set("")
 
     def _set_state(self, widget, enabled):
@@ -622,27 +854,22 @@ class ProfileEditor(tk.Toplevel):
         self.current_step_index = None 
         self._refresh_step_list()
         self._toggle_form_state(False)
-        
         if new_idx is not None:
              self._select_visual_row_by_step_index(new_idx)
 
     def _move_up(self):
         self._save_current_edit()
         if self.current_step_index is None or self.current_step_index == 0: return
-        
         i = self.current_step_index
         self.steps_working_copy[i], self.steps_working_copy[i-1] = self.steps_working_copy[i-1], self.steps_working_copy[i]
-        
         self._refresh_step_list()
         self._select_visual_row_by_step_index(i-1)
 
     def _move_down(self):
         self._save_current_edit()
         if self.current_step_index is None or self.current_step_index == len(self.steps_working_copy)-1: return
-        
         i = self.current_step_index
         self.steps_working_copy[i], self.steps_working_copy[i+1] = self.steps_working_copy[i+1], self.steps_working_copy[i]
-        
         self._refresh_step_list()
         self._select_visual_row_by_step_index(i+1)
 
@@ -659,17 +886,41 @@ class ProfileEditor(tk.Toplevel):
             self.profile.name = self.var_profile_name.get()
             self.profile.steps = self.steps_working_copy
             
+            # SAVE WATER DATA
+            self.profile.water_data = {
+                "calc_method": self.calc_method_var.get(),
+                "grain_weight": self.calc_grain_wt.get(),
+                "grain_temp": self.calc_grain_temp.get(),
+                "mash_temp": self.calc_mash_temp.get(),
+                "target_vol": self.calc_target_vol.get(),
+                "trub_loss": self.calc_trub.get(),
+                "boil_time": self.calc_boil_time.get(),
+                "boiloff_rate": self.calc_boiloff.get(),
+                "abs_rate": self.calc_abs.get(),
+                "mash_thickness": self.calc_thickness.get()
+            }
+            
+            # SAVE CHEM DATA
+            # Now includes source_profile_name for persistent dropdowns
+            self.profile.chemistry_data = {
+                "source_profile_name": self.cb_water_profile.get(),
+                "water_vol": self.chem_vol.get(),
+                "beer_srm": self.chem_srm.get(),
+                "target_ph": self.chem_target_ph.get(),
+                "target_ca": self.chem_tgt_ca.get(),
+                "target_mg": self.chem_tgt_mg.get(),
+                "target_na": self.chem_tgt_na.get(),
+                "target_so4": self.chem_tgt_so4.get(),
+                "target_cl": self.chem_tgt_cl.get()
+            }
+            
             if self.on_save:
                 self.on_save(self.profile)
             
             try:
-                # No grab_release needed
-                if self.master:
-                    self.master.focus_set()
-            except:
-                pass
-            finally:
-                self.destroy()
+                if self.master: self.master.focus_set()
+            except: pass
+            finally: self.destroy()
             
         except Exception as e:
             messagebox.showerror("Save Error", f"An error occurred while saving:\n{e}", parent=self)

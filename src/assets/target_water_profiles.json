@@ -1,0 +1,236 @@
+[
+    {
+        "name": "Amber Balanced",
+        "ca": 50,
+        "mg": 10,
+        "na": 15,
+        "so4": 75,
+        "cl": 63,
+        "description": "Balanced profile for amber colored beers."
+    },
+    {
+        "name": "Amber Bitter",
+        "ca": 55,
+        "mg": 10,
+        "na": 15,
+        "so4": 100,
+        "cl": 50,
+        "description": "Bitter profile for amber colored beers."
+    },
+    {
+        "name": "Amber Dry",
+        "ca": 55,
+        "mg": 10,
+        "na": 15,
+        "so4": 100,
+        "cl": 50,
+        "description": "Dry profile for amber colored beers."
+    },
+    {
+        "name": "Amber Full",
+        "ca": 50,
+        "mg": 10,
+        "na": 15,
+        "so4": 55,
+        "cl": 65,
+        "description": "Full-bodied profile for amber colored beers."
+    },
+    {
+        "name": "Amber Malty",
+        "ca": 50,
+        "mg": 10,
+        "na": 15,
+        "so4": 55,
+        "cl": 65,
+        "description": "Malty profile for amber colored beers."
+    },
+    {
+        "name": "Black Balanced",
+        "ca": 50,
+        "mg": 10,
+        "na": 15,
+        "so4": 55,
+        "cl": 65,
+        "description": "Balanced profile for black colored beers."
+    },
+    {
+        "name": "Black Bitter",
+        "ca": 55,
+        "mg": 10,
+        "na": 15,
+        "so4": 60,
+        "cl": 55,
+        "description": "Bitter profile for black colored beers."
+    },
+    {
+        "name": "Black Dry",
+        "ca": 55,
+        "mg": 10,
+        "na": 15,
+        "so4": 60,
+        "cl": 55,
+        "description": "Dry profile for black colored beers."
+    },
+    {
+        "name": "Black Full",
+        "ca": 50,
+        "mg": 10,
+        "na": 20,
+        "so4": 35,
+        "cl": 45,
+        "description": "Full-bodied profile for black colored beers."
+    },
+    {
+        "name": "Black Malty",
+        "ca": 50,
+        "mg": 10,
+        "na": 20,
+        "so4": 35,
+        "cl": 45,
+        "description": "Malty profile for black colored beers."
+    },
+    {
+        "name": "Brown Balanced",
+        "ca": 50,
+        "mg": 10,
+        "na": 15,
+        "so4": 75,
+        "cl": 63,
+        "description": "Balanced profile for brown colored beers."
+    },
+    {
+        "name": "Brown Bitter",
+        "ca": 55,
+        "mg": 10,
+        "na": 15,
+        "so4": 100,
+        "cl": 50,
+        "description": "Bitter profile for brown colored beers."
+    },
+    {
+        "name": "Brown Dry",
+        "ca": 55,
+        "mg": 10,
+        "na": 15,
+        "so4": 100,
+        "cl": 50,
+        "description": "Dry profile for brown colored beers."
+    },
+    {
+        "name": "Brown Full",
+        "ca": 50,
+        "mg": 10,
+        "na": 15,
+        "so4": 55,
+        "cl": 65,
+        "description": "Full-bodied profile for brown colored beers."
+    },
+    {
+        "name": "Brown Malty",
+        "ca": 50,
+        "mg": 10,
+        "na": 15,
+        "so4": 55,
+        "cl": 65,
+        "description": "Malty profile for brown colored beers."
+    },
+    {
+        "name": "Pale Ale",
+        "ca": 140,
+        "mg": 18,
+        "na": 25,
+        "so4": 300,
+        "cl": 55,
+        "description": "Classic Burton-on-Trent style profile."
+    },
+    {
+        "name": "Pilsen (Bohemian)",
+        "ca": 7,
+        "mg": 2,
+        "na": 2,
+        "so4": 5,
+        "cl": 5,
+        "description": "Very soft water for Bohemian Pilsners."
+    },
+    {
+        "name": "Yellow Balanced",
+        "ca": 50,
+        "mg": 7,
+        "na": 5,
+        "so4": 75,
+        "cl": 60,
+        "description": "Balanced profile for yellow colored beers."
+    },
+    {
+        "name": "Yellow Bitter",
+        "ca": 55,
+        "mg": 10,
+        "na": 5,
+        "so4": 100,
+        "cl": 50,
+        "description": "Bitter profile for yellow colored beers."
+    },
+    {
+        "name": "Yellow Dry",
+        "ca": 55,
+        "mg": 10,
+        "na": 5,
+        "so4": 105,
+        "cl": 45,
+        "description": "Dry profile for yellow colored beers."
+    },
+    {
+        "name": "Yellow Full",
+        "ca": 50,
+        "mg": 7,
+        "na": 5,
+        "so4": 65,
+        "cl": 65,
+        "description": "Full-bodied profile for yellow colored beers."
+    },
+    {
+        "name": "Yellow Malty",
+        "ca": 50,
+        "mg": 7,
+        "na": 5,
+        "so4": 60,
+        "cl": 70,
+        "description": "Malty profile for yellow colored beers."
+    },
+    {
+        "name": "Lager - Dortmund",
+        "ca": 260,
+        "mg": 25,
+        "na": 60,
+        "so4": 280,
+        "cl": 60,
+        "description": "Historical Dortmund profile."
+    },
+    {
+        "name": "Lager - Munich (Boiled)",
+        "ca": 35,
+        "mg": 10,
+        "na": 2,
+        "so4": 15,
+        "cl": 2,
+        "description": "Decarbonated Munich water."
+    },
+    {
+        "name": "Lager - Vienna (Boiled)",
+        "ca": 60,
+        "mg": 15,
+        "na": 5,
+        "so4": 60,
+        "cl": 15,
+        "description": "Decarbonated Vienna water."
+    },
+    {
+        "name": "Stout - Dublin",
+        "ca": 115,
+        "mg": 4,
+        "na": 12,
+        "so4": 55,
+        "cl": 19,
+        "description": "Historical Dublin (Guinness) profile."
+    }
+]
