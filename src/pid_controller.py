@@ -35,14 +35,22 @@ class PIDController:
         # Proportional
         p_term = self.kp * error
 
-        # Integral (with anti-windup clamping)
-        self._integral += error * dt
+        # --- INTEGRAL LOGIC WITH WINDOW ---
+        # Only accumulate Integral if we are close to target (e.g. within +/- 5 degrees)
+        # This prevents "Windup" during the long initial heating phase.
+        if abs(error) < 5.0:
+            self._integral += error * dt
+            # Clamp Integral Term
+            if self._integral * self.ki > self.max_out: 
+                self._integral = self.max_out / self.ki
+            elif self._integral * self.ki < self.min_out: 
+                self._integral = self.min_out / self.ki
+        else:
+            # If we are far away, reset the integral bucket
+            self._integral = 0.0
+            
         i_term = self.ki * self._integral
-        
-        # Clamp Integral Term individually to prevent massive overshoot recovery
-        # (Optional, but often helpful in thermal systems)
-        if i_term > self.max_out: self._integral = self.max_out / self.ki
-        elif i_term < self.min_out: self._integral = self.min_out / self.ki
+        # -----------------------------------
 
         # Derivative
         d_term = 0.0

@@ -31,7 +31,26 @@ class SettingsPopup(tk.Toplevel):
         self.system_settings_index = -1 
         
         self.title("KettleBrain Settings")
-        self.geometry("780x440")
+
+        # --- FIXED SIZE & CENTERED STRATEGY ---
+        # Target: 800x450
+        target_w = 800
+        target_h = 450
+        
+        # Get actual screen dimensions
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        
+        # Calculate center position
+        x = (screen_w // 2) - (target_w // 2)
+        y = (screen_h // 2) - (target_h // 2)
+        
+        # Ensure Y is not negative (keeps title bar accessible)
+        y = max(0, y)
+        
+        self.geometry(f"{target_w}x{target_h}+{x}+{y}")
+        # --------------------------------------
+
         self.transient(parent)
         self.attributes('-topmost', True)
         
@@ -65,14 +84,6 @@ class SettingsPopup(tk.Toplevel):
         self.system_settings_index = self.notebook.index(self.tab_system)
         
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        
-        self.update_idletasks()
-        try:
-            x = parent.winfo_rootx() + 10
-            y = parent.winfo_rooty() + 10
-            self.geometry(f"+{x}+{y}")
-        except:
-            pass
         
         self.deiconify()
         
@@ -308,8 +319,16 @@ class SettingsPopup(tk.Toplevel):
         if self.editor_window and tk.Toplevel.winfo_exists(self.editor_window):
             self.editor_window.lift()
             return
-        self.editor_window = ProfileEditor(self, profile, self.settings, on_save_callback=self._on_editor_save)
-
+        
+        # Updated to pass 'sequencer' as required by your runtime error
+        self.editor_window = ProfileEditor(
+            self, 
+            profile, 
+            self.settings,
+            self.sequencer, 
+            self._on_editor_save
+        )
+        
     def _on_editor_save(self, profile):
         self.settings.save_profile(profile)
         self._refresh_profile_list()

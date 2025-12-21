@@ -130,18 +130,37 @@ class AdditionsDialog(tk.Toplevel):
 
 
 class ProfileEditor(tk.Toplevel):
-    def __init__(self, parent, profile: BrewProfile, settings_manager, on_save_callback):
+    def __init__(self, parent, profile: BrewProfile, settings_manager, sequencer, on_save_callback):
         super().__init__(parent)
         self.withdraw()
         
         self.title(f"Editing Profile: {profile.name}")
-        # REDUCED HEIGHT: 780x480 (Standard Pi Touchscreen Size)
-        self.geometry("780x480") 
+        
+        # --- FIXED SIZE & CENTERED STRATEGY ---
+        # Target: 800x450
+        target_w = 800
+        target_h = 450
+        
+        # Get actual screen dimensions
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        
+        # Calculate center position
+        x = (screen_w // 2) - (target_w // 2)
+        y = (screen_h // 2) - (target_h // 2)
+        
+        # Ensure Y is not negative (keeps title bar accessible)
+        y = max(0, y)
+        
+        self.geometry(f"{target_w}x{target_h}+{x}+{y}")
+        # --------------------------------------
+
         self.transient(parent)
         self.attributes('-topmost', True)
         
         self.profile = profile
         self.settings = settings_manager
+        self.sequencer = sequencer  # Store sequencer reference
         self.on_save = on_save_callback
         
         self.steps_working_copy = copy.deepcopy(profile.steps) 
@@ -158,22 +177,16 @@ class ProfileEditor(tk.Toplevel):
         self._create_layout()
         
         self._refresh_step_list()
+        
         if self.steps_working_copy:
             self._select_visual_row(0)
         
         self.protocol("WM_DELETE_WINDOW", self.close)
         
-        self.update_idletasks()
-        try:
-            x = parent.winfo_rootx() + 10
-            y = parent.winfo_rooty() + 10
-            self.geometry(f"+{x}+{y}")
-        except:
-            pass
-
+        # Final display sequence
         self.deiconify()
         self.lift()
-        self.focus_force() 
+        self.focus_force()
 
     def close(self):
         try:

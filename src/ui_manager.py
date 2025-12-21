@@ -376,10 +376,26 @@ class UIManager:
         self.lbl_h2 = tk.Label(self.hero_frame, text="800W", font=('Arial', 10, 'bold'),
                                bg='#e67e22', fg='white', padx=6, pady=2, relief='flat')
         
-        # B. HEARTBEAT PULSE (Top Right)
+        # --- NEW: SYSTEM CONTROLS (Top Right) ---
+        # 1. Close App (X) - Far Right
+        self.btn_sys_close = tk.Button(self.hero_frame, text="X", font=('Arial', 10, 'bold'),
+                                       bg='#c0392b', fg='white', activebackground='#e74c3c', activeforeground='white',
+                                       bd=0, padx=8, pady=2,
+                                       command=self._on_sys_close)
+        self.btn_sys_close.place(relx=1.0, x=-5, y=5, anchor='ne')
+        
+        # 2. Minimize (_) - Left of Close
+        self.btn_sys_min = tk.Button(self.hero_frame, text="_", font=('Arial', 10, 'bold'),
+                                     bg='#555555', fg='white', activebackground='#777777', activeforeground='white',
+                                     bd=0, padx=8, pady=2,
+                                     command=self._on_sys_minimize)
+        self.btn_sys_min.place(relx=1.0, x=-45, y=5, anchor='ne')
+
+        # B. HEARTBEAT PULSE (Shifted Left)
+        # Shifted to x=-90 to avoid the new buttons
         self.cv_heartbeat = tk.Canvas(self.hero_frame, width=16, height=16, 
                                       bg='#222222', highlightthickness=0)
-        self.cv_heartbeat.place(relx=1.0, x=-25, y=10, anchor='ne')
+        self.cv_heartbeat.place(relx=1.0, x=-90, y=10, anchor='ne')
         
         self.heartbeat_id = self.cv_heartbeat.create_oval(2, 2, 14, 14, fill='#444444', outline='')
 
@@ -564,6 +580,21 @@ class UIManager:
         self._set_btn_color(btn_settings, '#e0e0e0', '#0044CC')
         btn_settings.pack(side='top', fill='both', expand=True, pady=1)
 
+    def _on_sys_minimize(self):
+        """Minimizes the window to the taskbar."""
+        try:
+            self.root.iconify()
+        except Exception as e:
+            print(f"[UI] Minimize error: {e}")
+
+    def _on_sys_close(self):
+        """Prompts to close the application."""
+        if messagebox.askyesno("Exit App", "Close KettleBrain and return to desktop?", parent=self.root):
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
+                
     def _on_settings_click(self):
         # 1. AGGRESSIVE GRAB CLEANUP
         # If any window holds a grab (input lock), force release it immediately.
