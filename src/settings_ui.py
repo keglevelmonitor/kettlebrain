@@ -33,9 +33,9 @@ class SettingsPopup(tk.Toplevel):
         self.title("KettleBrain Settings")
 
         # --- FIXED SIZE & CENTERED STRATEGY ---
-        # Target: 800x450
+        # Target: 800x430
         target_w = 800
-        target_h = 450
+        target_h = 420
         
         # Get actual screen dimensions
         screen_w = self.winfo_screenwidth()

@@ -22,25 +22,32 @@ class UIManager:
         self.last_click_time = 0
         
         self.settings_window = None
-        self.delayed_start_window = None  # <--- ADD THIS LINE
+        self.delayed_start_window = None
         
         self.last_profile_id = None 
         self.last_active_iid = None 
         
         self.root.title("KettleBrain")
         
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
+        # --- FIXED INITIALIZATION ---
+        # 1. Force the window to be "Normal" (This fixes the "Halfway Minimized" bug)
+        #    If the OS remembers it was minimized, this forces it back up.
+        self.root.deiconify()
         
-        target_w = 800
-        target_h = 480
+        # 2. Set Geometry explicitly
+        self.root.geometry("800x480+0+0")
         
-        if screen_w == target_w and screen_h == target_h:
-            self.root.attributes('-fullscreen', True)
-            self.root.bind("<Escape>", lambda e: self.root.attributes('-fullscreen', False))
-        else:
-            self.root.geometry(f"{target_w}x{target_h}")
-            self.root.resizable(False, False)
+        # 3. Enable Fullscreen immediately
+        #    This is the method that worked reliably before.
+        self.root.attributes('-fullscreen', True)
+        
+        # 4. Ensure window is focused and raised
+        self.root.lift()
+        self.root.focus_force()
+        
+        # Safety: Escape key exits fullscreen
+        self.root.bind("<Escape>", lambda e: self.root.attributes('-fullscreen', False))
+        # ----------------------------
 
         self._configure_styles()
         

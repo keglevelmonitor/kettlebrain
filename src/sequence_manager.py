@@ -26,7 +26,7 @@ class SequenceManager:
         pid_cfg = self.settings.get_section("pid_settings") 
         self.pid = PIDController(
             kp=pid_cfg.get("kp", 50.0),
-            ki=pid_cfg.get("ki", 0.1),
+            ki=pid_cfg.get("ki", 0.05), # Reduced from 0.1 to mitigate overshoot
             kd=pid_cfg.get("kd", 2.0),
             output_limits=(0, 100)
         )
