@@ -436,7 +436,7 @@ class ProfileEditor(tk.Toplevel):
         u_abs = "L/kg" if is_metric else "qt/lb"
         u_thick = "L/kg" if is_metric else "qt/lb"
 
-        # 1. TOP FRAME: Method Selection (Moved out of column to save height)
+        # 1. TOP FRAME: Method Selection
         f_top = ttk.Frame(self.tab_calc, padding=5)
         f_top.pack(fill='x')
         ttk.Label(f_top, text="Method:", font=('Arial', 10, 'bold')).pack(side='left', padx=(0, 10))
@@ -452,9 +452,9 @@ class ProfileEditor(tk.Toplevel):
         paned.add(f_in, weight=1)
         
         r = 0
-        pad = 2 # Tight padding
+        pad = 2 
         
-        # Inputs - Compact Layout
+        # Inputs
         ttk.Label(f_in, text=f"Grain ({u_wt}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_grain_wt, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
         ttk.Label(f_in, text=f"Grain T ({u_temp}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_grain_temp, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
         ttk.Label(f_in, text=f"Mash T ({u_temp}):").grid(row=r, column=0, sticky='e', pady=pad); ttk.Entry(f_in, textvariable=self.calc_mash_temp, width=6).grid(row=r, column=1, sticky='w', padx=5); r+=1
@@ -468,22 +468,30 @@ class ProfileEditor(tk.Toplevel):
         self.ent_thickness = ttk.Entry(f_in, textvariable=self.calc_thickness, width=6)
         self.ent_thickness.grid(row=r, column=1, sticky='w', padx=5); r+=1
         
-        ttk.Button(f_in, text="CALCULATE", command=self._calculate_water_req).grid(row=r, column=0, columnspan=2, sticky='ew', pady=5)
-        
         # RIGHT: Results
         f_out = ttk.LabelFrame(paned, text="Requirements", padding=10)
         paned.add(f_out, weight=1)
         
+        # HERO SECTION (Side-by-Side Layout)
         f_hero = ttk.Frame(f_out)
         f_hero.pack(fill='x', pady=5)
         
-        ttk.Label(f_hero, text="Strike Water:", font=('Arial', 10)).pack()
-        ttk.Label(f_hero, textvariable=self.res_strike_vol, font=('Arial', 20, 'bold'), foreground='#0044CC').pack()
-        ttk.Label(f_hero, text="Strike Temp:", font=('Arial', 10)).pack(pady=(5,0))
-        ttk.Label(f_hero, textvariable=self.res_strike_temp, font=('Arial', 20, 'bold'), foreground='#e74c3c').pack()
+        # Left Hero: Strike Vol
+        f_h1 = ttk.Frame(f_hero)
+        f_h1.pack(side='left', expand=True, fill='x')
+        ttk.Label(f_h1, text="Strike Water:", font=('Arial', 10)).pack(anchor='center')
+        ttk.Label(f_h1, textvariable=self.res_strike_vol, font=('Arial', 20, 'bold'), foreground='#0044CC').pack(anchor='center')
         
+        # Right Hero: Strike Temp
+        f_h2 = ttk.Frame(f_hero)
+        f_h2.pack(side='left', expand=True, fill='x')
+        ttk.Label(f_h2, text="Strike Temp:", font=('Arial', 10)).pack(anchor='center')
+        ttk.Label(f_h2, textvariable=self.res_strike_temp, font=('Arial', 20, 'bold'), foreground='#e74c3c').pack(anchor='center')
+        
+        # Divider
         ttk.Separator(f_out, orient='horizontal').pack(fill='x', pady=10)
         
+        # Details
         f_det = ttk.Frame(f_out)
         f_det.pack(fill='x')
         ttk.Label(f_det, text="Sparge Water:").grid(row=0, column=0, sticky='e')
@@ -494,6 +502,9 @@ class ProfileEditor(tk.Toplevel):
         
         ttk.Label(f_det, text="Pre-Boil Vol:").grid(row=2, column=0, sticky='e')
         ttk.Label(f_det, textvariable=self.res_pre_boil).grid(row=2, column=1, sticky='w', padx=5)
+        
+        # CALCULATE BUTTON (Bottom)
+        ttk.Button(f_out, text="CALCULATE", command=self._calculate_water_req).pack(side='bottom', fill='x', pady=10)
         
         self._toggle_calc_inputs()
 
@@ -596,8 +607,6 @@ class ProfileEditor(tk.Toplevel):
             var.trace_add("write", self._on_chem_manual_edit)
             r+=1
         
-        ttk.Button(lf, text="CALCULATE ADDITIONS", command=self._calculate_chemistry).grid(row=r, column=0, columnspan=2, sticky='ew', pady=10)
-
         # Right: Results
         rf = ttk.LabelFrame(f, text="Additions (to Total Water)", padding=10)
         rf.place(relx=0.46, rely=0, relwidth=0.54, relheight=1.0)
@@ -620,7 +629,12 @@ class ProfileEditor(tk.Toplevel):
         
         ttk.Label(rf, text="Lactic Acid (88%):", font=('Arial', 10, 'bold')).grid(row=r, column=0, sticky='e', pady=res_pad);
         ttk.Label(rf, textvariable=self.res_acid, font=('Arial', 12, 'bold'), foreground='#e74c3c').grid(row=r, column=1, sticky='w', padx=10); r+=1
-                                      
+
+        # MOVED BUTTON: Now at the bottom of the Right Frame (Results)
+        # Using a spacer or just placing it at the next row
+        ttk.Frame(rf, height=10).grid(row=r, column=0); r+=1 # Spacer
+        ttk.Button(rf, text="CALCULATE ADDITIONS", command=self._calculate_chemistry).grid(row=r, column=0, columnspan=2, sticky='ew', pady=5)
+                                              
     def _on_water_profile_select(self, event):
         selection = self.cb_water_profile.get()
         if not selection: return
@@ -683,11 +697,13 @@ class ProfileEditor(tk.Toplevel):
             self.res_epsom.set(f"{res['epsom']:.1f} g")
             self.res_salt.set(f"{res['salt']:.1f} g")
             self.res_lime.set(f"{res['lime']:.1f} g")
-            self.res_acid.set(f"{res['acid']:.1f} ml")
+            
+            # UPDATED: Display both ml and grams
+            self.res_acid.set(f"{res['acid']:.1f} ml / {res['acid_g']:.1f} g")
             
         except Exception as e:
             messagebox.showerror("Calc Error", str(e), parent=self)
-
+            
     # ==========================
     # LOGIC: SAVE & CLOSE
     # ==========================

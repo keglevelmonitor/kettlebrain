@@ -171,7 +171,7 @@ class BrewMath:
     def calculate_chemistry(water_vol, srm, target_ph, grain_wt, 
                             tgt_ca, tgt_mg, tgt_na, tgt_so4, tgt_cl, is_metric):
         """
-        Returns a dictionary of salt additions (in grams) and acid (in ml).
+        Returns a dictionary of salt additions (in grams) and acid (in ml and g).
         """
         results = {
             "gypsum": 0.0,
@@ -179,7 +179,8 @@ class BrewMath:
             "epsom": 0.0,
             "salt": 0.0,
             "lime": 0.0,
-            "acid": 0.0
+            "acid": 0.0,
+            "acid_g": 0.0  # New field for weight
         }
 
         if water_vol <= 0:
@@ -234,14 +235,17 @@ class BrewMath:
             ml_acid_base = delta_ph * grain_kg * 3.0
             
         ml_acid_lime = g_lime * 2.3
-        total_acid = ml_acid_base + ml_acid_lime
+        total_acid = max(0, ml_acid_base + ml_acid_lime)
         
         results["gypsum"] = g_gypsum
         results["cacl2"] = g_cacl2
         results["epsom"] = g_epsom
         results["salt"] = g_salt
         results["lime"] = g_lime
-        results["acid"] = max(0, total_acid)
+        results["acid"] = total_acid
+        
+        # Density of 88% Lactic Acid is approx 1.21 g/ml
+        results["acid_g"] = total_acid * 1.21
         
         return results
 

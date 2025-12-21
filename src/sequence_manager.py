@@ -25,9 +25,9 @@ class SequenceManager:
         # CORRECTED: Use get_section() to retrieve the full dict
         pid_cfg = self.settings.get_section("pid_settings") 
         self.pid = PIDController(
-            kp=pid_cfg.get("kp", 50.0),
-            ki=pid_cfg.get("ki", 0.05), # Reduced from 0.1 to mitigate overshoot
-            kd=pid_cfg.get("kd", 2.0),
+            kp=pid_cfg.get("kp", 75.0),   # Increased from 50.0 to tighten steady-state deadband
+            ki=pid_cfg.get("ki", 0.01),   # Reduced from 0.05 to eliminate integral overshoot
+            kd=pid_cfg.get("kd", 50.0),   # Increased from 2.0 to provide braking on ramp-up
             output_limits=(0, 100)
         )
         self.last_pid_update = 0.0
@@ -684,10 +684,18 @@ class SequenceManager:
         elif pid_out < 90: watts_to_apply = 1400
         else: watts_to_apply = 1800
             
+        # --- NEW LOGIC START ---
         # Limit by User Setting
+        # ONLY enforce this limit if we have already reached the target temperature.
         limit = getattr(self, 'manual_power_watts', 1800)
-        if watts_to_apply > limit:
-            watts_to_apply = limit
+        
+        if self.temp_reached:
+            if watts_to_apply > limit:
+                watts_to_apply = limit
+        else:
+            # We are Ramping: Allow full power
+            pass
+        # --- NEW LOGIC END ---
             
         # Apply
         if watts_to_apply > 0:
@@ -980,10 +988,18 @@ class SequenceManager:
             else:
                 watts_to_apply = 1800
                 
+            # --- NEW LOGIC START ---
             # Override for Manual Max Power Limit (if step has a limit)
+            # ONLY enforce this limit if we have already reached the target temperature.
             step_limit = step.power_watts if step.power_watts is not None else 1800
-            if watts_to_apply > step_limit:
-                watts_to_apply = step_limit
+            
+            if self.temp_reached:
+                if watts_to_apply > step_limit:
+                    watts_to_apply = step_limit
+            else:
+                # We are Ramping: Allow full power (up to 1800W) to reduce rise time
+                pass
+            # --- NEW LOGIC END ---
                 
         else:
             # Target is 0, turn off

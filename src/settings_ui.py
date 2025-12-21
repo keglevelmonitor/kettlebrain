@@ -142,43 +142,43 @@ class SettingsPopup(tk.Toplevel):
         finally:
             self.suppress_dirty_flag = False
 
-    def _create_layout(self):
-        self.notebook = ttk.Notebook(self)
-        self.notebook.pack(fill='both', expand=True, padx=10, pady=5)
+    # def _create_layout(self):
+        # self.notebook = ttk.Notebook(self)
+        # self.notebook.pack(fill='both', expand=True, padx=10, pady=5)
         
-        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_change)
+        # self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_change)
         
-        # 1. Profile Library
-        self.tab_profiles = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_profiles, text="Profile Library")
-        self._build_profiles_tab()
+        # # 1. Profile Library
+        # self.tab_profiles = ttk.Frame(self.notebook)
+        # self.notebook.add(self.tab_profiles, text="Profile Library")
+        # self._build_profiles_tab()
         
-        # 2. Quick Water
-        self.tab_quick_water = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_quick_water, text="Quick Water")
-        self._build_water_tab()
+        # # 2. Quick Water
+        # self.tab_quick_water = ttk.Frame(self.notebook)
+        # self.notebook.add(self.tab_quick_water, text="Quick Water")
+        # self._build_water_tab()
         
-        # 3. Quick Chemistry
-        self.tab_quick_chem = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_quick_chem, text="Quick Chemistry")
-        self._build_chemistry_tab()
+        # # 3. Quick Chemistry
+        # self.tab_quick_chem = ttk.Frame(self.notebook)
+        # self.notebook.add(self.tab_quick_chem, text="Quick Chemistry")
+        # self._build_chemistry_tab()
         
-        # 4. System Settings
-        self.tab_system = ttk.Frame(self.notebook, padding=15)
-        self.notebook.add(self.tab_system, text="System Settings")
-        self._build_system_tab()
+        # # 4. System Settings
+        # self.tab_system = ttk.Frame(self.notebook, padding=15)
+        # self.notebook.add(self.tab_system, text="System Settings")
+        # self._build_system_tab()
         
-        # 5. Calibration
-        self.tab_calibration = ttk.Frame(self.notebook, padding=15)
-        self.notebook.add(self.tab_calibration, text="Calibration")
-        self._build_calibration_tab()
+        # # 5. Calibration
+        # self.tab_calibration = ttk.Frame(self.notebook, padding=15)
+        # self.notebook.add(self.tab_calibration, text="Calibration")
+        # self._build_calibration_tab()
         
-        # 6. Updates
-        self.tab_updates = ttk.Frame(self.notebook, padding=15)
-        self.notebook.add(self.tab_updates, text="Updates")
-        self._build_updates_tab()
+        # # 6. Updates
+        # self.tab_updates = ttk.Frame(self.notebook, padding=15)
+        # self.notebook.add(self.tab_updates, text="Updates")
+        # self._build_updates_tab()
         
-        self.system_settings_index = self.notebook.index(self.tab_system)
+        # self.system_settings_index = self.notebook.index(self.tab_system)
         
     def _on_tab_change(self, event):
         current_tab_index = self.notebook.index(self.notebook.select())
