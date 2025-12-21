@@ -31,6 +31,7 @@ class SequenceManager:
             output_limits=(0, 100)
         )
         self.last_pid_update = 0.0
+        self.last_applied_power = 0  # <--- NEW: Tracks actual output for logs
 
         # Track if Delayed Start was launched from Auto (IDLE) or Manual context
         self.delayed_is_auto = True
@@ -650,35 +651,52 @@ class SequenceManager:
                     self.last_alert_time = now
                     
     def _manage_temperature_generic(self, target):
-        """Simple hysteresis control for Manual Mode + Timer Trigger."""
+        """PID control for Manual Mode."""
         if target <= 0: 
             self.relay.set_relays(False, False, False)
+            self.last_applied_power = 0
             return
 
         # --- FIX: CLAMP TRIGGER TO BOIL TEMP ---
-        # If the user sets 212F but system boils at 208F, trigger at 208F.
         sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
         trigger_threshold = min(target, sys_boil)
-        # ---------------------------------------
 
-        # Check if we reached target to start timer
+        # Check for Timer Trigger
         if not self.temp_reached:
-             # Compare current temp against the CLAMPED threshold
              if self.current_temp >= trigger_threshold:
                  self.temp_reached = True
                  self.step_start_time = time.monotonic()
                  
-                 # RULE B (Manual): Only beep if we started below target
+                 # Only beep if we started below target
                  start_t = getattr(self, 'initial_manual_temp', 0.0)
                  if start_t < (trigger_threshold - 0.5):
                      self._play_alert_sound()
-                     print(f"[Sequence] Manual Target Reached ({self.current_temp}). Timer Started.")
 
-        # Power Logic (Hysteresis) - Continues to aim for the actual target (to keep rolling boil)
-        if self.current_temp < (target - 0.5):
-            self._apply_power_logic(self.manual_power_watts) 
-        elif self.current_temp > target:
+        # --- PID CALCULATION ---
+        watts_to_apply = 0
+        pid_out = self.pid.compute(self.current_temp, target)
+        
+        # Map to discrete power
+        if pid_out <= 0: watts_to_apply = 0
+        elif pid_out < 20: watts_to_apply = 0
+        elif pid_out < 50: watts_to_apply = 800
+        elif pid_out < 75: watts_to_apply = 1000
+        elif pid_out < 90: watts_to_apply = 1400
+        else: watts_to_apply = 1800
+            
+        # Limit by User Setting
+        limit = getattr(self, 'manual_power_watts', 1800)
+        if watts_to_apply > limit:
+            watts_to_apply = limit
+            
+        # Apply
+        if watts_to_apply > 0:
+            self._apply_power_logic(watts_to_apply)
+        else:
             self.relay.set_relays(False, False, False)
+            
+        # Store for logging
+        self.last_applied_power = watts_to_apply
                         
     def _save_recovery_snapshot(self):
         """Saves current progress to settings for power-loss recovery."""
@@ -774,16 +792,10 @@ class SequenceManager:
                 tgt = self.target_temp
             tgt_t = f"{tgt:.2f}"
 
-            # Determine Power (Watts)
+            # Determine Power (Watts) - CHANGED TO USE ACTUAL APPLIED POWER
             watts = 0
             if self.is_heating:
-                if self.status == SequenceStatus.MANUAL:
-                    watts = getattr(self, 'manual_power_watts', 1800)
-                elif self.current_profile and 0 <= self.current_step_index < len(self.current_profile.steps):
-                    s = self.current_profile.steps[self.current_step_index]
-                    watts = s.power_watts if s.power_watts is not None else 1800
-                else:
-                    watts = 1800 # Default fallback
+                watts = getattr(self, 'last_applied_power', 0)
             
             # Determine Timer
             timer_str = self.get_display_timer()
@@ -938,7 +950,7 @@ class SequenceManager:
         if target > 0:
             # Check for Temp Reached (Timer Trigger) logic
             if not self.temp_reached:
-                # Clamp trigger to system boil temp so timer starts even if we can't hit 212F
+                # Clamp trigger to system boil temp
                 sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
                 if self.current_temp >= min(target, sys_boil):
                     self.temp_reached = True
@@ -955,7 +967,6 @@ class SequenceManager:
             self.is_heating = (pid_out > 0)
             
             # --- MAP PID % TO DISCRETE POWER LEVELS ---
-            # This creates a "Stepped" output safe for relays
             if pid_out <= 0:
                 watts_to_apply = 0
             elif pid_out < 20:
@@ -989,6 +1000,9 @@ class SequenceManager:
             self._apply_power_logic(watts_to_apply)
         else:
             self.relay.set_relays(False, False, False)
+            
+        # Store for logging
+        self.last_applied_power = watts_to_apply
 
     def _apply_power_logic(self, watts):
         h1 = False 
