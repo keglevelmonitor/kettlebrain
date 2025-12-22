@@ -312,13 +312,15 @@ class UIManager:
         self.last_active_iid = None 
         
         self.root.title("KettleBrain")
-        self.root.deiconify()
-        
-        # 480p OPTIMIZATION: 418px height + Title Bar
-        self.root.geometry("799x418+0+38")
         self.root.configure(bg='#222222')
         
-        self.root.attributes('-fullscreen', False)
+        # --- FIX: EXACT POSITIONING & VISIBILITY ORDER ---
+        # 1. Set Size/Position FIRST
+        self.root.geometry("798x418+1+38")
+        
+        # 2. THEN Show the window (Deiconify)
+        self.root.deiconify()
+        
         self.root.lift()
         self.root.focus_force()
         self.root.bind("<Escape>", lambda e: self.root.attributes('-fullscreen', False))
@@ -336,6 +338,11 @@ class UIManager:
         
         self._create_main_layout()
         self._update_loop()
+        
+        # --- FIX: FORCE RENDER ---
+        # Force the Window Manager to draw the window frames IMMEDIATELY.
+        # This prevents the "ghost window" issue where the app runs but is invisible.
+        self.root.update()
         
     def _open_delayed_start(self):
         try:
