@@ -685,16 +685,11 @@ class SequenceManager:
         else: watts_to_apply = 1800
             
         # --- NEW LOGIC START ---
-        # Limit by User Setting
-        # ONLY enforce this limit if we have already reached the target temperature.
+        # Limit by User Setting (Always enforce)
         limit = getattr(self, 'manual_power_watts', 1800)
         
-        if self.temp_reached:
-            if watts_to_apply > limit:
-                watts_to_apply = limit
-        else:
-            # We are Ramping: Allow full power
-            pass
+        if watts_to_apply > limit:
+            watts_to_apply = limit
         # --- NEW LOGIC END ---
             
         # Apply
@@ -990,15 +985,10 @@ class SequenceManager:
                 
             # --- NEW LOGIC START ---
             # Override for Manual Max Power Limit (if step has a limit)
-            # ONLY enforce this limit if we have already reached the target temperature.
             step_limit = step.power_watts if step.power_watts is not None else 1800
             
-            if self.temp_reached:
-                if watts_to_apply > step_limit:
-                    watts_to_apply = step_limit
-            else:
-                # We are Ramping: Allow full power (up to 1800W) to reduce rise time
-                pass
+            if watts_to_apply > step_limit:
+                watts_to_apply = step_limit
             # --- NEW LOGIC END ---
                 
         else:
