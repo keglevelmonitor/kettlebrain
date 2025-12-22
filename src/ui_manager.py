@@ -315,7 +315,7 @@ class UIManager:
         self.root.deiconify()
         
         # 480p OPTIMIZATION: 418px height + Title Bar
-        self.root.geometry("799x418")
+        self.root.geometry("799x418+0+38")
         self.root.configure(bg='#222222')
         
         self.root.attributes('-fullscreen', False)
