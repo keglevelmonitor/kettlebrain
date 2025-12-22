@@ -314,13 +314,14 @@ class UIManager:
         self.root.title("KettleBrain")
         self.root.configure(bg='#222222')
         
-        # --- FIX: EXACT POSITIONING & VISIBILITY ORDER ---
-        # 1. Set Size/Position FIRST
+        # --- REVERTED TO SYNCHRONOUS STARTUP (Fixes UI Freezing) ---
+        # 1. Set Geometry
         self.root.geometry("798x418+1+38")
         
-        # 2. THEN Show the window (Deiconify)
+        # 2. Show Immediately (No 'after' delays)
         self.root.deiconify()
         
+        # 3. Force Focus/Lift immediately so inputs work on first click
         self.root.lift()
         self.root.focus_force()
         self.root.bind("<Escape>", lambda e: self.root.attributes('-fullscreen', False))
@@ -339,10 +340,56 @@ class UIManager:
         self._create_main_layout()
         self._update_loop()
         
-        # --- FIX: FORCE RENDER ---
-        # Force the Window Manager to draw the window frames IMMEDIATELY.
-        # This prevents the "ghost window" issue where the app runs but is invisible.
-        self.root.update()
+        # Force a pending event update to clear any startup "cobwebs"
+        # This ensures the window is fully responsive before the user clicks.
+        self.root.update_idletasks()
+        
+    # def __init__(self, root, sequence_manager, hardware_interface):
+        # self.root = root
+        # self.sequencer = sequence_manager
+        # self.settings = sequence_manager.settings
+        # self.hw = hardware_interface 
+        # self.title_clicks = 0
+        # self.last_click_time = 0
+        
+        # self.settings_window = None
+        # self.delayed_start_window = None
+        
+        # self.last_profile_id = None 
+        # self.last_active_iid = None 
+        
+        # self.root.title("KettleBrain")
+        # self.root.configure(bg='#222222')
+        
+        # # --- FIX: EXACT POSITIONING & VISIBILITY ORDER ---
+        # # 1. Set Size/Position FIRST
+        # self.root.geometry("798x418+1+38")
+        
+        # # 2. THEN Show the window (Deiconify)
+        # self.root.deiconify()
+        
+        # self.root.lift()
+        # self.root.focus_force()
+        # self.root.bind("<Escape>", lambda e: self.root.attributes('-fullscreen', False))
+
+        # self._configure_styles()
+        
+        # self.current_temp_var = tk.StringVar(value="--.-°F")
+        # self.timer_var = tk.StringVar(value="--:--:--") 
+        # self.target_sub_var = tk.StringVar(value="Target: --")
+        # self.elapsed_sub_var = tk.StringVar(value="Elapsed: 00:00")
+        # self.status_text_var = tk.StringVar(value="System Idle")
+        # self.target_text_var = tk.StringVar(value="") 
+        # self.next_addition_var = tk.StringVar(value="")
+        # self.action_btn_text = tk.StringVar(value="START")
+        
+        # self._create_main_layout()
+        # self._update_loop()
+        
+        # # --- FIX: FORCE RENDER ---
+        # # Force the Window Manager to draw the window frames IMMEDIATELY.
+        # # This prevents the "ghost window" issue where the app runs but is invisible.
+        # self.root.update()
         
     def _open_delayed_start(self):
         try:
