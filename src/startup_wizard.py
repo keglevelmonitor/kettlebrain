@@ -16,8 +16,8 @@ class StartupWizard:
         self.window.title("Hardware Setup: Relay Logic")
         
         # --- FIXED SIZE & CENTERED STRATEGY (480p Optimization) ---
-        target_w = 600
-        target_h = 400  # Updated to fit within 418px constraint
+        target_w = 720  # Wider to fit side-by-side layout
+        target_h = 400  # Fits within the 418px vertical constraint
         
         screen_width = self.window.winfo_screenwidth()
         screen_height = self.window.winfo_screenheight()
@@ -46,29 +46,37 @@ class StartupWizard:
         container.pack(fill='both', expand=True)
         
         # Header
-        ttk.Label(container, text="Hardware Logic Detection", font=("Arial", 16, "bold")).pack(pady=(0,20))
+        ttk.Label(container, text="Hardware Logic Detection", font=("Arial", 16, "bold")).pack(pady=(0,10))
         
-        # Instructions
+        # --- MIDDLE CONTENT (Side-by-Side) ---
+        middle_frame = ttk.Frame(container)
+        middle_frame.pack(fill='both', expand=True, pady=10)
+        
+        # Left Side: Instructions
         msg = ("The system has sent a LOW signal to the AUX Relay.\n\n"
                "Please look at your relay board.\n"
                "Is the LED indicator for the AUX relay ON?")
         
-        self.lbl_instructions = ttk.Label(container, text=msg, font=("Arial", 12), justify="center")
-        self.lbl_instructions.pack(pady=10)
+        # Using a Frame for text to center it vertically relative to image if needed
+        txt_frame = ttk.Frame(middle_frame)
+        txt_frame.pack(side='left', fill='both', expand=True, padx=(0, 20))
         
-        # Image Logic
+        self.lbl_instructions = ttk.Label(txt_frame, text=msg, font=("Arial", 12), justify="left")
+        self.lbl_instructions.pack(anchor='center', expand=True)
+        
+        # Right Side: Image Logic
         try:
             base_path = os.path.dirname(os.path.abspath(__file__))
             img_path = os.path.join(base_path, "assets", "relay_led.gif")
             if os.path.exists(img_path):
                 self.img = tk.PhotoImage(file=img_path)
-                ttk.Label(container, image=self.img).pack(pady=10, expand=True)
+                ttk.Label(middle_frame, image=self.img).pack(side='right', anchor='center')
         except Exception:
             pass
 
         # Buttons Area - IMMEDIATELY VISIBLE
         self.btn_frame = ttk.Frame(container)
-        self.btn_frame.pack(side='bottom', fill='x', pady=20)
+        self.btn_frame.pack(side='bottom', fill='x', pady=10)
         
         # YES Button (Active Low)
         self.btn_yes = ttk.Button(self.btn_frame, text="YES, AUX LED is ON\n(Active Low Board)", command=self._confirm_active_low)
