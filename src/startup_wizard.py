@@ -14,19 +14,26 @@ class StartupWizard:
         
         self.window = tk.Toplevel(root)
         self.window.title("Hardware Setup: Relay Logic")
-        self.window.geometry("600x600") # Slightly taller to ensure buttons fit
+        
+        # --- FIXED SIZE & CENTERED STRATEGY (480p Optimization) ---
+        target_w = 600
+        target_h = 400  # Updated to fit within 418px constraint
+        
+        screen_width = self.window.winfo_screenwidth()
+        screen_height = self.window.winfo_screenheight()
+        
+        x = int((screen_width/2) - (target_w/2))
+        y = int((screen_height/2) - (target_h/2))
+        
+        # Ensure Y is not negative
+        y = max(0, y)
+        
+        self.window.geometry(f"{target_w}x{target_h}+{x}+{y}")
         self.window.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
         
         # Force modal behavior
         self.window.transient(root)
         self.window.grab_set()
-        
-        # Center the window
-        screen_width = self.window.winfo_screenwidth()
-        screen_height = self.window.winfo_screenheight()
-        x = int((screen_width/2) - (600/2))
-        y = int((screen_height/2) - (600/2))
-        self.window.geometry(f"+{x}+{y}")
         
         self._setup_ui()
         
