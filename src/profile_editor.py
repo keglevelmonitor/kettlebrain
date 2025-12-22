@@ -156,7 +156,7 @@ class ProfileEditor(tk.Toplevel):
         # --------------------------------------
 
         self.transient(parent)
-        self.attributes('-topmost', True)
+        # REMOVED: self.attributes('-topmost', True) -- This causes UI freezes on Pi
         
         self.profile = profile
         self.settings = settings_manager
@@ -183,11 +183,66 @@ class ProfileEditor(tk.Toplevel):
         
         self.protocol("WM_DELETE_WINDOW", self.close)
         
+        # Apply the KegLevel "Jiggle Fix" to ensure window manager catches up
+        self._apply_window_jiggle_fix()
+        
         # Final display sequence
         self.deiconify()
         self.lift()
         self.focus_force()
 
+    def _apply_window_jiggle_fix(self):
+        """
+        Applies the 'jiggle' fix to force the window manager to 
+        recognize resizing handles and input focus.
+        Moves the window 1px and back after mapping.
+        """
+        # 1. Disable resizing initially to ensure state change triggers update
+        self.resizable(False, False)
+        
+        def jiggle_window(event):
+            if event.widget != self: return
+            self.unbind("<Map>")
+            
+            # Enable resizing now that window is visible
+            self.resizable(True, True)
+            
+            def _step_1_move():
+                try:
+                    # Use winfo_x/y for accurate content coordinates
+                    x = self.winfo_x()
+                    y = self.winfo_y()
+                    w = self.winfo_width()
+                    h = self.winfo_height()
+                    
+                    # Store original for restore
+                    self._jiggle_restore_x = x
+                    self._jiggle_restore_y = y
+                    
+                    # Move 1px right
+                    self.geometry(f"{w}x{h}+{x+1}+{y}")
+                    
+                    # Schedule Step 2
+                    self.after(100, _step_2_restore)
+                except Exception as e:
+                    print(f"Editor Warning: Jiggle Step 1 failed: {e}")
+
+            def _step_2_restore():
+                try:
+                    # Restore original position
+                    x = self._jiggle_restore_x
+                    y = self._jiggle_restore_y
+                    w = self.winfo_width()
+                    h = self.winfo_height()
+                    self.geometry(f"{w}x{h}+{x}+{y}")
+                except Exception as e:
+                    print(f"Editor Warning: Jiggle Step 2 failed: {e}")
+
+            # Run Step 1 500ms after map to allow WM to settle
+            self.after(500, _step_1_move)
+            
+        self.bind("<Map>", jiggle_window)
+    
     def close(self):
         try:
             if self.master:
@@ -347,8 +402,7 @@ class ProfileEditor(tk.Toplevel):
         # --- ROW 0: Type & Name ---
         type_opts = [e.value for e in StepType]
         self.cb_type = ttk.Combobox(f, textvariable=self.var_type, values=type_opts, state='readonly', width=12)
-        # FIX: Force focus
-        self.cb_type.bind("<Button-1>", lambda e: self.after(1, self.cb_type.focus_set))
+        # REMOVED: Manual focus binding
         
         ttk.Label(f, text="Type:").grid(row=row, column=0, sticky='e', padx=pad_x, pady=pad_y)
         self.cb_type.grid(row=row, column=1, sticky='ew', padx=pad_x, pady=pad_y)
@@ -381,8 +435,7 @@ class ProfileEditor(tk.Toplevel):
         # --- ROW 2: Power & Volume ---
         pwr_values = ["1800", "1400", "1000", "800"]
         self.cb_pwr = ttk.Combobox(f, textvariable=self.var_power, values=pwr_values, state='readonly', width=8)
-        # FIX: Force focus
-        self.cb_pwr.bind("<Button-1>", lambda e: self.after(1, self.cb_pwr.focus_set))
+        # REMOVED: Manual focus binding
         
         self.lbl_pwr = ttk.Label(f, text="Watts:")
         self.lbl_pwr.grid(row=row, column=0, sticky='e', padx=pad_x, pady=pad_y)
@@ -400,8 +453,7 @@ class ProfileEditor(tk.Toplevel):
         ttk.Label(f, text="Timeout:").grid(row=row, column=0, sticky='e', padx=pad_x, pady=pad_y)
         to_opts = [e.value for e in TimeoutBehavior]
         self.cb_to = ttk.Combobox(f, textvariable=self.var_timeout, values=to_opts, state='readonly')
-        # FIX: Force focus
-        self.cb_to.bind("<Button-1>", lambda e: self.after(1, self.cb_to.focus_set))
+        # REMOVED: Manual focus binding
         self.cb_to.grid(row=row, column=1, columnspan=3, sticky='ew', padx=pad_x, pady=pad_y)
         row += 1
         

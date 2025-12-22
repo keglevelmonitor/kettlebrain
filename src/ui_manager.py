@@ -30,22 +30,22 @@ class UIManager:
         self.root.title("KettleBrain")
         
         # --- FIXED INITIALIZATION ---
-        # 1. Force the window to be "Normal" (This fixes the "Halfway Minimized" bug)
-        #    If the OS remembers it was minimized, this forces it back up.
+        # 1. Force the window to be "Normal"
         self.root.deiconify()
         
-        # 2. Set Geometry explicitly
-        self.root.geometry("800x480+0+0")
+        # 2. Set Geometry explicitly to 799x573
+        # Content: 799x573 + TitleBar(~27px) = ~799x600 Total
+        # This fits the 800x600 screen while allowing 1px horizontal wiggle.
+        self.root.geometry("799x573")
         
-        # 3. Enable Fullscreen immediately
-        #    This is the method that worked reliably before.
-        self.root.attributes('-fullscreen', True)
+        # 3. Ensure Fullscreen is OFF (Windowed Mode)
+        self.root.attributes('-fullscreen', False)
         
         # 4. Ensure window is focused and raised
         self.root.lift()
         self.root.focus_force()
         
-        # Safety: Escape key exits fullscreen
+        # Safety: Escape key toggle
         self.root.bind("<Escape>", lambda e: self.root.attributes('-fullscreen', False))
         # ----------------------------
 

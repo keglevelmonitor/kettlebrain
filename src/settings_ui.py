@@ -24,6 +24,7 @@ class SettingsPopup(tk.Toplevel):
         self.relay = relay_control
         self.sequencer = sequencer
         self.editor_window = None
+        self._after_ids = [] # Track pending callbacks to cancel them on close
         
         self.system_settings_dirty = False
         self.suppress_dirty_flag = False
@@ -33,26 +34,22 @@ class SettingsPopup(tk.Toplevel):
         self.title("KettleBrain Settings")
 
         # --- FIXED SIZE & CENTERED STRATEGY ---
-        # Target: 800x430
         target_w = 800
         target_h = 420
         
-        # Get actual screen dimensions
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
         
-        # Calculate center position
         x = (screen_w // 2) - (target_w // 2)
         y = (screen_h // 2) - (target_h // 2)
         
-        # Ensure Y is not negative (keeps title bar accessible)
         y = max(0, y)
         
         self.geometry(f"{target_w}x{target_h}+{x}+{y}")
         # --------------------------------------
 
         self.transient(parent)
-        self.attributes('-topmost', True)
+        # REMOVED: self.attributes('-topmost', True)
         
         self._load_data()
         
@@ -85,23 +82,83 @@ class SettingsPopup(tk.Toplevel):
         
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         
+        # Apply Jiggle Fix
+        self._apply_window_jiggle_fix()
+        
         self.deiconify()
         
-        # Safe Focus Lock: Wait 100ms for window manager to register window
-        self.after(100, self._safe_focus_lock)
+        # Schedule safe focus lock
+        self._after_ids.append(self.after(100, self._safe_focus_lock))
 
     def _safe_focus_lock(self):
+        # CRITICAL FIX: Don't grab if we are already dead or dying
+        if not self.winfo_exists(): return
         try:
             self.grab_set()
             self.focus_force()
         except:
             pass
-        
+
     def _cleanup_and_close(self):
+        # 1. Cancel any pending timers (Jiggle fix, focus lock, etc.)
+        for aid in self._after_ids:
+            try: self.after_cancel(aid)
+            except: pass
+        self._after_ids.clear()
+
+        # 2. CRITICAL FIX: Explicitly release the modal grab
+        try:
+            self.grab_release()
+        except:
+            pass
+        
+        # 3. Return focus to master
         try:
             if self.master: self.master.focus_set()
         except: pass
-        finally: self.destroy()
+        
+        # 4. Destroy
+        finally: 
+            self.destroy()
+
+    def _apply_window_jiggle_fix(self):
+        """
+        Applies the 'jiggle' fix to force the window manager to 
+        recognize resizing handles and input focus.
+        Moves the window 1px and back after mapping.
+        """
+        self.resizable(False, False)
+        
+        def jiggle_window(event):
+            if event.widget != self: return
+            self.unbind("<Map>")
+            self.resizable(True, True)
+            
+            def _step_1_move():
+                try:
+                    x = self.winfo_x()
+                    y = self.winfo_y()
+                    w = self.winfo_width()
+                    h = self.winfo_height()
+                    self._jiggle_restore_x = x
+                    self._jiggle_restore_y = y
+                    self.geometry(f"{w}x{h}+{x+1}+{y}")
+                    self.after(100, _step_2_restore)
+                except Exception as e: pass
+
+            def _step_2_restore():
+                try:
+                    x = self._jiggle_restore_x
+                    y = self._jiggle_restore_y
+                    w = self.winfo_width()
+                    h = self.winfo_height()
+                    self.geometry(f"{w}x{h}+{x}+{y}")
+                except Exception as e: pass
+
+            self.after(500, _step_1_move)
+            
+        self.bind("<Map>", jiggle_window)
+    
 
     def _load_data(self):
         # System Settings
@@ -490,8 +547,7 @@ class SettingsPopup(tk.Toplevel):
         
         self.combo_sensor = ttk.Combobox(f_left, textvariable=self.temp_sensor_var, values=initial_values, state="readonly", width=17)
         self.combo_sensor.pack(side='left', padx=(0, 5))
-        # FIX: Force focus on click
-        self.combo_sensor.bind("<Button-1>", lambda e: self.after(1, self.combo_sensor.focus_set))
+        # REMOVED: Manual focus binding
         self.temp_sensor_var.trace_add("write", self._set_dirty)
         
         ttk.Button(f_left, text="Scan", width=5, command=self._refresh_sensors).pack(side='left')
@@ -505,8 +561,7 @@ class SettingsPopup(tk.Toplevel):
         
         self.combo_audio = ttk.Combobox(f_right, textvariable=self.audio_device_var, state="readonly", width=22)
         self.combo_audio.grid(row=0, column=1, sticky='w', pady=3)
-        # FIX: Force focus on click
-        self.combo_audio.bind("<Button-1>", lambda e: self.after(1, self.combo_audio.focus_set))
+        # REMOVED: Manual focus binding
         self.audio_device_var.trace_add("write", self._set_dirty)
         
         ttk.Button(f_right, text="Test", width=5, command=self._test_audio_output).grid(row=0, column=2, padx=(5,0), pady=3)
@@ -516,8 +571,7 @@ class SettingsPopup(tk.Toplevel):
         
         self.combo_sound = ttk.Combobox(f_right, textvariable=self.sound_file_var, state="readonly", width=22)
         self.combo_sound.grid(row=1, column=1, sticky='w', pady=3)
-        # FIX: Force focus on click
-        self.combo_sound.bind("<Button-1>", lambda e: self.after(1, self.combo_sound.focus_set))
+        # REMOVED: Manual focus binding
         self.combo_sound['values'] = self._scan_sound_files()
         self.sound_file_var.trace_add("write", self._set_dirty)
 
@@ -709,16 +763,23 @@ class SettingsPopup(tk.Toplevel):
         input_pane.pack(side='left', fill='both', expand=True, padx=(0, 10))
         
         row = 0; pad = 5
-        ttk.Label(input_pane, text=f"Start Volume ({units_vol}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad); ttk.Entry(input_pane, textvariable=self.cal_vol_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad); row+=1
-        ttk.Label(input_pane, text=f"Start Temp ({units_temp}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad); ttk.Entry(input_pane, textvariable=self.cal_start_temp_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad); row+=1
-        ttk.Label(input_pane, text=f"End Temp ({units_temp}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad); ttk.Entry(input_pane, textvariable=self.cal_end_temp_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad); row+=1
-        ttk.Label(input_pane, text="Elapsed Min:").grid(row=row, column=0, sticky='e', padx=pad, pady=pad); ttk.Entry(input_pane, textvariable=self.cal_time_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad)
+        ttk.Label(input_pane, text=f"Start Volume ({units_vol}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad); 
+        ttk.Entry(input_pane, textvariable=self.cal_vol_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad); row+=1
+        ttk.Label(input_pane, text=f"Start Temp ({units_temp}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad); 
+        ttk.Entry(input_pane, textvariable=self.cal_start_temp_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad); row+=1
+        ttk.Label(input_pane, text=f"End Temp ({units_temp}):").grid(row=row, column=0, sticky='e', padx=pad, pady=pad); 
+        ttk.Entry(input_pane, textvariable=self.cal_end_temp_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad); row+=1
+        ttk.Label(input_pane, text="Elapsed Min:").grid(row=row, column=0, sticky='e', padx=pad, pady=pad); 
+        ttk.Entry(input_pane, textvariable=self.cal_time_var, width=8).grid(row=row, column=1, sticky='w', padx=pad, pady=pad)
 
         action_pane = ttk.Frame(split_frame)
         action_pane.pack(side='right', fill='both', expand=False, padx=(10, 0))
-        ttk.Button(action_pane, text="Calculate Heat Rise", command=self._calculate_calibration).pack(fill='x', pady=(0, 10))
+        
+        # FIX: Reduced padding here to prevent clipping at the bottom
+        ttk.Button(action_pane, text="Calculate Heat Rise", command=self._calculate_calibration).pack(fill='x', pady=(0, 5))
         ttk.Label(action_pane, text="Calculated Result:", font=('Arial', 9)).pack(anchor='center')
-        ttk.Label(action_pane, textvariable=self.cal_result_var, foreground='#0044CC', font=('Arial', 11, 'bold')).pack(anchor='center', pady=(0, 15))
+        ttk.Label(action_pane, textvariable=self.cal_result_var, foreground='#0044CC', font=('Arial', 11, 'bold')).pack(anchor='center', pady=(0, 5))
+        
         self.btn_update_cal = ttk.Button(action_pane, text="Update Factor", state='disabled', command=self._apply_calibration)
         self.btn_update_cal.pack(fill='x', pady=(0, 5))
         ttk.Button(action_pane, text="Restore Default", command=self._restore_calibration_default).pack(fill='x')

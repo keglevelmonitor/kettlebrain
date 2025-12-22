@@ -26,105 +26,96 @@ class WaterCalculatorView:
         self.res_pre_boil = tk.StringVar(value="--")
         self.res_post_boil = tk.StringVar(value="--")
 
-    def build_ui(self, parent):
-        """Builds the UI widgets inside the given parent frame."""
+    def build_ui(self, parent, grain_wt_getter=None):
+        self.grain_wt_getter = grain_wt_getter
+        
         container = ttk.Frame(parent)
         container.pack(side='top', fill='both', expand=True)
 
         is_metric = UnitUtils.is_metric(self.settings)
-        
-        u_wt = "kg" if is_metric else "lbs"
-        u_temp = "°C" if is_metric else "°F"
         u_vol = "L" if is_metric else "Gal"
-        u_boiloff = "L/hr" if is_metric else "Gal/hr"
-        u_abs = "L/kg" if is_metric else "qt/lb"
-        u_thick = "L/kg" if is_metric else "qt/lb"
 
-        # --- LEFT PANE: INPUTS ---
-        left_pane = ttk.LabelFrame(container, text="Inputs", padding=10)
-        left_pane.place(relx=0.0, rely=0.0, relwidth=0.45, relheight=1.0)
+        # --- LEFT PANE: TARGETS ---
+        left_pane = ttk.LabelFrame(container, text="Targets & Stats", padding=10)
+        left_pane.place(relx=0.0, rely=0.0, relwidth=0.45, relheight=0.88)
         
         row = 0
-        pad = 3
+        pad = 4
         
-        # METHOD SELECTION
-        method_frame = ttk.Frame(left_pane)
-        method_frame.grid(row=row, column=0, columnspan=2, sticky='ew', pady=(0, 5))
-        
-        rb_no = ttk.Radiobutton(method_frame, text="No Sparge", variable=self.method_var, 
-                                value="no_sparge", command=self._toggle_inputs)
-        rb_no.pack(side='left', padx=(0, 10))
-        
-        rb_sp = ttk.Radiobutton(method_frame, text="Sparge", variable=self.method_var, 
-                                value="sparge", command=self._toggle_inputs)
-        rb_sp.pack(side='left')
-        
+        # 1. Top Section
+        ttk.Label(left_pane, text=f"Total Water ({u_vol}):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.vol, width=6).grid(row=row, column=1, sticky='w', padx=5)
         row += 1
         
-        # Inputs
-        inputs = [
-            (f"Grain Bill ({u_wt}):", self.grain_wt),
-            (f"Grain Temp ({u_temp}):", self.grain_temp),
-            (f"Target Mash ({u_temp}):", self.mash_temp),
-            ("SEP", None),
-            (f"Fermenter Vol ({u_vol}):", self.target_vol),
-            (f"Trub Loss ({u_vol}):", self.trub),
-            ("Boil Time (min):", self.boil_time),
-            (f"Boiloff Rate ({u_boiloff}):", self.boiloff),
-            (f"Grain Abs ({u_abs}):", self.abs_rate),
-            (f"Mash Thickness ({u_thick}):", self.thickness)
-        ]
+        # Note
+        ttk.Label(left_pane, text="(Uses Grain Wt from Calculator)", font=('Arial', 9, 'italic'), foreground='#7f8c8d').grid(row=row, column=0, columnspan=2, sticky='e', pady=(0, 5))
+        row += 1
 
-        for label, var in inputs:
-            if label == "SEP":
-                row += 1
-                ttk.Separator(left_pane, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=5)
-            else:
-                ttk.Label(left_pane, text=label).grid(row=row, column=0, sticky='e', pady=pad)
-                ent = ttk.Entry(left_pane, textvariable=var, width=8)
-                ent.grid(row=row, column=1, sticky='w', padx=5)
-                if "Mash Thickness" in label:
-                    self.ent_thickness = ent
+        ttk.Label(left_pane, text="Beer SRM (Color):").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.srm, width=6).grid(row=row, column=1, sticky='w', padx=5)
+        row += 1
+        
+        ttk.Label(left_pane, text="Target Mash pH:").grid(row=row, column=0, sticky='e', pady=pad)
+        ttk.Entry(left_pane, textvariable=self.target_ph, width=6).grid(row=row, column=1, sticky='w', padx=5)
+        row += 1
+
+        # --- NEW: Water Profile Dropdown (Standardized) ---
+        row += 1
+        ttk.Label(left_pane, text="Load Profile:").grid(row=row, column=0, sticky='e', pady=(10, 5))
+        
+        self.water_profiles = WaterProfileLoader.load_profiles()
+        self.profile_names = [p['name'] for p in self.water_profiles]
+        self.cb_water_profile = ttk.Combobox(left_pane, values=self.profile_names, state='readonly', width=18)
+        self.cb_water_profile.grid(row=row, column=1, sticky='w', pady=(10, 5), padx=5)
+        self.cb_water_profile.bind("<<ComboboxSelected>>", self._on_water_profile_select)
+        # REMOVED: The manual _handle_click binding that was causing issues
+        
+        row += 1
+        # -----------------------------------
+
+        # 2. Targets Section
+        targets = [
+            ("Target Calcium (ppm):", self.tgt_ca),
+            ("Target Magnesium (ppm):", self.tgt_mg),
+            ("Target Sodium (ppm):", self.tgt_na),
+            ("Target Sulfate (ppm):", self.tgt_so4),
+            ("Target Chloride (ppm):", self.tgt_cl)
+        ]
+        
+        for label, var in targets:
+            ttk.Label(left_pane, text=label).grid(row=row, column=0, sticky='e', pady=pad)
+            ttk.Entry(left_pane, textvariable=var, width=6).grid(row=row, column=1, sticky='w', padx=5)
             row += 1
 
         # Calculate Button
-        ttk.Button(left_pane, text="CALCULATE", command=self.calculate).grid(row=row, column=0, columnspan=2, sticky='ew', pady=(5, 2))
+        ttk.Button(left_pane, text="CALCULATE ADDITIONS", command=self.calculate).grid(row=row+1, column=0, columnspan=2, sticky='ew', pady=(15, 5))
 
-        # --- RIGHT PANE: RESULTS ---
-        right_pane = ttk.LabelFrame(container, text="Water Requirements", padding=10)
-        right_pane.place(relx=0.46, rely=0.0, relwidth=0.54, relheight=1.0)
+        # --- RIGHT PANE: ADDITIONS (Unchanged) ---
+        right_pane = ttk.LabelFrame(container, text="Additions (To Total Water)", padding=10)
+        right_pane.place(relx=0.46, rely=0.0, relwidth=0.54, relheight=0.88)
         
-        # Hero Results
-        f_hero = ttk.Frame(right_pane)
-        f_hero.pack(fill='x', pady=5)
+        f_res = ttk.Frame(right_pane)
+        f_res.pack(fill='both', expand=True)
         
-        ttk.Label(f_hero, text=f"Strike Water:", font=('Arial', 11)).pack(anchor='center')
-        ttk.Label(f_hero, textvariable=self.res_strike_vol, font=('Arial', 24, 'bold'), foreground='#0044CC').pack(anchor='center')
-        
-        ttk.Label(f_hero, text=f"Strike Temperature:", font=('Arial', 11)).pack(anchor='center', pady=(5, 0))
-        ttk.Label(f_hero, textvariable=self.res_strike_temp, font=('Arial', 24, 'bold'), foreground='#e74c3c').pack(anchor='center')
-
-        ttk.Label(f_hero, text=f"Sparge Water:", font=('Arial', 11)).pack(anchor='center', pady=(5, 0))
-        ttk.Label(f_hero, textvariable=self.res_sparge_vol, font=('Arial', 20, 'bold'), foreground='#27ae60').pack(anchor='center')
-
-        ttk.Separator(right_pane, orient='horizontal').pack(fill='x', pady=10)
-        
-        # Breakdown
-        f_break = ttk.Frame(right_pane)
-        f_break.pack(fill='x', padx=10)
-        
-        breakdown = [
-            ("Total Mash Volume:", self.res_mash_vol),
-            ("Pre-Boil Volume:", self.res_pre_boil),
-            ("Post-Boil Volume:", self.res_post_boil)
+        r = 0
+        res_list = [
+            ("Gypsum (CaSO4):", self.res_gypsum),
+            ("Calc. Chlor (CaCl2):", self.res_cacl2),
+            ("Epsom Salt (MgSO4):", self.res_epsom),
+            ("Table Salt (NaCl):", self.res_salt),
+            ("Slaked Lime (CaOH2):", self.res_lime)
         ]
         
-        for r, (txt, var) in enumerate(breakdown):
-            ttk.Label(f_break, text=txt, font=('Arial', 10, 'bold')).grid(row=r, column=0, sticky='w', pady=2)
-            ttk.Label(f_break, textvariable=var).grid(row=r, column=1, sticky='e')
-        
-        f_break.columnconfigure(1, weight=1)
-        self._toggle_inputs()
+        for txt, var in res_list:
+            ttk.Label(f_res, text=txt, font=('Arial', 10, 'bold')).grid(row=r, column=0, sticky='w', pady=5)
+            ttk.Label(f_res, textvariable=var, foreground='#0044CC').grid(row=r, column=1, sticky='e', padx=10)
+            r += 1
+            
+        r += 1
+        ttk.Separator(f_res, orient='horizontal').grid(row=r, column=0, columnspan=2, sticky='ew', pady=10)
+        r += 1
+        ttk.Label(f_res, text="Lactic Acid (88%):", font=('Arial', 11, 'bold')).grid(row=r, column=0, sticky='w', pady=5)
+        ttk.Label(f_res, textvariable=self.res_acid, font=('Arial', 14, 'bold'), foreground='#e74c3c').grid(row=r, column=1, sticky='e', padx=10)
 
     def _toggle_inputs(self):
         if self.method_var.get() == "sparge":
