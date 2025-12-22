@@ -12,12 +12,17 @@ class StartupWizard:
         self.settings = settings_manager
         self.relay = relay_control
         
+        # --- FIX: HIDE THE BLANK ROOT WINDOW ---
+        # Since main.py creates root but doesn't build the UI until later,
+        # we hide it here so it doesn't float over the wizard.
+        self.root.withdraw()
+        
         self.window = tk.Toplevel(root)
         self.window.title("Hardware Setup: Relay Logic")
         
         # --- FIXED SIZE & CENTERED STRATEGY (480p Optimization) ---
-        target_w = 720  # Wider to fit side-by-side layout
-        target_h = 400  # Fits within the 418px vertical constraint
+        target_w = 720
+        target_h = 400
         
         screen_width = self.window.winfo_screenwidth()
         screen_height = self.window.winfo_screenheight()
@@ -31,14 +36,16 @@ class StartupWizard:
         self.window.geometry(f"{target_w}x{target_h}+{x}+{y}")
         self.window.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
         
-        # Force modal behavior
-        self.window.transient(root)
+        # --- MODAL BEHAVIOR ---
+        # We DO NOT use self.window.transient(root) here because 
+        # the root is hidden (withdrawn). Linking a window to a hidden 
+        # parent can cause the child to vanish on some Linux window managers.
+        self.window.lift()
         self.window.grab_set()
         
         self._setup_ui()
         
         # AUTOMATICALLY START THE TEST
-        # We wait 500ms to let the UI render, then click the relay.
         self.window.after(500, self._auto_energize_relay)
         
     def _setup_ui(self):
@@ -121,7 +128,24 @@ class StartupWizard:
             pass
             
         self.settings.set_system_setting("relay_logic_configured", True)
+        
+        # --- FIX: RESTORE ROOT WINDOW ---
+        # Bring the main app window back before destroying the wizard
+        self.root.deiconify()
+        
         self.window.destroy()
+        
+    # def _finish(self):
+        # """Cleanup and Close"""
+        # print("Wizard: Resetting relays to OFF.")
+        # try:
+            # # Turn everything OFF
+            # self.relay.set_relays(False, False, False)
+        # except:
+            # pass
+            
+        # self.settings.set_system_setting("relay_logic_configured", True)
+        # self.window.destroy()
 
     def _on_close_attempt(self):
         if messagebox.askyesno("Exit?", "Setup incomplete. Exit application?"):
