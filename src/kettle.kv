@@ -1,0 +1,1226 @@
+#:kivy 2.3.0
+
+# --- GLOBAL STYLES ---
+<AlertItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '50dp'
+    padding: 5
+    spacing: 10
+    canvas.before:
+        Color:
+            rgba: 0.25, 0.25, 0.25, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    Label:
+        text: root.name + " @ " + str(int(root.time)) + "m"
+        font_size: '18sp'
+        halign: 'left'
+        valign: 'middle'
+        text_size: self.size
+    Button:
+        text: "DEL"
+        size_hint_x: None
+        width: '60dp'
+        background_color: 0.8, 0.2, 0.2, 1
+        # Find the screen manager, get the 'step_editor' screen, call remove
+        on_release: app.root.get_screen('step_editor').remove_alert_by_index(app.root.get_screen('step_editor').current_additions.index({'name': root.name, 'time': root.time}))
+        
+        
+<Label>:
+    font_size: '18sp'
+    color: 0.9, 0.9, 0.9, 1
+
+<Button>:
+    font_size: '20sp'
+    background_normal: ''
+    background_color: 0.2, 0.2, 0.2, 1
+    color: 1, 1, 1, 1
+    bold: True
+
+<Slider>:
+    cursor_size: (40, 40)
+    # KEEPING SQUARES AS REQUESTED
+    background_width: '6dp'
+    padding: 20
+
+# --- CUSTOM WIDGETS ---
+<Card@BoxLayout>:
+    canvas.before:
+        Color:
+            rgba: 0.15, 0.15, 0.15, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    padding: 10
+    spacing: 5
+    orientation: 'vertical'
+
+<HeroLabel@Label>:
+    font_size: '42sp'
+    bold: True
+    color: 0.2, 0.8, 0.2, 1
+
+# --- STEP LIST ITEM (Auto View) ---
+<StepItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '50dp'
+    padding: 5
+    spacing: 10
+    canvas.before:
+        Color:
+            rgba: root.bg_color
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Label:
+        text: root.step_index
+        size_hint_x: 0.1
+        font_size: '20sp'
+        bold: True
+        color: root.text_color
+    Label:
+        text: root.step_name
+        size_hint_x: 0.5
+        halign: 'left'
+        text_size: self.size
+        font_size: '20sp'
+        valign: 'center'
+        color: root.text_color
+    Label:
+        text: root.step_target
+        size_hint_x: 0.2
+        color: root.text_color
+    Label:
+        text: root.step_duration
+        size_hint_x: 0.2
+        color: root.text_color
+
+# --- MAIN SCREEN ---
+<MainScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 5
+        spacing: 5
+        canvas.before:
+            Color:
+                rgba: 0.05, 0.05, 0.05, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # --- HERO ROW ---
+        BoxLayout:
+            size_hint_y: None
+            height: '120dp'
+            spacing: 5
+            
+            Card:
+                HeroLabel:
+                    text: root.display_temp
+                    color: root.temp_color
+                Label:
+                    text: "Target: " + root.display_target
+                    font_size: '16sp'
+                    color: 0.6, 0.6, 0.6, 1
+
+            Card:
+                Label:
+                    text: root.display_status
+                    text_size: self.width, None
+                    halign: 'center'
+                    color: 1, 0.8, 0, 1
+                    font_size: '16sp'
+                Button:
+                    text: "DELAY START"
+                    size_hint_y: 0.6
+                    background_color: 0.2, 0.2, 0.4, 1
+
+            Card:
+                HeroLabel:
+                    text: root.display_timer
+                Label:
+                    text: "Elapsed: " + root.display_elapsed
+                    font_size: '16sp'
+                    color: 0.6, 0.6, 0.6, 1
+
+        # --- MIDDLE CONTENT ---
+        ScreenManager:
+            id: center_content
+            size_hint_y: 1
+            
+            Screen:
+                name: 'page_manual'
+                BoxLayout:
+                    spacing: 5
+                    Card:
+                        BoxLayout:
+                            orientation: 'vertical'
+                            Label:
+                                text: "Set Temp: " + str(int(temp_slider.value)) + " F"
+                                size_hint_y: 0.4
+                            Slider:
+                                id: temp_slider
+                                min: 70
+                                max: 212
+                                value: 150
+                                on_value_pos: root.on_slider_change('temp', self.value)
+
+                        BoxLayout:
+                            orientation: 'vertical'
+                            Label:
+                                text: "Volume: " + str(round(vol_slider.value, 2)) + " Gal"
+                                size_hint_y: 0.4
+                            Slider:
+                                id: vol_slider
+                                min: 2.0
+                                max: 9.0
+                                step: 0.25
+                                value: 6.0
+                                on_value_pos: root.on_slider_change('vol', self.value)
+
+                    Card:
+                        BoxLayout:
+                            orientation: 'vertical'
+                            Label:
+                                text: "Timer: " + str(int(time_slider.value)) + " min"
+                                size_hint_y: 0.4
+                            Slider:
+                                id: time_slider
+                                min: 1
+                                max: 120
+                                value: 60
+                                on_value_pos: root.on_slider_change('time', self.value)
+
+                        BoxLayout:
+                            orientation: 'vertical'
+                            Label:
+                                text: "Power: " + root.display_power_watts + " W"
+                                size_hint_y: 0.4
+                            Slider:
+                                id: pwr_slider
+                                min: 0
+                                max: 3
+                                step: 1
+                                value: 3
+                                on_value_pos: root.on_slider_change('power', self.value)
+
+            Screen:
+                name: 'page_auto'
+                BoxLayout:
+                    orientation: 'vertical'
+                    
+                    BoxLayout:
+                        size_hint_y: None
+                        height: '30dp'
+                        canvas.before:
+                            Color:
+                                rgba: 0.2, 0.2, 0.2, 1
+                            Rectangle:
+                                pos: self.pos
+                                size: self.size
+                        Label:
+                            text: "#"
+                            size_hint_x: 0.1
+                            bold: True
+                        Label:
+                            text: "Step Name"
+                            size_hint_x: 0.5
+                            halign: 'left'
+                            text_size: self.size
+                            padding_x: 10
+                            bold: True
+                        Label:
+                            text: "Target"
+                            size_hint_x: 0.2
+                            bold: True
+                        Label:
+                            text: "Duration"
+                            size_hint_x: 0.2
+                            bold: True
+
+                    RecycleView:
+                        id: rv_steps
+                        viewclass: 'StepItem'
+                        scroll_type: ['bars', 'content']
+                        bar_width: 10
+                        RecycleBoxLayout:
+                            default_size: None, dp(50)
+                            default_size_hint: 1, None
+                            size_hint_y: None
+                            height: self.minimum_height
+                            orientation: 'vertical'
+                            spacing: 2
+
+        # --- BOTTOM ACTION ROW ---
+        BoxLayout:
+            size_hint_y: None
+            height: '70dp'
+            spacing: 2
+            
+            Button:
+                text: "AUTO"
+                background_color: (0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_auto' else (0.3, 0.3, 0.3, 1)
+                on_release: root.switch_to_auto()
+            
+            Button:
+                text: "MANUAL"
+                background_color: (0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_manual' else (0.3, 0.3, 0.3, 1)
+                on_release: root.switch_to_manual()
+            
+            Button:
+                text: root.action_button_text
+                background_color: (0.2, 0.4, 0.8, 1) if self.text == "START" else (0.8, 0.6, 0.2, 1)
+                on_release: root.on_action_click()
+            
+            Button:
+                text: "STOP"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.on_stop_click()
+
+            Button:
+                text: "PROFILES"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.open_profiles()
+
+            Button:
+                text: "SETTINGS"
+                background_color: 0.3, 0.3, 0.3, 1
+                on_release: root.open_settings()
+
+# --- PROFILES SCREEN ---
+<ProfilesScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 10
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: "Profile Library"
+            font_size: '24sp'
+            size_hint_y: 0.15
+            color: 0.2, 0.8, 1, 1
+
+        RecycleView:
+            id: rv_profiles
+            viewclass: 'ProfileListButton'
+            scroll_type: ['bars', 'content']
+            bar_width: 10
+            RecycleBoxLayout:
+                default_size: None, dp(60)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+                orientation: 'vertical'
+                spacing: 5
+
+        Button:
+            text: "BACK TO DASHBOARD"
+            size_hint_y: 0.15
+            background_color: 0.8, 0.2, 0.2, 1
+            on_release: root.go_back()
+
+# --- NEW SETTINGS SCREEN ---
+<SystemSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 50
+        spacing: 20
+        canvas.before:
+            Color:
+                rgba: 0.08, 0.08, 0.08, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: "System Settings"
+            font_size: '30sp'
+            bold: True
+            color: 0.5, 0.5, 0.5, 1
+
+        Label:
+            text: "Coming Soon:\nCalibration, Wi-Fi, Updates"
+            halign: 'center'
+            font_size: '20sp'
+
+        Button:
+            text: "BACK"
+            size_hint_y: 0.3
+            on_release: root.go_back()
+
+# --- POPUP MENU ---
+<ProfileOptionsPopup>:
+    title: "Profile Options"
+    size_hint: 0.8, 0.85
+    auto_dismiss: False
+    BoxLayout:
+        orientation: 'vertical'
+        spacing: 10
+        padding: 10
+        
+        Label:
+            text: root.profile_name
+            font_size: '22sp'
+            bold: True
+            color: 0.2, 0.8, 1, 1
+            size_hint_y: 0.2
+
+        Button:
+            text: "LOAD PROFILE"
+            background_color: 0.2, 0.8, 0.2, 1
+            on_release: root.do_load()
+
+        Button:
+            text: "EDIT PROFILE"
+            background_color: 0.2, 0.4, 0.8, 1
+            on_release: root.do_edit()
+
+        Button:
+            text: "COPY PROFILE"
+            background_color: 0.5, 0.5, 0.5, 1
+            on_release: root.do_copy()
+
+        Button:
+            text: "DELETE PROFILE"
+            background_color: 0.8, 0.2, 0.2, 1
+            on_release: root.do_delete()
+
+        Button:
+            text: "CANCEL / CLOSE"
+            size_hint_y: 0.4
+            on_release: root.dismiss()
+
+<ProfileListButton@Button>:
+    profile_id: ''
+    profile_name: ''
+    background_normal: ''
+    background_color: 0.2, 0.2, 0.2, 1
+    on_release: app.open_profile_options(self.profile_id, self.text)
+
+# --- PROFILE EDITOR SCREEN ---
+<ProfileEditorScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 10
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.05, 0.05, 0.05, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # Header
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            spacing: 10
+            Label:
+                text: "Profile Name:"
+                size_hint_x: 0.25
+                color: 0.6, 0.6, 0.6, 1
+            TextInput:
+                id: input_name
+                text: root.temp_name
+                font_size: '24sp'
+                multiline: False
+                background_color: 0.2, 0.2, 0.2, 1
+                foreground_color: 1, 1, 1, 1
+                cursor_color: 0.2, 0.8, 0.2, 1
+                on_text: root.temp_name = self.text
+
+        # Steps Header
+        BoxLayout:
+            size_hint_y: None
+            height: '30dp'
+            canvas.before:
+                Color:
+                    rgba: 0.2, 0.2, 0.2, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Label:
+                text: "#"
+                size_hint_x: 0.1
+                bold: True
+            Label:
+                text: "Step Name"
+                size_hint_x: 0.5
+                bold: True
+            Label:
+                text: "Target / Time"
+                size_hint_x: 0.3
+                bold: True
+            Label:
+                text: "Action"
+                size_hint_x: 0.1
+                bold: True
+
+        # Editable Steps List
+        RecycleView:
+            id: rv_editor_steps
+            viewclass: 'EditorStepItem'
+            scroll_type: ['bars', 'content']
+            bar_width: 10
+            RecycleBoxLayout:
+                default_size: None, dp(60)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+                orientation: 'vertical'
+                spacing: 2
+
+        # Footer Actions
+        BoxLayout:
+            size_hint_y: None
+            height: '60dp'
+            spacing: 10
+            
+            Button:
+                text: "CANCEL"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.cancel_edit()
+            
+            Button:
+                text: "ADD STEP"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.add_new_step()
+
+            Button:
+                text: "SAVE PROFILE"
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.save_profile()
+
+<EditorStepItem@BoxLayout>:
+    step_index: 0
+    step_name: ''
+    step_desc: ''
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '60dp'
+    padding: 5
+    canvas.before:
+        Color:
+            rgba: 0.15, 0.15, 0.15, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Label:
+        text: str(root.step_index)
+        size_hint_x: 0.1
+    
+    Button:
+        text: root.step_name
+        size_hint_x: 0.5
+        background_color: 0, 0, 0, 0
+        halign: 'left'
+        valign: 'center'
+        text_size: self.size
+        on_release: app.open_step_editor(root.step_index - 1)
+
+    Label:
+        text: root.step_desc
+        size_hint_x: 0.3
+        color: 0.6, 0.6, 0.6, 1
+
+    Button:
+        text: "X"
+        size_hint_x: 0.1
+        background_color: 0.8, 0.2, 0.2, 1
+        on_release: app.delete_step_from_editor(root.step_index - 1)
+
+<StepEditorScreen>:
+    name: 'step_editor'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 15
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # --- HEADER ---
+        Label:
+            text: "Editing Step: " + root.step_name
+            font_size: '24sp'
+            bold: True
+            size_hint_y: None
+            height: '40dp'
+            color: 0.2, 0.8, 0.2, 1
+
+        # --- MAIN CONTROLS (Name, Temp, Time) ---
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: '180dp'
+            spacing: 20
+
+            # Left Col: Inputs
+            BoxLayout:
+                orientation: 'vertical'
+                spacing: 20
+                
+                # Name
+                BoxLayout:
+                    size_hint_y: None
+                    height: '40dp'
+                    Label:
+                        text: "Name:"
+                        size_hint_x: 0.3
+                    TextInput:
+                        text: root.step_name
+                        multiline: False
+                        on_text: root.step_name = self.text
+
+                # Temp Slider
+                BoxLayout:
+                    orientation: 'vertical'
+                    Label:
+                        text: "Temp: " + str(int(s_temp.value)) + " F"
+                        font_size: '18sp'
+                        color: 0.2, 0.8, 0.2, 1
+                    Slider:
+                        id: s_temp
+                        min: 0
+                        max: 212
+                        value: root.step_temp
+                        on_value: root.step_temp = self.value
+
+            # Right Col: Duration Slider
+            BoxLayout:
+                orientation: 'vertical'
+                Label:
+                    text: "Duration: " + str(int(s_dur.value)) + " min"
+                    font_size: '18sp'
+                    color: 0.2, 0.6, 1, 1
+                Slider:
+                    id: s_dur
+                    min: 0
+                    max: 120
+                    value: root.step_dur
+                    on_value: root.step_dur = self.value
+
+        # --- SEPARATOR ---
+        Label:
+            text: "Alerts & Additions"
+            size_hint_y: None
+            height: '30dp'
+            bold: True
+
+        # --- ALERTS LIST ---
+        RecycleView:
+            id: rv_alerts
+            viewclass: 'AlertItem'
+            data: [{'name': x['name'], 'time': x['time']} for x in root.current_additions]
+            scroll_type: ['bars', 'content']
+            bar_width: 15
+            RecycleBoxLayout:
+                default_size: None, dp(50)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+                orientation: 'vertical'
+                spacing: 2
+
+        # --- ADD NEW ALERT ROW ---
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            spacing: 10
+            TextInput:
+                text: root.new_alert_name
+                hint_text: "Alert Name"
+                multiline: False
+                size_hint_x: 0.4
+                on_text: root.new_alert_name = self.text
+            
+            Label:
+                text: "@ " + str(int(alert_slider.value)) + "m"
+                size_hint_x: 0.15
+            
+            Slider:
+                id: alert_slider
+                min: 0
+                max: 120
+                value: root.new_alert_time
+                on_value: root.new_alert_time = self.value
+                size_hint_x: 0.3
+            
+            Button:
+                text: "ADD"
+                size_hint_x: 0.15
+                background_color: 0.2, 0.6, 0.2, 1
+                on_release: root.add_alert()
+
+        # --- FOOTER ACTIONS ---
+        BoxLayout:
+            size_hint_y: None
+            height: '60dp'
+            spacing: 40
+            padding: [20, 10, 20, 0]
+            
+            Button:
+                text: "CANCEL"
+                font_size: '18sp'
+                background_color: 0.6, 0.2, 0.2, 1
+                on_release: root.cancel()
+            
+            Button:
+                text: "SAVE STEP"
+                font_size: '18sp'
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.save_step()
+
+# Item row for the Alerts list
+<AlertItem@BoxLayout>:
+    orientation: 'horizontal'
+    name: ''
+    time: 0
+    canvas.before:
+        Color:
+            rgba: 0.2, 0.2, 0.2, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            
+    Label:
+        text: root.name
+        size_hint_x: 0.6
+        halign: 'left'
+        text_size: self.size
+        valign: 'center'
+        padding_x: 10
+    Label:
+        text: "@ " + str(int(root.time)) + " min"
+        size_hint_x: 0.3
+    Button:
+        text: "X"
+        size_hint_x: 0.1
+        background_color: 0.8, 0.2, 0.2, 1
+        on_release: app.get_running_app().remove_alert_from_popup(root.name)
+        
+# --- SETTINGS HUB ---
+<SystemSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 40
+        spacing: 20
+        canvas.before:
+            Color:
+                rgba: 0.08, 0.08, 0.08, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: "System Settings"
+            font_size: '32sp'
+            bold: True
+            size_hint_y: 0.15
+            color: 0.6, 0.6, 0.6, 1
+
+        GridLayout:
+            cols: 2
+            spacing: 20
+            
+            Button:
+                text: "Hardware Config\n(Sensors, Audio, Boil Temp)"
+                background_color: 0.2, 0.4, 0.6, 1
+                font_size: '20sp'
+                halign: 'center'
+                on_release: root.navigate_to('settings_hw')
+
+            Button:
+                text: "App Preferences\n(Units, Auto-Start)"
+                background_color: 0.2, 0.4, 0.6, 1  # Changed color to indicate active
+                font_size: '20sp'
+                halign: 'center'
+                on_release: root.navigate_to('settings_app') # Linked!
+                
+            Button:
+                text: "Calibration\n(Heater Efficiency)"
+                background_color: 0.2, 0.4, 0.6, 1
+                font_size: '20sp'
+                halign: 'center'
+                on_release: root.navigate_to('settings_cal') # Linked!
+
+            Button:
+                text: "System Updates"
+                background_color: 0.2, 0.4, 0.6, 1 # Linked!
+                font_size: '20sp'
+                halign: 'center'
+                on_release: root.navigate_to('settings_updates')
+
+        Button:
+            text: "BACK TO DASHBOARD"
+            size_hint_y: 0.15
+            background_color: 0.8, 0.2, 0.2, 1
+            on_release: root.go_back()
+
+# --- HARDWARE SETTINGS SCREEN ---
+<HardwareSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: "Hardware Configuration"
+            font_size: '24sp'
+            bold: True
+            size_hint_y: 0.1
+            color: 0.2, 0.8, 1, 1
+
+        ScrollView:
+            GridLayout:
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: 20
+                padding: 10
+
+                # --- SENSOR SECTION ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    Label:
+                        text: "Temp Sensor:"
+                        size_hint_x: 0.4
+                        halign: 'right'
+                        valign: 'middle'
+                    Spinner:
+                        id: spinner_sensor
+                        text: "Select..."
+                        values: root.sensor_list
+                        size_hint_x: 0.6
+                        background_color: 0.2, 0.2, 0.2, 1
+
+                # --- BOIL TEMP SECTION ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '80dp'
+                    orientation: 'vertical'
+                    BoxLayout:
+                        Label:
+                            text: "Boil Temp: " + str(int(root.boil_temp)) + " F"
+                            font_size: '18sp'
+                    Slider:
+                        min: 180
+                        max: 212
+                        step: 1
+                        value: root.boil_temp
+                        on_value: root.boil_temp = self.value
+
+                # --- AUDIO DEVICE ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    Label:
+                        text: "Audio Output:"
+                        size_hint_x: 0.4
+                    Spinner:
+                        id: spinner_audio
+                        text: "Select..."
+                        values: root.audio_list
+                        size_hint_x: 0.6
+                        background_color: 0.2, 0.2, 0.2, 1
+
+                # --- ALERT SOUND ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    Label:
+                        text: "Alert Sound:"
+                        size_hint_x: 0.3
+                    Spinner:
+                        id: spinner_sound
+                        text: "Select..."
+                        values: root.sound_list
+                        size_hint_x: 0.5
+                        background_color: 0.2, 0.2, 0.2, 1
+                    Button:
+                        text: "TEST"
+                        size_hint_x: 0.2
+                        background_color: 0.2, 0.6, 0.2, 1
+                        on_release: root.test_audio()
+
+                # --- VOLUME ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '80dp'
+                    orientation: 'vertical'
+                    BoxLayout:
+                        Label:
+                            text: "System Volume: " + str(int(root.system_volume)) + "%"
+                    Slider:
+                        min: 0
+                        max: 100
+                        step: 5
+                        value: root.system_volume
+                        on_value: root.system_volume = self.value
+                        on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
+
+        # --- FOOTER ---
+        BoxLayout:
+            size_hint_y: 0.15
+            spacing: 20
+            Button:
+                text: "CANCEL"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.go_back()
+            Button:
+                text: "SAVE CHANGES"
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.save_changes()
+
+# --- NEW APP SETTINGS SCREEN ---
+<AppSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: "App Preferences"
+            font_size: '24sp'
+            bold: True
+            size_hint_y: 0.1
+            color: 0.2, 0.8, 1, 1
+
+        ScrollView:
+            GridLayout:
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: 20
+                padding: 10
+
+                # --- UNITS ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    Label:
+                        text: "Display Units:"
+                        size_hint_x: 0.7
+                        halign: 'left'
+                        text_size: self.size
+                        valign: 'middle'
+                    Spinner:
+                        text: root.units_text
+                        values: ["Imperial (°F / Gal)", "Metric (°C / L)"]
+                        size_hint_x: 0.3
+                        background_color: 0.2, 0.2, 0.2, 1
+                        on_text: root.units_text = self.text
+
+                # --- AUTO START ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    BoxLayout:
+                        orientation: 'vertical'
+                        Label:
+                            text: "Auto-Start on Boot"
+                            halign: 'left'
+                            text_size: self.size
+                            valign: 'middle'
+                            bold: True
+                        Label:
+                            text: "Launch KettleBrain when Pi boots up"
+                            color: 0.6, 0.6, 0.6, 1
+                            font_size: '14sp'
+                            halign: 'left'
+                            text_size: self.size
+                    Switch:
+                        active: root.auto_start
+                        on_active: root.auto_start = self.active
+                        size_hint_x: None
+                        width: '80dp'
+
+                # --- AUTO RESUME (Dependent on Auto Start) ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    opacity: 1 if root.auto_start else 0.5
+                    BoxLayout:
+                        orientation: 'vertical'
+                        Label:
+                            text: "Auto-Resume Logic"
+                            halign: 'left'
+                            text_size: self.size
+                            valign: 'middle'
+                            bold: True
+                        Label:
+                            text: "Recover state after power loss"
+                            color: 0.6, 0.6, 0.6, 1
+                            font_size: '14sp'
+                            halign: 'left'
+                            text_size: self.size
+                    Switch:
+                        active: root.auto_resume
+                        disabled: not root.auto_start
+                        on_active: root.auto_resume = self.active
+                        size_hint_x: None
+                        width: '80dp'
+
+                # --- FORCE NUMLOCK ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    Label:
+                        text: "Force NumLock ON"
+                        halign: 'left'
+                        text_size: self.size
+                        valign: 'middle'
+                    Switch:
+                        active: root.force_numlock
+                        on_active: root.force_numlock = self.active
+                        size_hint_x: None
+                        width: '80dp'
+
+                # --- CSV LOGGING ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    BoxLayout:
+                        orientation: 'vertical'
+                        Label:
+                            text: "CSV Data Logging"
+                            halign: 'left'
+                            text_size: self.size
+                            valign: 'middle'
+                            bold: True
+                        Label:
+                            text: "Save Temp/Power logs to file"
+                            color: 0.6, 0.6, 0.6, 1
+                            font_size: '14sp'
+                            halign: 'left'
+                            text_size: self.size
+                    Switch:
+                        active: root.csv_logging
+                        on_active: root.csv_logging = self.active
+                        size_hint_x: None
+                        width: '80dp'
+
+        # --- FOOTER ---
+        BoxLayout:
+            size_hint_y: 0.15
+            spacing: 20
+            Button:
+                text: "CANCEL"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.go_back()
+            Button:
+                text: "SAVE PREFERENCES"
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.save_changes()
+                
+<CalibrationSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # Header with Current Value
+        BoxLayout:
+            size_hint_y: 0.15
+            orientation: 'vertical'
+            Label:
+                text: "Heater Calibration"
+                font_size: '24sp'
+                bold: True
+                color: 0.2, 0.8, 1, 1
+            Label:
+                text: "Current Factor: " + root.current_factor_text
+                font_size: '18sp'
+                color: 0.6, 0.6, 0.6, 1
+
+        ScrollView:
+            GridLayout:
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: 20
+                padding: 10
+
+                Label:
+                    text: "Input results from a test boil to calculate system efficiency."
+                    size_hint_y: None
+                    height: '30dp'
+                    font_size: '14sp'
+
+                # --- INPUT SLIDERS ---
+                
+                # Volume
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    orientation: 'vertical'
+                    Label:
+                        text: "Test Volume: " + str(round(root.cal_vol, 2)) + " Gal"
+                    Slider:
+                        min: 2.0
+                        max: 10.0
+                        step: 0.25
+                        value: root.cal_vol
+                        on_value: root.cal_vol = self.value
+
+                # Start Temp
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    orientation: 'vertical'
+                    Label:
+                        text: "Start Temp: " + str(int(root.cal_start_temp)) + " F"
+                    Slider:
+                        min: 50
+                        max: 150
+                        step: 1
+                        value: root.cal_start_temp
+                        on_value: root.cal_start_temp = self.value
+
+                # End Temp
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    orientation: 'vertical'
+                    Label:
+                        text: "End Temp: " + str(int(root.cal_end_temp)) + " F"
+                    Slider:
+                        min: 100
+                        max: 212
+                        step: 1
+                        value: root.cal_end_temp
+                        on_value: root.cal_end_temp = self.value
+
+                # Time Taken
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    orientation: 'vertical'
+                    Label:
+                        text: "Time Elapsed: " + str(int(root.cal_time)) + " min"
+                    Slider:
+                        min: 1
+                        max: 90
+                        step: 1
+                        value: root.cal_time
+                        on_value: root.cal_time = self.value
+
+                # --- ACTIONS ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '60dp'
+                    spacing: 20
+                    Button:
+                        text: "CALCULATE"
+                        background_color: 0.2, 0.4, 0.8, 1
+                        on_release: root.calculate_efficiency()
+                    Label:
+                        text: "Result: " + root.calc_result_text
+                        bold: True
+                        color: 1, 0.8, 0, 1
+
+        # --- FOOTER ---
+        BoxLayout:
+            size_hint_y: 0.15
+            spacing: 20
+            Button:
+                text: "RESTORE DEFAULT"
+                background_color: 0.4, 0.4, 0.4, 1
+                on_release: root.restore_defaults()
+            Button:
+                text: "BACK"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.go_back()
+            Button:
+                id: btn_update
+                text: "UPDATE SETTINGS"
+                disabled: True
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.save_calibration()
+
+<UpdatesSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: "System Updates"
+            font_size: '24sp'
+            bold: True
+            size_hint_y: 0.1
+            color: 0.2, 0.8, 1, 1
+
+        # --- LOG CONSOLE ---
+        TextInput:
+            text: root.log_text
+            readonly: True
+            background_color: 0, 0, 0, 1
+            foreground_color: 0, 1, 0, 1 # Matrix Green text
+            font_name: "RobotoMono-Regular" if app.fonts_loaded else "Roboto" # Fallback if mono font missing
+            font_size: '14sp'
+            size_hint_y: 0.75
+
+        # --- ACTIONS ---
+        BoxLayout:
+            size_hint_y: 0.15
+            spacing: 20
+            
+            Button:
+                text: "BACK"
+                background_color: 0.8, 0.2, 0.2, 1
+                disabled: root.is_working
+                on_release: root.go_back()
+
+            Button:
+                text: "CHECK UPDATES"
+                background_color: 0.2, 0.4, 0.8, 1
+                disabled: root.is_working
+                on_release: root.check_updates()
+
+            Button:
+                text: "INSTALL UPDATES"
+                background_color: 0.2, 0.8, 0.2, 1
+                disabled: not root.install_enabled or root.is_working
+                on_release: root.install_updates()
+                
+                

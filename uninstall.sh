@@ -1,16 +1,16 @@
 #!/bin/bash
 # uninstall.sh
-# Uninstallation script for KegLevel Monitor
+# Uninstallation script for KettleBrain
 
-APP_DIR="$HOME/keglevel"
-DATA_DIR="$HOME/keglevel-data"
-DESKTOP_FILE="$HOME/.local/share/applications/keglevel.desktop"
+APP_DIR="$HOME/kettlebrain"
+DATA_DIR="$HOME/kettlebrain-data"
+DESKTOP_FILE="$HOME/.local/share/applications/kettlebrain.desktop"
 
 # Clear screen for readability
 clear
 
 echo "=========================================="
-echo "      KegLevel Monitor Uninstaller"
+echo "      KettleBrain Uninstaller"
 echo "=========================================="
 echo ""
 echo "Please choose an option (Case Sensitive):"
@@ -28,13 +28,12 @@ echo ""
 read -p "Enter your choice (APP or ALL): " choice
 echo ""
 
-# Logic check - Case sensitive
 if [ "$choice" == "APP" ]; then
     TO_DELETE="$APP_DIR"
-    MSG="The KegLevel Monitor application folder."
+    MSG="The KettleBrain application folder."
 elif [ "$choice" == "ALL" ]; then
     TO_DELETE="$APP_DIR and $DATA_DIR"
-    MSG="The KegLevel Monitor application AND all user data/settings."
+    MSG="The KettleBrain application AND all user data/settings."
 else
     echo "Exiting without changes."
     exit 0
@@ -55,7 +54,7 @@ fi
 echo ""
 echo "Removing files..."
 
-# 1. Remove Desktop Shortcut (Always remove this)
+# 1. Remove Desktop Shortcut
 if [ -f "$DESKTOP_FILE" ]; then
     rm "$DESKTOP_FILE"
     echo " - Removed desktop shortcut"
@@ -69,7 +68,7 @@ else
     echo " - Application directory not found (already removed?)"
 fi
 
-# 3. Remove Data Directory (If ALL was selected)
+# 3. Remove Data Directory
 if [ "$choice" == "ALL" ]; then
     if [ -d "$DATA_DIR" ]; then
         rm -rf "$DATA_DIR"
@@ -77,6 +76,13 @@ if [ "$choice" == "ALL" ]; then
     else
         echo " - Data directory not found."
     fi
+fi
+
+# 4. Remove AutoStart File (if exists)
+AUTOSTART_FILE="$HOME/.config/autostart/kettlebrain.desktop"
+if [ -f "$AUTOSTART_FILE" ]; then
+    rm "$AUTOSTART_FILE"
+    echo " - Removed auto-start configuration"
 fi
 
 echo ""

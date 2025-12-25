@@ -2,10 +2,10 @@
 Version=1.0
 Type=Application
 Name=KettleBrain
-Comment=KettleBrain
+Comment=Raspberry Pi Brewing Controller
 Path=/home/raspberrypi/kettlebrain/src
 Exec=/home/raspberrypi/kettlebrain/venv/bin/python /home/raspberrypi/kettlebrain/src/main.py
 Icon=/home/raspberrypi/kettlebrain/src/assets/kettle.png
 Terminal=true
-Autostart=false
+StartupNotify=true
 Categories=X-Other;

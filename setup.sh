@@ -9,7 +9,7 @@ WHAT_TO_INSTALL="KettleBrain Application and Data Directory"
 CLEANUP_MODE="NONE"
 
 echo "========================================"
-echo "   KettleBrain Auto-Installer"
+echo "    KettleBrain Auto-Installer"
 echo "========================================"
 
 # 2. Logic to handle existing installs
@@ -42,21 +42,7 @@ fi
 echo ""
 echo "------------------------------------------------------------"
 echo "This script will install the $WHAT_TO_INSTALL"
-echo "and will use about 175 MB of storage space on the Pi's SD card."
-echo ""
-echo "Basic installed file structure:"
-echo ""
-echo "  ~/kettlebrain/"
-echo "  ├── utility files..."
-echo "  ├── src/"
-echo "  │ ├── application files..."
-echo "  │ └── assets/"
-echo "  │    └── supporting files..."
-echo "  ├── venv/"
-echo "  │ └── dependencies..."
-echo "  ~/kettlebrain-data/"
-echo "  └── user data (profiles, settings)..."
-echo ""
+echo "and will use about 350 MB of storage space (inc. Kivy deps)."
 echo "------------------------------------------------------------"
 echo ""
 
@@ -67,7 +53,7 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# 4. Perform Cleanup (Delayed until AFTER confirmation)
+# 4. Perform Cleanup
 if [ "$CLEANUP_MODE" == "APP" ]; then
     echo "Removing existing application..."
     rm -rf "$INSTALL_DIR"
@@ -90,9 +76,6 @@ if [ -d "$INSTALL_DIR" ]; then
     git pull
 else
     echo "Cloning repository to $INSTALL_DIR..."
-    # -----------------------------------------------------------------
-    # IMPORTANT: Update the URL below to your specific GitHub repo URL
-    # -----------------------------------------------------------------
     git clone https://github.com/keglevelmonitor/kettlebrain.git "$INSTALL_DIR"
     cd "$INSTALL_DIR" || exit 1
 fi

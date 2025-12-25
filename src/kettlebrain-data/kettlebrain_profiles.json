@@ -1,0 +1,356 @@
+{
+    "c24c43d2-c826-4c29-bc7f-e32ea74c5b4d": {
+        "id": "c24c43d2-c826-4c29-bc7f-e32ea74c5b4d",
+        "name": "Default Profile",
+        "water_data": {
+            "calc_method": "no_sparge",
+            "grain_weight": 10.0,
+            "grain_temp": 65.0,
+            "mash_temp": 152.0,
+            "target_vol": 5.5,
+            "trub_loss": 0.5,
+            "boil_time": 60.0,
+            "boiloff_rate": 0.5,
+            "abs_rate": 0.6,
+            "mash_thickness": 1.5
+        },
+        "chemistry_data": {},
+        "steps": [
+            {
+                "id": "aa909f45-bb13-4751-9d01-dce7bb4ba8a0",
+                "name": "Step",
+                "step_type": "Step",
+                "note": "Heat to dough-in, reserve water, dough-in.",
+                "setpoint_f": 156.0,
+                "duration_min": 0.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "Auto Advance",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": 7.5,
+                "additions": [
+                    {
+                        "id": "da2ee3f6-baf0-4708-90fa-a853153dcd58",
+                        "name": "Reserve 1.5 Gal for lautering",
+                        "time_point_min": 0
+                    },
+                    {
+                        "id": "c269a53d-ff8b-471a-bb0c-771edecc1656",
+                        "name": "Dough-in",
+                        "time_point_min": 0
+                    },
+                    {
+                        "id": "55151a8f-326d-4fd1-a732-7233ce122867",
+                        "name": "Turn on pump",
+                        "time_point_min": 0
+                    }
+                ]
+            },
+            {
+                "id": "13709e60-0eca-4117-acc3-f1c601756f92",
+                "name": "Mash",
+                "step_type": "Mash",
+                "note": "Mash and take SG reading",
+                "setpoint_f": 152.0,
+                "duration_min": 60.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "Auto Advance",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": 6.5,
+                "additions": [
+                    {
+                        "id": "064f9070-3a8a-4424-8e73-4b88515c4885",
+                        "name": "Take SG reading",
+                        "time_point_min": 0
+                    }
+                ]
+            },
+            {
+                "id": "f4a8bea0-e790-4cd1-95f8-51b017e4227e",
+                "name": "Mash-out",
+                "step_type": "Mash-out",
+                "note": "Mash-out, turn off pump, lift basket, lauter",
+                "setpoint_f": 170.0,
+                "duration_min": 10.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "Auto Advance",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": null,
+                "additions": [
+                    {
+                        "id": "fdbd2e7a-9da7-4ecd-9431-b3ddf7c1939d",
+                        "name": "Turn off pump",
+                        "time_point_min": 0
+                    },
+                    {
+                        "id": "f86b3eb8-03f7-4c87-a88b-10f23a8a5335",
+                        "name": "Lift grain basket",
+                        "time_point_min": 0
+                    },
+                    {
+                        "id": "4d88d359-85d8-418a-af98-823c0b47361e",
+                        "name": "Lauter with reserved water",
+                        "time_point_min": 0
+                    }
+                ]
+            },
+            {
+                "id": "a7187371-a733-464b-a4a1-5b6f29d48ee7",
+                "name": "Boil",
+                "step_type": "Boil",
+                "note": "Boil and follow hops schedule",
+                "setpoint_f": 212.0,
+                "duration_min": 60.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "Auto Advance",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": 6.5,
+                "additions": [
+                    {
+                        "id": "f501950d-f4bf-498f-93b5-8bd2ca8af14b",
+                        "name": "Bittering hops",
+                        "time_point_min": 60
+                    },
+                    {
+                        "id": "3b65a2cc-3bf7-481b-ad22-6bcaa05e5ed9",
+                        "name": "Flavor hops",
+                        "time_point_min": 30
+                    },
+                    {
+                        "id": "2bb945ee-6729-4f3a-b9d9-efe520f2085f",
+                        "name": "Irish Moss",
+                        "time_point_min": 10
+                    },
+                    {
+                        "id": "23b18aea-3aab-4ef5-a7f7-9b714f8d1eb9",
+                        "name": "Aroma hops",
+                        "time_point_min": 5
+                    }
+                ]
+            },
+            {
+                "id": "a0bad6f5-2f5f-40c7-9f38-063c508edb6b",
+                "name": "Chill",
+                "step_type": "Chill",
+                "note": "",
+                "setpoint_f": 70.0,
+                "duration_min": 15.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "End Program",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": 5.5,
+                "additions": [
+                    {
+                        "id": "cdd2b891-2033-4946-81ec-2d0333b68e28",
+                        "name": "Take SG reading",
+                        "time_point_min": 0
+                    }
+                ]
+            }
+        ]
+    },
+    "e324eba0-f72f-4a20-83bf-b98e9c4e8b2d": {
+        "id": "e324eba0-f72f-4a20-83bf-b98e9c4e8b2d",
+        "name": "Copy of Default Profile",
+        "water_data": {
+            "calc_method": "no_sparge",
+            "grain_weight": 10.0,
+            "grain_temp": 65.0,
+            "mash_temp": 152.0,
+            "target_vol": 5.5,
+            "trub_loss": 0.5,
+            "boil_time": 60.0,
+            "boiloff_rate": 0.5,
+            "abs_rate": 0.6,
+            "mash_thickness": 1.5
+        },
+        "chemistry_data": {},
+        "steps": [
+            {
+                "id": "aa909f45-bb13-4751-9d01-dce7bb4ba8a0",
+                "name": "Step",
+                "step_type": "Step",
+                "note": "Heat to dough-in, reserve water, dough-in.",
+                "setpoint_f": 156.0,
+                "duration_min": 0.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "Auto Advance",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": 7.5,
+                "additions": [
+                    {
+                        "id": "da2ee3f6-baf0-4708-90fa-a853153dcd58",
+                        "name": "Reserve 1.5 Gal for lautering",
+                        "time_point_min": 0
+                    },
+                    {
+                        "id": "c269a53d-ff8b-471a-bb0c-771edecc1656",
+                        "name": "Dough-in",
+                        "time_point_min": 0
+                    },
+                    {
+                        "id": "55151a8f-326d-4fd1-a732-7233ce122867",
+                        "name": "Turn on pump",
+                        "time_point_min": 0
+                    }
+                ]
+            },
+            {
+                "id": "13709e60-0eca-4117-acc3-f1c601756f92",
+                "name": "Mash",
+                "step_type": "Mash",
+                "note": "Mash and take SG reading",
+                "setpoint_f": 152.0,
+                "duration_min": 60.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "Auto Advance",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": 6.5,
+                "additions": [
+                    {
+                        "id": "064f9070-3a8a-4424-8e73-4b88515c4885",
+                        "name": "Take SG reading",
+                        "time_point_min": 0
+                    }
+                ]
+            },
+            {
+                "id": "f4a8bea0-e790-4cd1-95f8-51b017e4227e",
+                "name": "Mash-out",
+                "step_type": "Mash-out",
+                "note": "Mash-out, turn off pump, lift basket, lauter",
+                "setpoint_f": 170.0,
+                "duration_min": 10.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "Auto Advance",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": null,
+                "additions": [
+                    {
+                        "id": "fdbd2e7a-9da7-4ecd-9431-b3ddf7c1939d",
+                        "name": "Turn off pump",
+                        "time_point_min": 0
+                    },
+                    {
+                        "id": "f86b3eb8-03f7-4c87-a88b-10f23a8a5335",
+                        "name": "Lift grain basket",
+                        "time_point_min": 0
+                    },
+                    {
+                        "id": "4d88d359-85d8-418a-af98-823c0b47361e",
+                        "name": "Lauter with reserved water",
+                        "time_point_min": 0
+                    }
+                ]
+            },
+            {
+                "id": "a7187371-a733-464b-a4a1-5b6f29d48ee7",
+                "name": "Boil",
+                "step_type": "Boil",
+                "note": "Boil and follow hops schedule",
+                "setpoint_f": 212.0,
+                "duration_min": 60.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "Auto Advance",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": 6.5,
+                "additions": [
+                    {
+                        "id": "f501950d-f4bf-498f-93b5-8bd2ca8af14b",
+                        "name": "Bittering hops",
+                        "time_point_min": 60
+                    },
+                    {
+                        "id": "3b65a2cc-3bf7-481b-ad22-6bcaa05e5ed9",
+                        "name": "Flavor hops",
+                        "time_point_min": 30
+                    },
+                    {
+                        "id": "2bb945ee-6729-4f3a-b9d9-efe520f2085f",
+                        "name": "Irish Moss",
+                        "time_point_min": 10
+                    },
+                    {
+                        "id": "23b18aea-3aab-4ef5-a7f7-9b714f8d1eb9",
+                        "name": "Aroma hops",
+                        "time_point_min": 5
+                    }
+                ]
+            },
+            {
+                "id": "a0bad6f5-2f5f-40c7-9f38-063c508edb6b",
+                "name": "Chill",
+                "step_type": "Chill",
+                "note": "",
+                "setpoint_f": 70.0,
+                "duration_min": 15.0,
+                "target_completion_time": null,
+                "power_watts": 1800,
+                "timeout_behavior": "End Program",
+                "sg_reading": null,
+                "sg_temp_f": null,
+                "sg_temp_correction": false,
+                "sg_corrected_value": null,
+                "lauter_temp_f": null,
+                "lauter_volume": 5.5,
+                "additions": [
+                    {
+                        "id": "cdd2b891-2033-4946-81ec-2d0333b68e28",
+                        "name": "Take SG reading",
+                        "time_point_min": 0
+                    }
+                ]
+            },
+            {
+                "name": "New Step",
+                "setpoint_f": 150.0,
+                "duration_min": 60.0,
+                "additions": []
+            }
+        ]
+    }
+}
