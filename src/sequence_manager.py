@@ -21,6 +21,9 @@ class SequenceManager:
         self.current_step_index = -1
         self.status = SequenceStatus.IDLE
         
+        self.is_manual_running = False
+        self.temp_reached = False
+        
         # --- PID SETUP ---
         # CORRECTED: Use get_section() to retrieve the full dict
         pid_cfg = self.settings.get_section("pid_settings") 
@@ -65,6 +68,10 @@ class SequenceManager:
         self._thread = threading.Thread(target=self._control_loop, daemon=True)
         self._thread.start()
 
+    
+    def log_message(self, msg):
+        print(f"[SequenceManager] {msg}")
+    
     def _play_alert_sound(self):
         """Plays the configured alert sound using aplay (non-blocking)."""
         try:
@@ -146,21 +153,6 @@ class SequenceManager:
             self.status = SequenceStatus.RUNNING
             # Save state immediately on resume
             self._save_recovery_snapshot()
-
-    def stop(self):
-        # Log the final state before we go IDLE
-        if self.status != SequenceStatus.IDLE:
-             self._log_csv()
-
-        self.status = SequenceStatus.IDLE
-        self.current_step_index = -1
-        self.relay.turn_off_all_relays()
-        self.is_heating = False
-        self.current_alert_text = None
-        self.global_start_time = None
-        
-        # CLEAR RECOVERY STATE on manual stop
-        self.settings.clear_recovery_state()
 
     def reset_profile(self):
         """
@@ -454,6 +446,8 @@ class SequenceManager:
         # The UI will prepend "DELAY ACTIVE" and "SLEEPING"
         # REVERSED ORDER: Heat starts first, then Ready time
         return f"Heat starts at: {self.delayed_start_time_str}\nReady at: {self.delayed_ready_time_str}"
+
+
     # --- MANUAL MODE METHODS ---
     
     # [Add setters for new manual controls]
@@ -466,35 +460,163 @@ class SequenceManager:
         self.settings.set("manual_mode_settings", "last_volume_gal", self.manual_volume_gal)
     
     def enter_manual_mode(self):
-        """Switches the system to manual control."""
-        # [FIX] Do NOT call self.stop().
-        # self.stop() might clear the current profile in some contexts.
-        # We manually reset the operational state instead to preserve the loaded profile.
+        """Transitions to Manual Mode (Standby)."""
+        self.stop() 
         self.status = SequenceStatus.MANUAL
-        self.current_step_index = -1
-        self.relay.turn_off_all_relays()
-        self.current_alert_text = None
-        self.global_start_time = None
+        self.is_manual_running = False 
         
-        # Clear old recovery state logic manually since we aren't calling stop()
-        self.settings.clear_recovery_state()
-        
-        # Retrieve values
-        self.target_temp = self.settings.get("manual_mode_settings", "last_setpoint_f", 150.0)
-        timer_min = self.settings.get("manual_mode_settings", "last_timer_min", 60.0)
-        
-        # NEW: Retrieve Power and Volume
+        # Load saved defaults
+        self.manual_target_temp = self.settings.get("manual_mode_settings", "last_setpoint_f", 150.0)
+        self.manual_timer_duration = self.settings.get("manual_mode_settings", "last_timer_min", 60.0) * 60.0
         self.manual_power_watts = self.settings.get("manual_mode_settings", "last_power_watts", 1800)
-        self.manual_volume_gal = self.settings.get("manual_mode_settings", "last_volume_gal", 6.0)
         
-        self.manual_timer_duration = timer_min * 60.0        
-        # Always default heater to OFF when entering Manual Mode (Safety)
+        # Initialize the Countdown Bucket
+        self.manual_timer_remaining = self.manual_timer_duration
+        self.temp_reached = False
+        
+        self.target_temp = self.manual_target_temp
+        self.log_message("Entered Manual Mode")
+
+    def start_manual(self):
+        """Starts OR Resumes the heater/timer in Manual Mode."""
+        if self.status != SequenceStatus.MANUAL:
+            self.enter_manual_mode()
+            
+        self.is_manual_running = True
+        self.is_heating = True
+        
+        # IMPORTANT: Reset the tick tracker so we don't calculate a huge 
+        # delta from when we were paused.
+        self.last_tick_time = time.monotonic()
+        
+        # If this is a fresh start (Latch Open), reset PID
+        if not self.temp_reached:
+            self.pid.reset()
+            self.log_message("Manual Mode STARTED - Heating to Target")
+        else:
+             self.log_message("Manual Mode RESUMED")
+
+    def pause_manual(self):
+        """
+        Pauses heating/timer.
+        If Timer hasn't started counting yet (Pre-heat), this acts as a RESET.
+        """
+        # Safety Cut
+        if hasattr(self, 'relay'): self.relay.stop_all()
+        elif hasattr(self, 'relays'): self.relays.stop_all()
+
+        # LOGIC CHECK: Are we in Pre-heat (Latch still waiting)?
+        if not self.temp_reached:
+            # Case A: Timer NOT counting down yet -> Full Reset
+            self.log_message("Pause requested during Pre-Heat -> RESETTING.")
+            self.enter_manual_mode() 
+            return
+
+        # Case B: Timer IS counting down -> Freeze State
+        self.is_manual_running = False
+        self.is_heating = False
+        # We do NOT reset manual_timer_remaining here. It stays frozen.
+        self.log_message("Manual Mode PAUSED (Timer Frozen)")
+
+    def stop(self):
+        """Full System Reset."""
+        self.status = SequenceStatus.IDLE
+        self.is_manual_running = False
         self.is_heating = False
         
-        self.step_start_time = 0.0 
-        self.temp_reached = False 
+        # FIX: Use RelayControl method, not HardwareInterface
+        if hasattr(self, 'relay'):
+            self.relay.stop_all()
+        elif hasattr(self, 'relays'):
+             self.relays.stop_all()
         
-        print(f"[Sequence] Entered Manual Mode. Target: {self.target_temp}")
+        self.current_step_index = -1
+        self.current_profile = None
+        self.step_start_time = 0.0
+        self.log_message("STOPPED / RESET")
+
+    def reset_manual_state(self):
+        """Alias for enter_manual_mode to prevent legacy crashes."""
+        self.enter_manual_mode()
+    
+    def emergency_cut_power(self):
+        """Smart Stop Action."""
+        if hasattr(self, 'relay'): self.relay.stop_all()
+        elif hasattr(self, 'relays'): self.relays.stop_all()
+        
+        self.is_manual_running = False
+        self.is_heating = False
+        
+        if self.status == SequenceStatus.RUNNING:
+            self.status = SequenceStatus.PAUSED
+            self.last_pause_start = time.monotonic()
+            
+        self.log_message("EMERGENCY STOP TRIGGERED")
+
+    def _process_manual_logic(self):
+        """
+        Handles Heating logic for Manual Mode.
+        """
+        # 1. READ SENSORS
+        if self.current_temp is None:
+             if hasattr(self, 'relay'): self.relay.stop_all()
+             elif hasattr(self, 'relays'): self.relays.stop_all()
+             return
+             
+        current_temp = self.current_temp 
+        now = time.monotonic()
+        
+        # 2. TIMER LOGIC
+        if self.is_manual_running:
+            # Calculate time passed since last tick
+            if not hasattr(self, 'last_tick_time'): self.last_tick_time = now
+            delta = now - self.last_tick_time
+            self.last_tick_time = now
+            
+            # A. Wait for Temp (Latch)
+            if not self.temp_reached:
+                if current_temp >= (self.manual_target_temp - 0.5):
+                    self.temp_reached = True
+                    # Timer technically starts NOW
+                    self.log_message(f"Target Reached ({current_temp:.1f}F). Timer Started.")
+            # B. Countdown
+            else:
+                # Subtract actual elapsed time from the bucket
+                self.manual_timer_remaining -= delta
+                
+                # C. Auto-Reset on Expiry
+                if self.manual_timer_remaining <= 0:
+                    self.manual_timer_remaining = 0
+                    self.log_message("Timer Expired. Resetting Manual Mode.")
+                    self.enter_manual_mode() # Full Reset
+                    return 
+
+        # 3. HEATER CONTROL
+        if self.is_manual_running and self.is_heating:
+            # Over-temp Safety
+            if current_temp > (self.manual_target_temp + 1.0) or current_temp > 215:
+                 if hasattr(self, 'relay'): self.relay.stop_all()
+                 elif hasattr(self, 'relays'): self.relays.stop_all()
+                 return
+
+            # PID Calculation
+            pid_out = self.pid.compute(current_temp, self.manual_target_temp)
+            
+            watts_to_apply = 0
+            if pid_out > 90: watts_to_apply = 1800
+            elif pid_out > 75: watts_to_apply = 1400
+            elif pid_out > 50: watts_to_apply = 1000
+            elif pid_out > 20: watts_to_apply = 800
+            else: watts_to_apply = 0 
+
+            if watts_to_apply > self.manual_power_watts:
+                watts_to_apply = self.manual_power_watts
+
+            self._apply_power_logic(watts_to_apply)
+            
+        else:
+            if hasattr(self, 'relay'): self.relay.stop_all()
+            elif hasattr(self, 'relays'): self.relays.stop_all()
 
     def toggle_manual_heater(self, enabled):
         """Toggles the heater on/off in manual mode."""
@@ -582,39 +704,25 @@ class SequenceManager:
                 if now >= self.delayed_start_epoch:
                     print(f"[Sequence] Delayed Wait Over (Start Time: {self.delayed_start_time_str}). Firing Heater.")
                     
-                    # Transition to Manual Mode
-                    # Since we pre-set the settings (30m, 1800W) in start_delayed_mode, 
-                    # enter_manual_mode will load those exact values.
-                    self.enter_manual_mode()
+                    # BUG FIX: Use start_manual() to fully activate the Control Loop (PID + Timer)
+                    # This handles entering manual mode and setting is_manual_running = True
+                    self.start_manual()
                     
-                    # Turn on the heater to begin the "Hold" process
+                    # Ensure the heater is enabled (start_manual sets is_heating=True, but being explicit helps)
                     self.toggle_manual_heater(True)
                 else:
-                    # Keep relays off while sleeping
                     self.relay.set_relays(False, False, False)
                 continue
 
             # --- MANUAL MODE LOGIC ---
             if self.status == SequenceStatus.MANUAL:
                 
-                # 1. Check Manual Timer Expiration
-                if self.step_start_time > 0 and self.last_pause_start == 0:
-                    # Calculate elapsed time
-                    elapsed = time.monotonic() - self.step_start_time - self.total_paused_time
-                    duration = getattr(self, 'manual_timer_duration', 3600.0)
-                    
-                    if elapsed >= duration:
-                        print("[Sequence] Manual Timer Expired. Stopping.")
-                        self.reset_manual_state() # Stops heater, resets timer
-                        self._play_alert_sound()  # Play Sound
+                # 1. CALL THE NEW LOGIC (Required!)
+                self._process_manual_logic()
                 
-                # 2. Heater Control
-                if self.is_heating:
-                    self._manage_temperature_generic(self.target_temp)
-                else:
-                    self.relay.set_relays(False, False, False)
-                
-                # 3. Heartbeat Save
+                # (Section #1 and #2 are deleted/commented out here, as you did)
+
+                # 3. Heartbeat Save (Keep this)
                 now = time.monotonic()
                 if now - self.last_recovery_save > self.RECOVERY_SAVE_INTERVAL:
                     self._save_recovery_snapshot()
@@ -1086,94 +1194,32 @@ class SequenceManager:
             return
                         
     def get_display_timer(self):
-        # 1. Handle IDLE/COMPLETED (Zeroed)
-        if self.status in [SequenceStatus.IDLE, SequenceStatus.COMPLETED]: 
-            return "0:00:00"
-
-        # 2. Handle DELAYED_WAIT (Preview the pending manual timer)
-        if self.status == SequenceStatus.DELAYED_WAIT:
-            # We want to show the full duration (e.g. 30:00) that will start later
-            total_sec = getattr(self, 'manual_timer_duration', 1800.0)
-            
-            val = math.ceil(total_sec)
-            h = int(val // 3600)
-            rem_h = val % 3600
-            m = int(rem_h // 60)
-            s = int(rem_h % 60)
-            return f"{h}:{m:02d}:{s:02d}"
-
-        # 3. Handle MANUAL MODE (New Logic)
         if self.status == SequenceStatus.MANUAL:
-            # Get the duration set by the slider (defaulting to 60m if missing)
-            total_sec = getattr(self, 'manual_timer_duration', 3600.0)
+            # Always show the bucket value
+            # If we are pre-heating (not temp_reached), bucket is full duration
+            # If we are running/paused, bucket is remaining time
+            return self._fmt_time(self.manual_timer_remaining)
             
-            # Determine how much time has passed
-            elapsed = 0.0
-            if self.step_start_time > 0:
-                # Timer is Active or Paused
-                now = time.monotonic()
-                if self.last_pause_start > 0:
-                    # Currently Paused
-                    elapsed = self.last_pause_start - self.step_start_time - self.total_paused_time
-                else:
-                    # Currently Running
-                    elapsed = now - self.step_start_time - self.total_paused_time
+        # --- NEW: Show pending timer during Delay Wait ---
+        if self.status == SequenceStatus.DELAYED_WAIT:
+             # Show the duration we have configured to run (e.g. 30:00)
+             val = getattr(self, 'manual_timer_duration', 0.0)
+             return self._fmt_time(val)
             
-            # Calculate remaining
-            rem_sec = max(0, total_sec - elapsed)
-            
-            # Format
-            val = math.ceil(rem_sec)
-            h = int(val // 3600)
-            rem_h = val % 3600
-            m = int(rem_h // 60)
-            s = int(rem_h % 60)
-            return f"{h}:{m:02d}:{s:02d}"
+        return "00:00"
 
-        # 4. Handle AUTO PROFILE MODE (Existing Logic)
-        if not self.current_profile: return "0:00:00"
-
-        # Calculating Total Duration for the "Heater Active but Timer Waiting" phase
-        if self.status == SequenceStatus.RUNNING and not self.temp_reached:
-             step = self.current_profile.steps[self.current_step_index]
-             total_sec = int(step.duration_min * 60)
-             h = total_sec // 3600
-             rem = total_sec % 3600
-             m = rem // 60
-             s = rem % 60
-             return f"{h}:{m:02d}:{s:02d}"
-
-        # Standard Step Timer Logic
-        step = self.current_profile.steps[self.current_step_index]
-        total_sec = step.duration_min * 60.0
+    def _fmt_time(self, seconds):
+        """Helper to format seconds into MMM:SS (e.g. 120:00)"""
+        import math
+        val = math.ceil(seconds)
         
-        is_live = False
-        if self.status == SequenceStatus.RUNNING:
-            is_live = True
-        elif self.status == SequenceStatus.WAITING_FOR_USER:
-             if self.last_pause_start == 0:
-                is_live = True
-
-        if is_live:
-            current_elapsed = time.monotonic() - self.step_start_time - self.total_paused_time
-            rem_sec = total_sec - current_elapsed
-            if rem_sec < 0: rem_sec = 0 
-        else:
-            if self.last_pause_start > 0:
-                current_elapsed = self.last_pause_start - self.step_start_time - self.total_paused_time
-                rem_sec = max(0, total_sec - current_elapsed)
-            else:
-                rem_sec = max(0, total_sec - self.step_elapsed_time)
-            
-        val = math.ceil(rem_sec)
+        # Calculate total minutes and remaining seconds
+        m = int(val // 60)
+        s = int(val % 60)
         
-        h = int(val // 3600)
-        rem_h = val % 3600
-        m = int(rem_h // 60)
-        s = int(rem_h % 60)
-        
-        return f"{h}:{m:02d}:{s:02d}"
-
+        # Return strict MMM:SS format
+        return f"{m:02d}:{s:02d}"
+    
     def get_global_elapsed_time_str(self):
         if self.global_start_time is None:
             return "00:00"
@@ -1245,55 +1291,3 @@ class SequenceManager:
                  return f"Next: {add.name} @ {add.time_point_min}m"
         return "No more alerts"
         
-    # =========================================
-    # MANUAL MODE PLAYBACK CONTROLS
-    # =========================================
-    @property
-    def is_manual_running(self):
-        """Returns True if Manual Mode is 'Active' and NOT Paused."""
-        # It is running if we are in MANUAL mode, AND
-        # (Heater is ON OR Timer has started) AND
-        # We are NOT currently in a paused state (last_pause_start == 0)
-        return (self.status == SequenceStatus.MANUAL and 
-                (self.is_heating or self.step_start_time > 0) and 
-                self.last_pause_start == 0)
-
-    def toggle_manual_playback(self):
-        """Toggles between START (Active) and PAUSE (Inactive) for Manual Mode."""
-        if not self.is_manual_running:
-            # START: Enable Heater
-            self.is_heating = True
-            
-            # --- CAPTURE INITIAL TEMP (For Manual Sound Logic) ---
-            self.initial_manual_temp = self.current_temp if self.current_temp is not None else 0.0
-            # -----------------------------------------------------
-
-            # LOGIC FIX: Always reset pause flag when starting
-            if self.temp_reached:
-                if self.step_start_time == 0: 
-                    self.step_start_time = time.monotonic()
-                elif self.last_pause_start > 0: 
-                    # Resume timer from pause
-                     paused_duration = time.monotonic() - self.last_pause_start
-                     self.step_start_time += paused_duration
-            
-            # Force the system to recognize we are no longer paused
-            self.last_pause_start = 0
-            
-            print("[Sequence] Manual Playback STARTED")
-        else:
-            # PAUSE: Disable Heater and Pause Timer
-            self.is_heating = False
-            self.last_pause_start = time.monotonic()
-            print("[Sequence] Manual Playback PAUSED")
-
-        # Save state immediately on toggle
-        self._save_recovery_snapshot()
-
-    def reset_manual_state(self):
-        """Stops heater, resets timer, but STAYS in Manual Mode."""
-        self.is_heating = False
-        self.step_start_time = 0.0
-        self.last_pause_start = 0.0
-        self.temp_reached = False
-        print("[Sequence] Manual Mode RESET")

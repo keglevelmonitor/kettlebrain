@@ -26,8 +26,7 @@
         background_color: 0.8, 0.2, 0.2, 1
         # Find the screen manager, get the 'step_editor' screen, call remove
         on_release: app.root.get_screen('step_editor').remove_alert_by_index(app.root.get_screen('step_editor').current_additions.index({'name': root.name, 'time': root.time}))
-        
-        
+                
 <Label>:
     font_size: '18sp'
     color: 0.9, 0.9, 0.9, 1
@@ -44,6 +43,12 @@
     # KEEPING SQUARES AS REQUESTED
     background_width: '6dp'
     padding: 20
+    
+<ScrollView>:
+    bar_width: '30dp'
+    scroll_type: ['bars', 'content']
+    bar_color: 0.5, 0.5, 0.5, 0.9
+    bar_inactive_color: 0.2, 0.2, 0.2, 0.5
 
 # --- CUSTOM WIDGETS ---
 <Card@BoxLayout>:
@@ -112,46 +117,216 @@
                 pos: self.pos
                 size: self.size
 
-        # --- HERO ROW ---
-        BoxLayout:
+        # --- HERO ROW (Top 120dp - Sliding Area) ---
+        ScreenManager:
+            id: hero_manager
             size_hint_y: None
             height: '120dp'
-            spacing: 5
-            
-            Card:
-                HeroLabel:
-                    text: root.display_temp
-                    color: root.temp_color
-                Label:
-                    text: "Target: " + root.display_target
-                    font_size: '16sp'
-                    color: 0.6, 0.6, 0.6, 1
+            transition: kivy.uix.screenmanager.SlideTransition(direction='left')
 
-            Card:
-                Label:
-                    text: root.display_status
-                    text_size: self.width, None
-                    halign: 'center'
-                    color: 1, 0.8, 0, 1
-                    font_size: '16sp'
-                Button:
-                    text: "DELAY START"
-                    size_hint_y: 0.6
-                    background_color: 0.2, 0.2, 0.4, 1
+            # SCREEN 1: Standard Dashboard (Cards)
+            Screen:
+                name: 'hero_standard'
+                BoxLayout:
+                    spacing: 5
+                    
+                    # CARD 1: Temp & Heaters
+                    Card:
+                        BoxLayout:
+                            orientation: 'horizontal'
+                            spacing: 10
+                            # Heaters
+                            BoxLayout:
+                                orientation: 'vertical'
+                                size_hint_x: 0.25
+                                spacing: 2
+                                Label:
+                                    text: "1000W"
+                                    font_size: '14sp'
+                                    bold: True
+                                    canvas.before:
+                                        Color:
+                                            rgba: (0.8, 0, 0, 1) if root.heater_1_active else (0.1, 0.1, 0.1, 1)
+                                        Rectangle:
+                                            pos: self.pos
+                                            size: self.size
+                                Label:
+                                    text: "800W"
+                                    font_size: '14sp'
+                                    bold: True
+                                    canvas.before:
+                                        Color:
+                                            rgba: (1, 0.5, 0, 1) if root.heater_2_active else (0.1, 0.1, 0.1, 1)
+                                        Rectangle:
+                                            pos: self.pos
+                                            size: self.size
+                            # Temp
+                            BoxLayout:
+                                orientation: 'vertical'
+                                size_hint_x: 0.75
+                                HeroLabel:
+                                    text: root.display_temp
+                                    color: root.temp_color
+                                Label:
+                                    text: "Target: " + root.display_target
+                                    font_size: '16sp'
+                                    color: 0.6, 0.6, 0.6, 1
 
-            Card:
-                HeroLabel:
-                    text: root.display_timer
-                Label:
-                    text: "Elapsed: " + root.display_elapsed
-                    font_size: '16sp'
-                    color: 0.6, 0.6, 0.6, 1
+                    # CARD 2: Status & Delay Button
+                    Card:
+                        Label:
+                            text: root.display_status
+                            text_size: self.width, None
+                            halign: 'center'
+                            valign: 'center'
+                            color: 1, 0.8, 0, 1
+                            font_size: '16sp'
+                        Button:
+                            text: root.delay_btn_text
+                            size_hint_y: 0.6
+                            background_color: root.delay_btn_color
+                            on_release: root.open_delay_setup()
+
+                    # CARD 3: Timer & Heartbeat
+                    Card:
+                        BoxLayout:
+                            orientation: 'horizontal'
+                            spacing: 5
+                            BoxLayout:
+                                orientation: 'vertical'
+                                size_hint_x: 0.75
+                                HeroLabel:
+                                    text: root.display_timer
+                                    halign: 'center'
+                                    valign: 'middle'
+                            Widget:
+                                size_hint_x: 0.25
+                                size_hint_y: 1
+                                canvas:
+                                    Color:
+                                        rgba: root.heartbeat_color
+                                    Ellipse:
+                                        pos: self.center_x - dp(15), self.center_y - dp(15)
+                                        size: dp(30), dp(30)
+
+            # SCREEN 2: Delay Setup (Stacked Sliders & Action Stack)
+            Screen:
+                name: 'hero_delay'
+                BoxLayout:
+                    orientation: 'horizontal'
+                    spacing: 5
+                    padding: 5
+                    canvas.before:
+                        Color:
+                            rgba: 0.1, 0.15, 0.2, 1
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+
+                    # --- LEFT COLUMN: SLIDERS (75% Width) ---
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_x: 0.75
+                        spacing: 0 # Tight spacing to fit 3 rows in 120dp
+
+                        # ROW 1: TIME (0 - 1435 minutes)
+                        BoxLayout:
+                            spacing: 10
+                            Slider:
+                                size_hint_x: 0.8
+                                min: 0
+                                max: 1435 # 23 hr * 60 min + 55 min
+                                step: 5
+                                value: root.delay_minutes_total
+                                on_value: root.delay_minutes_total = self.value
+                                cursor_size: dp(30), dp(30)
+                            Label:
+                                size_hint_x: 0.2
+                                text: "Ready At:\n" + root.get_delay_time_str(root.delay_minutes_total)
+                                font_size: '16sp'
+                                color: 0.2, 0.8, 1, 1
+                                bold: True
+                                halign: 'center' # Centered looks better with 2 lines
+                                valign: 'middle'
+                                text_size: self.size
+
+                        # ROW 2: TEMP
+                        BoxLayout:
+                            spacing: 10
+                            Slider:
+                                size_hint_x: 0.8
+                                min: 70
+                                max: 212
+                                step: 1
+                                value: root.delay_temp
+                                on_value: root.delay_temp = self.value
+                                cursor_size: dp(30), dp(30)
+                            Label:
+                                size_hint_x: 0.2
+                                text: str(int(root.delay_temp)) + " F"
+                                font_size: '18sp'
+                                bold: True
+                                halign: 'left'
+                                valign: 'middle'
+                                text_size: self.size
+
+                        # ROW 3: VOLUME
+                        BoxLayout:
+                            spacing: 10
+                            Slider:
+                                size_hint_x: 0.8
+                                min: 2
+                                max: 9
+                                step: 0.25
+                                value: root.delay_vol
+                                on_value: root.delay_vol = self.value
+                                cursor_size: dp(30), dp(30)
+                            Label:
+                                size_hint_x: 0.2
+                                text: str(round(root.delay_vol, 2)) + " Gal"
+                                font_size: '18sp'
+                                bold: True
+                                halign: 'left'
+                                valign: 'middle'
+                                text_size: self.size
+
+                    # --- RIGHT COLUMN: ACTIONS (25% Width) ---
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_x: 0.25
+                        spacing: 5
+                        padding: 5
+                        
+                        # 1. ACTIVATE / UPDATE
+                        Button:
+                            text: "UPDATE" if root.is_delay_active else "ACTIVATE"
+                            font_size: '14sp'
+                            bold: True
+                            background_color: 0.2, 0.8, 0.2, 1
+                            on_release: root.confirm_delay_start()
+                        
+                        # 2. CANCEL (Close Menu)
+                        Button:
+                            text: "CANCEL"
+                            font_size: '14sp'
+                            background_color: 0.5, 0.5, 0.5, 1
+                            on_release: root.close_delay_setup()
+
+                        # 3. DEACTIVATE (Kill Timer)
+                        Button:
+                            text: "DEACTIVATE"
+                            font_size: '14sp'
+                            bold: True
+                            background_color: (0.8, 0.2, 0.2, 1) if root.is_delay_active else (0.2, 0.2, 0.2, 1)
+                            disabled: not root.is_delay_active
+                            on_release: root.deactivate_delay()
 
         # --- MIDDLE CONTENT ---
         ScreenManager:
             id: center_content
             size_hint_y: 1
             
+            # SCREEN: MANUAL CONTROL
             Screen:
                 name: 'page_manual'
                 BoxLayout:
@@ -162,57 +337,67 @@
                             Label:
                                 text: "Set Temp: " + str(int(temp_slider.value)) + " F"
                                 size_hint_y: 0.4
+                                color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
                             Slider:
                                 id: temp_slider
+                                disabled: root.controls_disabled
                                 min: 70
                                 max: 212
-                                value: 150
-                                on_value_pos: root.on_slider_change('temp', self.value)
-
+                                value: root.slider_temp_val
+                                on_value: root.on_slider_drag('temp', self.value)
+                                on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('temp', self.value)
                         BoxLayout:
                             orientation: 'vertical'
                             Label:
                                 text: "Volume: " + str(round(vol_slider.value, 2)) + " Gal"
                                 size_hint_y: 0.4
+                                color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
                             Slider:
                                 id: vol_slider
+                                disabled: root.controls_disabled
                                 min: 2.0
                                 max: 9.0
                                 step: 0.25
-                                value: 6.0
-                                on_value_pos: root.on_slider_change('vol', self.value)
-
+                                value: root.slider_vol_val
+                                on_value: root.on_slider_drag('vol', self.value)
+                                on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('vol', self.value)
                     Card:
                         BoxLayout:
                             orientation: 'vertical'
                             Label:
                                 text: "Timer: " + str(int(time_slider.value)) + " min"
                                 size_hint_y: 0.4
+                                color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
                             Slider:
                                 id: time_slider
-                                min: 1
+                                disabled: root.controls_disabled
+                                min: 0
                                 max: 120
-                                value: 60
-                                on_value_pos: root.on_slider_change('time', self.value)
-
+                                step: 1
+                                value: root.slider_time_val
+                                on_value: root.on_slider_drag('time', self.value)
+                                on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('time', self.value)
                         BoxLayout:
                             orientation: 'vertical'
                             Label:
                                 text: "Power: " + root.display_power_watts + " W"
                                 size_hint_y: 0.4
+                                color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
                             Slider:
                                 id: pwr_slider
+                                disabled: root.controls_disabled
                                 min: 0
                                 max: 3
                                 step: 1
-                                value: 3
-                                on_value_pos: root.on_slider_change('power', self.value)
+                                value: root.slider_power_val
+                                on_value: root.on_slider_drag('power', self.value)
+                                on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('power', self.value)
 
+            # SCREEN: AUTO STEPS LIST
             Screen:
                 name: 'page_auto'
                 BoxLayout:
                     orientation: 'vertical'
-                    
                     BoxLayout:
                         size_hint_y: None
                         height: '30dp'
@@ -241,7 +426,6 @@
                             text: "Duration"
                             size_hint_x: 0.2
                             bold: True
-
                     RecycleView:
                         id: rv_steps
                         viewclass: 'StepItem'
@@ -255,41 +439,96 @@
                             orientation: 'vertical'
                             spacing: 2
 
-        # --- BOTTOM ACTION ROW ---
-        BoxLayout:
+        # --- BOTTOM NAV ---
+        ScreenManager:
+            id: bottom_nav
             size_hint_y: None
-            height: '70dp'
-            spacing: 2
-            
-            Button:
-                text: "AUTO"
-                background_color: (0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_auto' else (0.3, 0.3, 0.3, 1)
-                on_release: root.switch_to_auto()
-            
-            Button:
-                text: "MANUAL"
-                background_color: (0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_manual' else (0.3, 0.3, 0.3, 1)
-                on_release: root.switch_to_manual()
-            
-            Button:
-                text: root.action_button_text
-                background_color: (0.2, 0.4, 0.8, 1) if self.text == "START" else (0.8, 0.6, 0.2, 1)
-                on_release: root.on_action_click()
-            
-            Button:
-                text: "STOP"
-                background_color: 0.8, 0.2, 0.2, 1
-                on_release: root.on_stop_click()
-
-            Button:
-                text: "PROFILES"
-                background_color: 0.2, 0.4, 0.8, 1
-                on_release: root.open_profiles()
-
-            Button:
-                text: "SETTINGS"
-                background_color: 0.3, 0.3, 0.3, 1
-                on_release: root.open_settings()
+            height: '80dp'
+            transition: kivy.uix.screenmanager.SlideTransition(direction='up')
+            Screen:
+                name: 'nav_standard'
+                BoxLayout:
+                    spacing: 2
+                    Button:
+                        text: "AUTO"
+                        background_color: (0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_auto' else (0.3, 0.3, 0.3, 1)
+                        on_release: root.switch_to_auto()
+                    Button:
+                        text: "MANUAL"
+                        background_color: (0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_manual' else (0.3, 0.3, 0.3, 1)
+                        on_release: root.switch_to_manual()
+                    Button:
+                        text: root.action_button_text
+                        background_color: root.action_button_color
+                        disabled: root.controls_disabled
+                        on_release: root.on_action_click()
+                    Button:
+                        text: "STOP"
+                        background_color: 0.8, 0.2, 0.2, 1
+                        on_release: root.on_stop_request()
+                    Button:
+                        text: "PROFILES"
+                        background_color: 0.2, 0.4, 0.8, 1
+                        on_release: root.open_profiles()
+                    Button:
+                        text: "SETTINGS"
+                        background_color: 0.3, 0.3, 0.3, 1
+                        on_release: root.open_settings()
+            Screen:
+                name: 'nav_confirm'
+                BoxLayout:
+                    orientation: 'vertical'
+                    padding: 5
+                    canvas.before:
+                        Color:
+                            rgba: 0.1, 0, 0, 1
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+                    Label:
+                        text: "Heaters are OFF. RESET to END SESSION or PAUSE to SUSPEND SESSION."
+                        color: 1, 0.5, 0.5, 1
+                        bold: True
+                        font_size: '14sp'
+                        size_hint_y: 0.4
+                    BoxLayout:
+                        spacing: 20
+                        Button:
+                            text: "RESET (END SESSION)"
+                            background_color: 0.8, 0.2, 0.2, 1
+                            on_release: root.on_confirm_reset()
+                        Button:
+                            text: "PAUSE (SUSPEND SESSION)"
+                            background_color: 0.2, 0.4, 0.8, 1
+                            on_release: root.on_recover_pause()
+                            
+            Screen:
+                name: 'nav_mode_confirm'
+                BoxLayout:
+                    orientation: 'vertical'
+                    padding: 5
+                    canvas.before:
+                        Color:
+                            rgba: 0.15, 0.05, 0, 1 # Dark Amber/Red Background
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+                    Label:
+                        text: root.mode_confirm_msg
+                        color: 1, 0.8, 0, 1 # Warning Orange
+                        bold: True
+                        font_size: '14sp'
+                        size_hint_y: 0.4
+                    BoxLayout:
+                        spacing: 20
+                        Button:
+                            text: root.mode_reset_btn_text
+                            background_color: 0.8, 0.2, 0.2, 1 # Red
+                            on_release: root.confirm_mode_switch()
+                        Button:
+                            text: "CANCEL"
+                            background_color: 0.5, 0.5, 0.5, 1 # Grey
+                            on_release: root.cancel_mode_switch()
 
 # --- PROFILES SCREEN ---
 <ProfilesScreen>:
@@ -1222,5 +1461,4 @@
                 background_color: 0.2, 0.8, 0.2, 1
                 disabled: not root.install_enabled or root.is_working
                 on_release: root.install_updates()
-                
                 

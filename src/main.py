@@ -4,10 +4,27 @@ import copy
 import subprocess
 import sys
 import threading
+import signal  # <--- NEW IMPORT
+from datetime import datetime, timedelta
+from sequence_manager import SequenceStatus
+import atexit
+
+# This tells the OS: "My Window ID is 'KettleBrain', not 'python'"
+os.environ['SDL_VIDEO_X11_WMCLASS'] = "KettleBrain"
 os.environ['KIVY_BCM_DISPMANX_ID'] = '2'
 
-# --- CONFIG ---
+# 1. Import Config first
 from kivy.config import Config
+
+# 2. Calculate the path immediately
+current_dir = os.path.dirname(os.path.abspath(__file__))
+icon_path = os.path.join(current_dir, 'assets', 'kettle.png')
+
+# 3. Set the icon in Kivy's global configuration
+Config.set('kivy', 'window_icon', icon_path)
+Config.set('input', 'mouse', 'mouse,multitouch_on_demand') 
+
+# --- Rest of CONFIG ---
 Config.set('graphics', 'width', '800')
 Config.set('graphics', 'height', '410')
 Config.set('graphics', 'resizable', '0')
@@ -32,12 +49,64 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.screenmanager import SlideTransition
 from kivy.uix.spinner import Spinner
+from kivy.core.window import Window
 
 # --- BACKEND IMPORTS ---
 from settings_manager import SettingsManager 
 from hardware_interface import HardwareInterface
 from sequence_manager import SequenceManager, SequenceStatus
-# removed broken imports
+
+# --- FAILSAFE SHUTDOWN ---
+def failsafe_cleanup():
+    """
+    Nuclear option: Forces all Relays OFF when python exits.
+    This runs on app crash, CTRL+C, or normal close.
+    """
+    try:
+        print("[Main] Executing Failsafe Cleanup...")
+        # Attempt to find the relay instance in the running app
+        app = App.get_running_app()
+        if app and hasattr(app, 'relay'):
+            app.relay.stop_all()
+            print("[Main] Relays disabled via App reference.")
+        else:
+            # Fallback: Create a temporary RelayControl to force shutdown
+            # We avoid using __file__ here as it may be undefined during exit
+            from relay_control import RelayControl
+            from settings_manager import SettingsManager
+            
+            # Use current working directory logic to find config
+            root_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            if os.path.basename(root_dir) == 'src':
+                root_dir = os.path.dirname(root_dir)
+            
+            sm = SettingsManager(root_dir)
+            rc = RelayControl(sm)
+            rc.stop_all()
+            print("[Main] Relays disabled via Fresh Instance.")
+            
+    except Exception as e:
+        print(f"[Main] Failsafe Error: {e}")
+
+def handle_signal(signum, frame):
+    """
+    Catches OS signals (like closing the terminal or kill command).
+    """
+    print(f"\n[Main] Caught Signal {signum}. Shutting down safely...")
+    failsafe_cleanup()
+    # Force exit. sys.exit(0) triggers atexit, ensuring we don't miss anything,
+    # but since we just ran cleanup, it's safe even if it runs twice (relays just stay off).
+    sys.exit(0)
+
+# 1. Register Normal Exit
+atexit.register(failsafe_cleanup)
+
+# 2. Register Signal Handlers (Terminal Close, Kill Command)
+signal.signal(signal.SIGTERM, handle_signal) # Kill command
+signal.signal(signal.SIGHUP, handle_signal)  # Terminal closed
+# Note: SIGINT (Ctrl+C) is usually handled by Python as KeyboardInterrupt, 
+# which triggers atexit automatically, so we don't strictly need it here, but it doesn't hurt.
+signal.signal(signal.SIGINT, handle_signal)
 
 # --- MANUAL CLASS DEFINITIONS (To fix import errors) ---
 class ProfileAddition:
@@ -277,6 +346,90 @@ class ProfileEditorScreen(Screen):
     def cancel_edit(self):
         App.get_running_app().open_profiles()
 
+# ~ class DelayedStartPopup(Popup):
+    # ~ # Dropdown Data
+    # ~ hour_values = ListProperty([str(i) for i in range(1, 13)])
+    # ~ min_values = ListProperty([f"{i:02d}" for i in range(0, 60)])
+    # ~ ampm_values = ListProperty(["AM", "PM"])
+    
+    # ~ # Selected Values
+    # ~ sel_hour = StringProperty("6")
+    # ~ sel_min = StringProperty("00")
+    # ~ sel_ampm = StringProperty("AM")
+    
+    # ~ # Target Values
+    # ~ target_temp = NumericProperty(154.0)
+    # ~ target_vol = NumericProperty(8.0)
+    
+    # ~ def __init__(self, **kwargs):
+        # ~ super().__init__(**kwargs)
+        # ~ self.app = App.get_running_app()
+        # ~ self._load_defaults()
+        
+    # ~ def _load_defaults(self):
+        # ~ # 1. Calculate Default Time (6:00 AM tomorrow if passed)
+        # ~ now = datetime.now()
+        # ~ next_target = now.replace(hour=6, minute=0, second=0, microsecond=0)
+        # ~ if next_target <= now:
+            # ~ next_target += timedelta(days=1)
+            
+        # ~ self.sel_hour = next_target.strftime("%I").lstrip('0')
+        # ~ self.sel_min = next_target.strftime("%M")
+        # ~ self.sel_ampm = next_target.strftime("%p")
+        
+        # ~ # 2. Load Last Used Settings
+        # ~ sm = self.app.settings_manager
+        # ~ self.target_temp = sm.get("manual_mode_settings", "last_setpoint_f", 154.0)
+        # ~ self.target_vol = sm.get("manual_mode_settings", "last_volume_gal", 8.0)
+
+    # ~ def activate_delay(self):
+        # ~ try:
+            # ~ # 1. Parse Time
+            # ~ h = int(self.sel_hour)
+            # ~ m = int(self.sel_min)
+            # ~ is_pm = (self.sel_ampm == "PM")
+            
+            # ~ # Convert 12h -> 24h
+            # ~ if is_pm and h != 12: h += 12
+            # ~ if not is_pm and h == 12: h = 0
+            
+            # ~ now = datetime.now()
+            # ~ target_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            
+            # ~ # If time is in past, assume tomorrow
+            # ~ if target_dt <= now:
+                # ~ target_dt += timedelta(days=1)
+                
+            # ~ # 2. Determine Context (Were we in Auto or Manual?)
+            # ~ # If we are currently in Manual, we want to return to Manual if canceled.
+            # ~ is_auto = (self.app.sequencer.status != SequenceStatus.MANUAL)
+            
+            # ~ # 3. Call Backend
+            # ~ self.app.sequencer.start_delayed_mode(
+                # ~ self.target_temp, 
+                # ~ self.target_vol, 
+                # ~ target_dt, 
+                # ~ from_auto_mode=is_auto
+            # ~ )
+            
+            # ~ # 4. Update UI
+            # ~ if self.app.sequencer.status == SequenceStatus.DELAYED_WAIT:
+                # ~ # Force MainScreen update
+                # ~ self.app.root.get_screen('main').update_status_display()
+                # ~ self.dismiss()
+            # ~ else:
+                # ~ print("Error: Sequencer refused Delayed Mode")
+                
+        # ~ except Exception as e:
+            # ~ print(f"Delay Activation Error: {e}")
+
+# ~ class DelayedStartActionPopup(Popup):
+    # ~ def do_cancel(self):
+        # ~ app = App.get_running_app()
+        # ~ app.sequencer.cancel_delayed_mode()
+        # ~ app.root.get_screen('main').update_status_display()
+        # ~ self.dismiss()
+
 class MainScreen(Screen):
     display_temp = StringProperty("--.- °F")
     display_target = StringProperty("--")
@@ -286,66 +439,253 @@ class MainScreen(Screen):
     display_power_watts = StringProperty("1800")
     action_button_text = StringProperty("START")
     temp_color = ListProperty([0.2, 0.8, 0.2, 1])
+    
+    # Properties for Mode Switch Logic
+    mode_switch_target = StringProperty("") # 'auto' or 'manual'
+    mode_confirm_msg = StringProperty("")
+    mode_reset_btn_text = StringProperty("")
+    
+    # --- NEW DELAY PROPERTIES ---
+    delay_hour = NumericProperty(6)
+    delay_min = NumericProperty(0)
+    delay_temp = NumericProperty(154.0)
+    delay_vol = NumericProperty(8.0)
+    delay_btn_text = StringProperty("DELAY START")
+    delay_btn_color = ListProperty([0.2, 0.2, 0.4, 1])
+    delay_minutes_total = NumericProperty(360) # Default 6:00 AM (6 * 60)
+    
+    # Visual properties
+    controls_disabled = BooleanProperty(False)
+    heater_1_active = BooleanProperty(False) # 1000W
+    heater_2_active = BooleanProperty(False) # 800W
+    is_delay_active = BooleanProperty(False)
+    heartbeat_color = ListProperty([0.2, 0.2, 0.2, 1]) # Grey default
+    
+    action_button_text = StringProperty("START")
+    action_button_color = ListProperty([0.2, 0.4, 0.8, 1]) # <--- ADD THIS
+    
+    # Manual Mode Properties
+    slider_temp_val = NumericProperty(150.0)
+    slider_vol_val = NumericProperty(6.0)
+    slider_time_val = NumericProperty(60.0)
+    slider_power_val = NumericProperty(3) # Index 0-3
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app = App.get_running_app()
         self.last_profile_id = None
         self.last_step_index = -1
+        self.watts_map = [800, 1000, 1400, 1800] 
 
-    def on_slider_change(self, slider_type, value):
-        seq = self.app.sequencer
-        if slider_type == 'temp': seq.set_manual_target(float(value))
-        elif slider_type == 'vol': seq.set_manual_volume(float(value))
-        elif slider_type == 'time': seq.set_manual_timer_duration(float(value))
-        elif slider_type == 'power':
-            watts_map = [800, 1000, 1400, 1800]
+    def on_enter(self):
+        """Syncs UI with saved settings."""
+        self._load_manual_settings()
+
+    def _load_manual_settings(self):
+        sm = self.app.settings_manager
+        
+        last_temp = sm.get("manual_mode_settings", "last_setpoint_f", 150.0)
+        last_timer = sm.get("manual_mode_settings", "last_timer_min", 60.0)
+        last_vol = sm.get("manual_mode_settings", "last_volume_gal", 6.0)
+        last_watts = sm.get("manual_mode_settings", "last_power_watts", 1800)
+
+        self.slider_temp_val = last_temp
+        self.slider_time_val = last_timer
+        self.slider_vol_val = last_vol
+        try:
+            self.slider_power_val = self.watts_map.index(last_watts)
+        except ValueError:
+            self.slider_power_val = 3
+        
+        self.display_power_watts = str(last_watts)
+        self._update_prediction()
+
+    def on_slider_drag(self, slider_type, value):
+        """Updates VISUALS (labels/prediction) immediately."""
+        if slider_type == 'temp': 
+            self.slider_temp_val = float(value)
+        elif slider_type == 'vol': 
+            self.slider_vol_val = float(value)
+        elif slider_type == 'time': 
+            self.slider_time_val = float(value)
+        elif slider_type == 'power': 
+            self.slider_power_val = int(value)
             idx = int(value)
-            if 0 <= idx < len(watts_map):
-                w = watts_map[idx]
-                self.display_power_watts = str(w)
+            if 0 <= idx < len(self.watts_map):
+                self.display_power_watts = str(self.watts_map[idx])
+        
+        self._update_prediction()
+
+    def on_slider_release(self, slider_type, value):
+        """Saves to backend/disk on release."""
+        self.on_slider_drag(slider_type, value) # Sync
+        seq = self.app.sequencer
+        
+        if slider_type == 'temp':
+            seq.set_manual_target(float(value))
+        elif slider_type == 'vol':
+            seq.set_manual_volume(float(value))
+        elif slider_type == 'time':
+            seq.set_manual_timer_duration(float(value))
+        elif slider_type == 'power':
+            idx = int(value)
+            if 0 <= idx < len(self.watts_map):
+                w = self.watts_map[idx]
                 seq.set_manual_power(w)
+                
+        self._update_prediction()
+
+    def _update_prediction(self):
+        seq = self.app.sequencer
+        if seq.status != SequenceStatus.MANUAL:
+            return
+
+        current_temp = seq.current_temp if seq.current_temp else 60.0
+        target_temp = self.slider_temp_val
+        vol = self.slider_vol_val
+        
+        p_idx = int(self.slider_power_val)
+        watts = self.watts_map[p_idx] if 0 <= p_idx < len(self.watts_map) else 1800
+
+        if target_temp > current_temp:
+            if hasattr(seq, 'calculate_ramp_minutes'):
+                mins = seq.calculate_ramp_minutes(current_temp, target_temp, vol, watts)
+                import time
+                from datetime import datetime
+                ready_epoch = time.time() + (mins * 60)
+                dt = datetime.fromtimestamp(ready_epoch)
+                self.display_status = f"Ready At: {dt.strftime('%H:%M')}"
+        else:
+            self.display_status = "System Idle"
 
     def switch_to_manual(self):
+        """
+        Request to switch to Manual Mode. 
+        If Auto is currently running/paused, ask for confirmation.
+        """
+        seq = self.app.sequencer
+        
+        # 1. Check if AUTO is Active (Running, Paused, or Waiting)
+        if seq.status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
+            self._prompt_mode_switch('manual', active_mode="AUTO", inactive_mode="MANUAL")
+            return
+
+        # 2. Normal Switch
         self.ids.center_content.current = 'page_manual'
-        if self.app.sequencer.status != SequenceStatus.MANUAL:
-            self.app.sequencer.enter_manual_mode()
+        # Only reset/enter if we aren't already there (avoids resetting a running Manual session)
+        if seq.status != SequenceStatus.MANUAL:
+            seq.enter_manual_mode()
 
     def switch_to_auto(self):
-        self.ids.center_content.current = 'page_auto'
-        if self.app.sequencer.status == SequenceStatus.MANUAL:
-            self.app.sequencer.stop()
+        """
+        Request to switch to Auto Mode.
+        If Manual is currently running (Timer/PID active), ask for confirmation.
+        """
+        seq = self.app.sequencer
+        
+        # 1. Check if MANUAL is Active (Heater or Timer running)
+        if seq.status == SequenceStatus.MANUAL and getattr(seq, 'is_manual_running', False):
+            self._prompt_mode_switch('auto', active_mode="MANUAL", inactive_mode="AUTO")
+            return
 
+        # 2. Normal Switch
+        self.ids.center_content.current = 'page_auto'
+        # Only Stop if we are coming from Manual (avoids resetting a running Auto session)
+        if seq.status == SequenceStatus.MANUAL:
+            seq.stop()
+    
+    def _prompt_mode_switch(self, target, active_mode, inactive_mode):
+        """Slides up the confirmation panel."""
+        self.mode_switch_target = target
+        self.mode_confirm_msg = f"{active_mode} is active. RESET {active_mode} SESSION and switch to {inactive_mode} or CANCEL to return."
+        self.mode_reset_btn_text = f"RESET {active_mode} SESSION"
+        
+        self.ids.bottom_nav.transition.direction = 'up'
+        self.ids.bottom_nav.current = 'nav_mode_confirm'
+
+    def confirm_mode_switch(self):
+        """Executed when user clicks RESET SESSION."""
+        # 1. Hard Stop the current session
+        self.app.sequencer.stop()
+        
+        # 2. Perform the switch based on target
+        if self.mode_switch_target == 'manual':
+            self.ids.center_content.current = 'page_manual'
+            self.app.sequencer.enter_manual_mode()
+            
+        elif self.mode_switch_target == 'auto':
+            self.ids.center_content.current = 'page_auto'
+            # seq.stop() already put us in IDLE, which is correct for Auto start
+            
+        # 3. Restore Bottom Nav
+        self.ids.bottom_nav.transition.direction = 'down'
+        self.ids.bottom_nav.current = 'nav_standard'
+
+    def cancel_mode_switch(self):
+        """Executed when user clicks CANCEL."""
+        self.ids.bottom_nav.transition.direction = 'down'
+        self.ids.bottom_nav.current = 'nav_standard'
+    
     def on_action_click(self):
         seq = self.app.sequencer
         status = seq.status
-        
-        # 1. If IDLE: Start the appropriate mode
-        if status == SequenceStatus.IDLE:
-            if self.ids.center_content.current == 'page_auto': 
-                seq.start_sequence()
-            else:
+        current_screen = self.ids.center_content.current
+
+        # --- MANUAL MODE LOGIC ---
+        if current_screen == 'page_manual' or status == SequenceStatus.MANUAL:
+            if status != SequenceStatus.MANUAL:
                 seq.enter_manual_mode()
+                seq.start_manual()
+            elif getattr(seq, 'is_manual_running', False):
+                seq.pause_manual()
+            else:
+                seq.start_manual()
         
-        # 2. If RUNNING or MANUAL: "Action" button means PAUSE
-        elif status == SequenceStatus.RUNNING or status == SequenceStatus.MANUAL:
-            if hasattr(seq, 'pause_sequence'):
-                seq.pause_sequence()
-                
-        # 3. If PAUSED: "Action" button means RESUME
+        # --- AUTO MODE LOGIC ---
+        elif status == SequenceStatus.IDLE:
+            if current_screen == 'page_auto': 
+                seq.start_sequence()
+        elif status in [SequenceStatus.RUNNING]:
+            if hasattr(seq, 'pause_sequence'): seq.pause_sequence()
         elif status == SequenceStatus.PAUSED:
-            if hasattr(seq, 'resume_sequence'):
-                seq.resume_sequence()
-        
-        # 4. If WAITING (e.g. for user confirmation): Handle logic
+            if hasattr(seq, 'resume_sequence'): seq.resume_sequence()
         elif status == SequenceStatus.WAITING_FOR_USER:
             if seq.current_alert_text == "Step Complete": 
                 if hasattr(seq, 'advance_step'): seq.advance_step()
             else: 
                 if hasattr(seq, 'resume_sequence'): seq.resume_sequence()
 
+    def on_stop_request(self):
+        self.app.sequencer.emergency_cut_power()
+        self.ids.bottom_nav.transition.direction = 'up'
+        self.ids.bottom_nav.current = 'nav_confirm'
+
+    def on_confirm_reset(self):
+        """
+        Resets the system but keeps the user on their current mode (Manual or Auto).
+        """
+        # 1. Check which view is currently active
+        was_manual = (self.ids.center_content.current == 'page_manual')
+
+        # 2. Perform the Reset
+        if was_manual:
+            # If we were in Manual, this Resets the sequencer AND sets status back to MANUAL
+            self.app.sequencer.enter_manual_mode()
+        else:
+            # If we were in Auto, this Resets the sequencer to IDLE (which defaults to Auto view)
+            self.app.sequencer.stop()
+
+        # 3. Restore Bottom Navigation
+        self.ids.bottom_nav.transition.direction = 'down'
+        self.ids.bottom_nav.current = 'nav_standard'
+
     def on_stop_click(self):
-        self.app.sequencer.stop()
+        # Legacy catch-all, redirects to new logic
+        self.on_stop_request()
+
+    def on_recover_pause(self):
+        self.ids.bottom_nav.transition.direction = 'down'
+        self.ids.bottom_nav.current = 'nav_standard'
 
     def open_profiles(self):
         self.manager.current = 'profiles'
@@ -379,6 +719,166 @@ class MainScreen(Screen):
                 'text_color': txt
             })
         self.ids.rv_steps.data = data
+        
+    def get_delay_time_str(self, total_minutes):
+        """Formats 0-1440 minutes into HH:MM AM/PM string for the label."""
+        val = int(total_minutes)
+        h = val // 60
+        m = val % 60
+        
+        ampm = "AM"
+        if h >= 12:
+            ampm = "PM"
+        
+        # Convert 24h to 12h display
+        if h > 12:
+            h -= 12
+        if h == 0:
+            h = 12
+            
+        return f"{h}:{m:02d} {ampm}"
+
+    def open_delay_setup(self):
+        """Called when DELAY START (or ACTIVE) is clicked."""
+        status = self.app.sequencer.status
+        
+        # 1. Load Defaults
+        now = datetime.now()
+        
+        # Determine defaults (Next morning 6am or Current settings)
+        if status == SequenceStatus.DELAYED_WAIT:
+            # If active, we theoretically should pull from sequencer, 
+            # but for now we rely on the properties being persistent.
+            pass 
+        else:
+            # Default target: 6:00 AM tomorrow
+            next_target = now.replace(hour=6, minute=0, second=0, microsecond=0)
+            if next_target <= now:
+                next_target += timedelta(days=1)
+            
+            # Convert target hour/min to total minutes for the slider
+            self.delay_minutes_total = (next_target.hour * 60) + next_target.minute
+            
+            # Load last manual settings for Temp/Vol
+            sm = self.app.settings_manager
+            self.delay_temp = sm.get("manual_mode_settings", "last_setpoint_f", 154.0)
+            self.delay_vol = sm.get("manual_mode_settings", "last_volume_gal", 8.0)
+
+        # 2. Slide the Hero Panel
+        self.ids.hero_manager.transition.direction = 'left'
+        self.ids.hero_manager.current = 'hero_delay'
+
+    def close_delay_setup(self):
+        """Cancel button in Delay Setup."""
+        self.ids.hero_manager.transition.direction = 'right'
+        self.ids.hero_manager.current = 'hero_standard'
+
+    def confirm_delay_start(self):
+        """ACTIVATE/UPDATE button in Delay Setup."""
+        try:
+            # 1. Calculate Target Time
+            val = int(self.delay_minutes_total)
+            h = val // 60
+            m = val % 60
+            
+            now = datetime.now()
+            target_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            
+            if target_dt <= now:
+                target_dt += timedelta(days=1)
+            
+            # 2. Context (Auto vs Manual)
+            is_auto = (self.app.sequencer.status != SequenceStatus.MANUAL)
+            
+            # 3. Call Sequencer
+            self.app.sequencer.start_delayed_mode(
+                self.delay_temp, 
+                self.delay_vol, 
+                target_dt, 
+                from_auto_mode=is_auto
+            )
+            
+            # 4. MIRROR SETTINGS TO MANUAL UI (Visual confirmation)
+            self.slider_temp_val = self.delay_temp
+            self.slider_vol_val = self.delay_vol
+            
+            # --- FIXED: Update Timer & Power Sliders too ---
+            self.slider_time_val = 30.0  # Match backend default (30 min)
+            self.slider_power_val = 3    # Match backend default (1800W - Index 3)
+            
+            # 5. Update UI & Slide Back
+            self.update_status_display()
+            self.close_delay_setup()
+            
+        except Exception as e:
+            print(f"Delay Start Error: {e}")
+    
+    def deactivate_delay(self):
+        """Stops the Delayed Start and resets to Idle."""
+        # This resets status to IDLE. 
+        # Because we updated update_ui (below), the screen will stay where it is.
+        self.app.sequencer.stop()
+        
+        self.update_status_display()
+        self.close_delay_setup()
+    
+    # ~ # DELETE THIS FUNCTION?
+    # ~ def open_delay_start(self):
+        # ~ """Called by the DELAY START button."""
+        # ~ status = self.app.sequencer.status
+        
+        # ~ # 1. If already delayed, show management options
+        # ~ if status == SequenceStatus.DELAYED_WAIT:
+            # ~ p = DelayedStartActionPopup()
+            # ~ p.open()
+            # ~ return
+
+        # ~ # 2. If running (Heating), prevent changes
+        # ~ if status not in [SequenceStatus.IDLE, SequenceStatus.MANUAL]:
+            # ~ # You might want a simple alert popup here, printing for now
+            # ~ print("Cannot start delay while system is running.")
+            # ~ return
+
+        # ~ # 3. Open Setup Popup
+        # ~ p = DelayedStartPopup()
+        # ~ p.open()
+
+    def update_status_display(self):
+        """
+        Updates the Status Text, Delay Button, and Control Locking 
+        based on the current Sequencer Status.
+        """
+        seq = self.app.sequencer
+        status = seq.status
+
+        # --- 1. HANDLE DELAYED WAIT STATE ---
+        if status == SequenceStatus.DELAYED_WAIT:
+            self.is_delay_active = True
+            self.controls_disabled = True  # <--- LOCK CONTROLS
+            
+            self.delay_btn_text = "DELAY ACTIVE"
+            self.delay_btn_color = [0.2, 0.6, 0.8, 1]
+            
+            if hasattr(seq, 'get_delayed_status_msg'):
+                msg = seq.get_delayed_status_msg()
+            else:
+                msg = "Waiting for start time..."
+            
+            self.display_status = f"SLEEPING\n{msg}"
+
+        # --- 2. HANDLE NORMAL STATES ---
+        else:
+            self.is_delay_active = False
+            self.controls_disabled = False # <--- UNLOCK CONTROLS
+
+            self.delay_btn_text = "DELAY START"
+            self.delay_btn_color = [0.2, 0.2, 0.4, 1]
+
+            if status == SequenceStatus.IDLE:
+                self.display_status = "System Idle"
+            
+            elif status == SequenceStatus.MANUAL:
+                self._update_prediction()
 
 class ProfilesScreen(Screen):
     def refresh_list(self):
@@ -891,39 +1391,157 @@ class KettleApp(App):
         return sm
         
     def update_ui(self, dt):
-        if self.root.current != 'main': return
+        """
+        Main UI Loop (10Hz).
+        Updates Temps, Timer, Status, Heartbeat, and Heater Indicators.
+        """
+        # Safety check to ensure UI is ready
+        if not self.root or self.root.current != 'main': 
+            return
+            
         seq = self.sequencer
         screen = self.main_screen
+        status = seq.status
         
+        # --- 1. TEMPERATURES & COLORS ---
         current_temp = seq.current_temp if seq.current_temp else 0.0
         screen.display_temp = f"{current_temp:.1f} °F"
+        
         tgt = seq.get_target_temp()
         screen.display_target = f"{tgt:.0f} °F" if tgt else "--"
+        
         if tgt:
             diff = current_temp - tgt
-            if abs(diff) < 1.0: screen.temp_color = [0.2, 0.8, 0.2, 1] 
-            elif diff < 0: screen.temp_color = [0.2, 0.4, 0.8, 1] 
-            else: screen.temp_color = [0.8, 0.2, 0.2, 1] 
+            if abs(diff) < 1.0: 
+                screen.temp_color = [0.2, 0.8, 0.2, 1] # Green (Good)
+            elif diff < 0: 
+                screen.temp_color = [0.2, 0.4, 0.8, 1] # Blue (Heating)
+            else: 
+                screen.temp_color = [0.8, 0.2, 0.2, 1] # Red (Hot)
+        else:
+            screen.temp_color = [0.2, 0.8, 0.2, 1] 
+            
+        # --- 2. TIMERS ---
         screen.display_timer = seq.get_display_timer()
         screen.display_elapsed = seq.get_global_elapsed_time_str()
-        screen.display_status = seq.get_status_message()
-        if seq.status in [SequenceStatus.MANUAL, SequenceStatus.DELAYED_WAIT]:
-            if screen.ids.center_content.current != 'page_manual': screen.ids.center_content.current = 'page_manual'
+
+        # --- 3. HEARTBEAT PULSE ---
+        import time
+        now = time.time()
+        
+        if status == SequenceStatus.MANUAL and getattr(seq, 'is_manual_running', False):
+            # RUNNING: Pulse Green
+            if int(now * 2) % 2 == 0: screen.heartbeat_color = [0, 1, 0, 1] 
+            else: screen.heartbeat_color = [0, 0.3, 0, 1]
+        elif status == SequenceStatus.PAUSED:
+            # PAUSED: Pulse Blue
+            if int(now * 2) % 2 == 0: screen.heartbeat_color = [0.2, 0.4, 0.8, 1] 
+            else: screen.heartbeat_color = [0.1, 0.2, 0.4, 1] 
+        elif status == SequenceStatus.DELAYED_WAIT:
+            # SLEEPING: Slow Pulse Teal
+            if int(now) % 2 == 0: screen.heartbeat_color = [0.2, 0.6, 0.8, 1]
+            else: screen.heartbeat_color = [0.1, 0.3, 0.4, 1]
         else:
-            if screen.ids.center_content.current != 'page_auto': screen.ids.center_content.current = 'page_auto'
+            # IDLE: Grey
+            screen.heartbeat_color = [0.2, 0.2, 0.2, 1]
+
+        # --- 4. HEATER INDICATORS ---
+        relay_obj = getattr(seq, 'relay', getattr(seq, 'relays', None))
+        if relay_obj and hasattr(relay_obj, 'relay_states'):
+            states = relay_obj.relay_states
+            screen.heater_1_active = states.get("Heater1", False)
+            screen.heater_2_active = states.get("Heater2", False)
+        else:
+            screen.heater_1_active = False
+            screen.heater_2_active = False
+
+        # --- 5. STATUS TEXT & PREDICTION ---
+        sys_msg = seq.get_status_message()
+        
+        # If Delay is active, override status text here
+        if status == SequenceStatus.DELAYED_WAIT:
+            if hasattr(seq, 'get_delayed_status_msg'):
+                msg = seq.get_delayed_status_msg()
+                screen.display_status = f"SLEEPING\n{msg}"
+            else:
+                screen.display_status = "DELAY ACTIVE"
+        
+        elif status == SequenceStatus.MANUAL:
+            if "ALERT" in sys_msg:
+                screen.display_status = sys_msg
+            else:
+                # Use prediction logic
+                if hasattr(screen, '_update_prediction'): 
+                    screen._update_prediction()
+        else:
+            screen.display_status = sys_msg
+
+        # --- 6. VIEW SWITCHING ---
+        # Allow browsing in IDLE, but snap to Manual/Auto if running/sleeping
+        if status == SequenceStatus.MANUAL:
+            if screen.ids.center_content.current != 'page_manual': 
+                screen.ids.center_content.current = 'page_manual'
+                # Force prediction update
+                if hasattr(screen, '_update_prediction'): screen._update_prediction()
+        elif status == SequenceStatus.DELAYED_WAIT:
+            if screen.ids.center_content.current != 'page_manual':
+                screen.ids.center_content.current = 'page_manual'
+        elif status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
+            if screen.ids.center_content.current != 'page_auto': 
+                screen.ids.center_content.current = 'page_auto'
+
+        # --- 7. AUTO MODE LIST REFRESH ---
         current_id = seq.current_profile.id if seq.current_profile else None
         current_idx = seq.current_step_index
         if current_id != screen.last_profile_id or current_idx != screen.last_step_index:
             screen.refresh_step_list()
             screen.last_profile_id = current_id
             screen.last_step_index = current_idx
-        if seq.status == SequenceStatus.MANUAL and getattr(seq, 'is_manual_running', False): screen.action_button_text = "PAUSE"
-        elif seq.status == SequenceStatus.RUNNING: screen.action_button_text = "PAUSE"
-        elif seq.status == SequenceStatus.PAUSED: screen.action_button_text = "RESUME"
-        elif seq.status == SequenceStatus.WAITING_FOR_USER:
-            if seq.current_alert_text == "Step Complete": screen.action_button_text = "NEXT STEP"
-            else: screen.action_button_text = "ACKNOWLEDGE"
-        else: screen.action_button_text = "START"
+
+        # --- 8. ACTION BUTTON TEXT ---
+        if status == SequenceStatus.MANUAL: 
+            if getattr(seq, 'is_manual_running', False):
+                screen.action_button_text = "PAUSE"
+                screen.action_button_color = [0.2, 0.4, 0.8, 1] 
+            else:
+                if getattr(seq, 'temp_reached', False):
+                    screen.action_button_text = "RESUME"
+                    screen.action_button_color = [1, 0.8, 0, 1] 
+                else:
+                    screen.action_button_text = "START"
+                    screen.action_button_color = [0.2, 0.8, 0.4, 1]
+        elif status == SequenceStatus.RUNNING: 
+            screen.action_button_text = "PAUSE"
+            screen.action_button_color = [0.2, 0.4, 0.8, 1]
+        elif status == SequenceStatus.PAUSED: 
+            screen.action_button_text = "RESUME"
+            screen.action_button_color = [1, 0.8, 0, 1]
+        elif status == SequenceStatus.WAITING_FOR_USER:
+            if seq.current_alert_text == "Step Complete": 
+                screen.action_button_text = "NEXT STEP"
+                screen.action_button_color = [0.2, 0.8, 0.4, 1]
+            else: 
+                screen.action_button_text = "ACKNOWLEDGE"
+                screen.action_button_color = [0.8, 0.4, 0.2, 1]
+        else: 
+            screen.action_button_text = "START"
+            screen.action_button_color = [0.2, 0.8, 0.4, 1]
+
+        # --- 9. DELAYED START SYNC (Automatic Unlock) ---
+        # This ensures that when the backend automatically transitions 
+        # from DELAYED_WAIT -> MANUAL, the UI Unlocks immediately.
+        if status == SequenceStatus.DELAYED_WAIT:
+            # Lock UI
+            screen.is_delay_active = True
+            screen.controls_disabled = True
+            screen.delay_btn_text = "DELAY ACTIVE"
+            screen.delay_btn_color = [0.2, 0.6, 0.8, 1]
+        else:
+            # Unlock UI
+            screen.is_delay_active = False
+            screen.controls_disabled = False
+            screen.delay_btn_text = "DELAY START"
+            screen.delay_btn_color = [0.2, 0.2, 0.4, 1]
 
     def open_profile_options(self, profile_id, profile_name):
         popup = ProfileOptionsPopup()
@@ -1012,6 +1630,19 @@ class KettleApp(App):
             
             s.additions = data["additions"]
             self.editor_screen.refresh_steps()
+            
+    def on_stop(self):
+        """Called by Kivy when the app is closing normally."""
+        print("[App] Stopping...")
+        if hasattr(self, 'sequencer'):
+            self.sequencer.stop()
+        if hasattr(self, 'relay'):
+            self.relay.stop_all()
+            
+        # Release resources
+        if hasattr(self, 'hw'):
+            # If HardwareInterface has a cleanup, call it
+            pass
 
 if __name__ == '__main__':
     KettleApp().run()
