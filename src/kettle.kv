@@ -1445,12 +1445,6 @@
             spacing: 20
             
             Button:
-                text: "BACK"
-                background_color: 0.8, 0.2, 0.2, 1
-                disabled: root.is_working
-                on_release: root.go_back()
-
-            Button:
                 text: "CHECK UPDATES"
                 background_color: 0.2, 0.4, 0.8, 1
                 disabled: root.is_working
@@ -1462,3 +1456,17 @@
                 disabled: not root.install_enabled or root.is_working
                 on_release: root.install_updates()
                 
+            Button:
+                text: "RESTART APP"
+                background_color: 1, 0.6, 0, 1  # Orange Color
+                disabled: root.is_working
+                on_release: root.restart_app()
+                
+            Button:
+                text: "BACK"
+                background_color: 0.8, 0.2, 0.2, 1
+                disabled: root.is_working
+                on_release: root.go_back()
+
+
+            

@@ -1336,7 +1336,26 @@ class UpdatesSettingsScreen(Screen):
 
     def go_back(self):
         self.manager.transition.direction = 'right'
-        self.manager.current = 'sys_settings'        
+        self.manager.current = 'sys_settings'    
+        
+    def restart_app(self):
+        """
+        Safely shuts down relays and restarts the Python process.
+        """
+        print("[System] Restarting application...")
+        
+        # 1. Safety Cleanup (Crucial!)
+        if hasattr(self.app, 'sequencer'):
+            self.app.sequencer.stop() # Stop Logic/PID
+        if hasattr(self.app, 'relay'):
+            self.app.relay.stop_all() # Cut Power to Relays
+            self.app.relay.cleanup_gpio() # Release GPIO
+            
+        # 2. Restart Process
+        # This replaces the current process with a new instance of python running this script
+        import sys
+        import os
+        os.execv(sys.executable, ['python'] + sys.argv)
       
         
         
