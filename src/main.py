@@ -1341,21 +1341,40 @@ class UpdatesSettingsScreen(Screen):
     def restart_app(self):
         """
         Safely shuts down relays and restarts the Python process.
+        Uses absolute paths to ensure reliability on Pi.
         """
         print("[System] Restarting application...")
         
-        # 1. Safety Cleanup (Crucial!)
+        # 1. Safety Cleanup
         if hasattr(self.app, 'sequencer'):
-            self.app.sequencer.stop() # Stop Logic/PID
+            self.app.sequencer.stop()
         if hasattr(self.app, 'relay'):
-            self.app.relay.stop_all() # Cut Power to Relays
-            self.app.relay.cleanup_gpio() # Release GPIO
+            self.app.relay.stop_all()
+            self.app.relay.cleanup_gpio()
             
-        # 2. Restart Process
-        # This replaces the current process with a new instance of python running this script
         import sys
         import os
-        os.execv(sys.executable, ['python'] + sys.argv)
+        
+        # 2. Resolve Absolute Paths
+        # Get the absolute path to the current python interpreter
+        python = sys.executable
+        
+        # Get the absolute path to the actual script (main.py)
+        # sys.argv[0] is often just 'main.py', we need '/home/pi/kettlebrain/src/main.py'
+        script = os.path.abspath(sys.argv[0])
+        
+        # Get any command line arguments passed (excluding the script name)
+        args = sys.argv[1:]
+        
+        # 3. Construct the Command
+        # Format: [python_executable, script_path, arg1, arg2...]
+        # We pass 'python' as the first arg (process name) for consistency
+        cmd_args = [python, script] + args
+        
+        print(f"[System] Executing: {python} {script} {args}")
+        
+        # 4. Replace Process
+        os.execv(python, cmd_args)
       
         
         
@@ -1365,6 +1384,7 @@ class KettleApp(App):
     fonts_loaded = BooleanProperty(False)
     
     def build(self):
+        self.title = "KettleBrain"
         # ... (Existing Path Logic) ...
         src_dir = os.path.dirname(os.path.abspath(__file__))
         project_dir = os.path.dirname(src_dir)
