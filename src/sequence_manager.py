@@ -661,54 +661,35 @@ class SequenceManager:
                 self.relay.set_relays(False, False, False)
                 continue
 
-            # --- NEW: CSV LOGGING (Every 30s) ---
-            # We use monotonic time for the interval check so it is robust
+            # --- CSV LOGGING ---
             now_mono = time.monotonic()
             if now_mono - self.last_log_write > 30.0:
                 self._log_csv()
                 self.last_log_write = now_mono
-            # ------------------------------------
 
             # --- DELAYED START WAIT ---
             if self.status == SequenceStatus.DELAYED_WAIT:
                 now = time.time()
-                
-                # ADAPTIVE RECALCULATION (Every 30 seconds)
+                # ADAPTIVE RECALCULATION
                 if now - last_delay_calc > 30.0:
                     last_delay_calc = now
-                    
-                    # 1. Get Constants
+                    # ... (Existing calc logic) ...
                     ref_vol = self.settings.get_system_setting("heater_ref_volume_gal", 8.0)
                     ref_rate = self.settings.get_system_setting("heater_ref_rate_fpm", 1.2)
-                    
-                    # 2. Re-calculate rate based on stored volume
-                    try:
-                        adj_rate = ref_rate * (ref_vol / self.delayed_vol)
-                    except:
-                        adj_rate = ref_rate
-
-                    # 3. Calculate Rise needed from CURRENT temp
+                    try: adj_rate = ref_rate * (ref_vol / self.delayed_vol)
+                    except: adj_rate = ref_rate
                     current = self.current_temp if self.current_temp else 60.0
                     rise = self.delayed_target_temp - current
                     if rise < 0: rise = 0
-                    
-                    # 4. New Duration & Start Time
                     duration_min = rise / adj_rate
                     new_start_epoch = self.delayed_ready_epoch - (duration_min * 60)
-                    
-                    # 5. Update State
                     self.delayed_start_epoch = new_start_epoch
                     self.delayed_start_time_str = datetime.fromtimestamp(new_start_epoch).strftime("%H:%M")
                     
                 # CHECK TRIGGER
                 if now >= self.delayed_start_epoch:
-                    print(f"[Sequence] Delayed Wait Over (Start Time: {self.delayed_start_time_str}). Firing Heater.")
-                    
-                    # BUG FIX: Use start_manual() to fully activate the Control Loop (PID + Timer)
-                    # This handles entering manual mode and setting is_manual_running = True
+                    print(f"[Sequence] Delayed Wait Over. Firing Heater.")
                     self.start_manual()
-                    
-                    # Ensure the heater is enabled (start_manual sets is_heating=True, but being explicit helps)
                     self.toggle_manual_heater(True)
                 else:
                     self.relay.set_relays(False, False, False)
@@ -716,18 +697,11 @@ class SequenceManager:
 
             # --- MANUAL MODE LOGIC ---
             if self.status == SequenceStatus.MANUAL:
-                
-                # 1. CALL THE NEW LOGIC (Required!)
                 self._process_manual_logic()
-                
-                # (Section #1 and #2 are deleted/commented out here, as you did)
-
-                # 3. Heartbeat Save (Keep this)
                 now = time.monotonic()
                 if now - self.last_recovery_save > self.RECOVERY_SAVE_INTERVAL:
                     self._save_recovery_snapshot()
                     self.last_recovery_save = now
-            
                 continue
             
             # --- AUTO / PROFILE LOGIC ---
@@ -736,13 +710,16 @@ class SequenceManager:
 
             step = self.current_profile.steps[self.current_step_index]
 
+            # 1. Temperature Management
             if self.status in [SequenceStatus.RUNNING, SequenceStatus.WAITING_FOR_USER]:
                 self._manage_temperature(step)
             elif self.status == SequenceStatus.PAUSED:
                 self.relay.turn_off_all_relays()
                 self.is_heating = False
 
-            if self.status == SequenceStatus.RUNNING:
+            # 2. Time Logic (Updated condition)
+            # CHANGE: Allow time processing during WAITING_FOR_USER to keep clock ticking
+            if self.status == SequenceStatus.RUNNING or self.status == SequenceStatus.WAITING_FOR_USER:
                 self._process_time_logic(step)
                 
                 # Heartbeat Save
@@ -757,6 +734,156 @@ class SequenceManager:
                 if now - self.last_alert_time > 5.0:
                     self._play_alert_sound()
                     self.last_alert_time = now
+
+    def _control_loop(self):
+        last_delay_calc = 0.0  # Track last recalculation time
+
+        while not self._stop_event.is_set():
+            time.sleep(0.1) 
+            try:
+                self.current_temp = self.hw.read_temperature()
+            except:
+                self.current_temp = 0.0
+
+            # Safety: If sensor fails, kill power
+            if self.current_temp is None:
+                self.relay.set_relays(False, False, False)
+                continue
+
+            # --- CSV LOGGING ---
+            now_mono = time.monotonic()
+            if now_mono - self.last_log_write > 30.0:
+                self._log_csv()
+                self.last_log_write = now_mono
+
+            # --- DELAYED START WAIT ---
+            if self.status == SequenceStatus.DELAYED_WAIT:
+                now = time.time()
+                # ADAPTIVE RECALCULATION
+                if now - last_delay_calc > 30.0:
+                    last_delay_calc = now
+                    # ... (Existing calc logic) ...
+                    ref_vol = self.settings.get_system_setting("heater_ref_volume_gal", 8.0)
+                    ref_rate = self.settings.get_system_setting("heater_ref_rate_fpm", 1.2)
+                    try: adj_rate = ref_rate * (ref_vol / self.delayed_vol)
+                    except: adj_rate = ref_rate
+                    current = self.current_temp if self.current_temp else 60.0
+                    rise = self.delayed_target_temp - current
+                    if rise < 0: rise = 0
+                    duration_min = rise / adj_rate
+                    new_start_epoch = self.delayed_ready_epoch - (duration_min * 60)
+                    self.delayed_start_epoch = new_start_epoch
+                    self.delayed_start_time_str = datetime.fromtimestamp(new_start_epoch).strftime("%H:%M")
+                    
+                # CHECK TRIGGER
+                if now >= self.delayed_start_epoch:
+                    print(f"[Sequence] Delayed Wait Over. Firing Heater.")
+                    self.start_manual()
+                    self.toggle_manual_heater(True)
+                else:
+                    self.relay.set_relays(False, False, False)
+                continue
+
+            # --- MANUAL MODE LOGIC ---
+            if self.status == SequenceStatus.MANUAL:
+                self._process_manual_logic()
+                now = time.monotonic()
+                if now - self.last_recovery_save > self.RECOVERY_SAVE_INTERVAL:
+                    self._save_recovery_snapshot()
+                    self.last_recovery_save = now
+                continue
+            
+            # --- AUTO / PROFILE LOGIC ---
+            if not self.current_profile or self.current_step_index < 0:
+                continue
+
+            step = self.current_profile.steps[self.current_step_index]
+
+            # 1. Temperature Management
+            if self.status in [SequenceStatus.RUNNING, SequenceStatus.WAITING_FOR_USER]:
+                self._manage_temperature(step)
+            elif self.status == SequenceStatus.PAUSED:
+                self.relay.turn_off_all_relays()
+                self.is_heating = False
+
+            # 2. Time Logic (Updated condition)
+            # CHANGE: Allow time processing during WAITING_FOR_USER to keep clock ticking
+            if self.status == SequenceStatus.RUNNING or self.status == SequenceStatus.WAITING_FOR_USER:
+                self._process_time_logic(step)
+                
+                # Heartbeat Save
+                now = time.monotonic()
+                if now - self.last_recovery_save > self.RECOVERY_SAVE_INTERVAL:
+                    self._save_recovery_snapshot()
+                    self.last_recovery_save = now
+
+            # Alert Sounds
+            if self.status == SequenceStatus.WAITING_FOR_USER:
+                now = time.monotonic()
+                if now - self.last_alert_time > 5.0:
+                    self._play_alert_sound()
+                    self.last_alert_time = now
+
+    def _process_time_logic(self, step):
+        if not self.temp_reached:
+            self.step_elapsed_time = 0
+            return 
+
+        # CHANGE: If waiting for "Step Complete", allow time to freeze (effectively paused).
+        # But for Additions, we proceed to update step_elapsed_time.
+        if self.status == SequenceStatus.WAITING_FOR_USER and self.current_alert_text == "Step Complete":
+            return
+
+        now = time.monotonic()
+        self.step_elapsed_time = now - self.step_start_time - self.total_paused_time
+        
+        # CHANGE: If we are already waiting for an Alert, just update the time (above) and exit.
+        # We don't want to re-check triggers or auto-advance while waiting.
+        if self.status == SequenceStatus.WAITING_FOR_USER:
+            return
+
+        duration_val = step.duration_min if step.duration_min is not None else 0.0
+        duration_sec = duration_val * 60.0
+        remaining_sec = duration_sec - self.step_elapsed_time
+        remaining_min = remaining_sec / 60.0
+
+        if hasattr(step, 'additions'):
+            for add in step.additions:
+                if not add.triggered:
+                    should_trigger = False
+                    if remaining_min <= (add.time_point_min + 0.005):
+                        should_trigger = True
+                    if duration_val <= 0.0:
+                        should_trigger = True
+
+                    if should_trigger:
+                        add.triggered = True 
+                        self.status = SequenceStatus.WAITING_FOR_USER
+                        self.current_alert_text = add.name
+                        
+                        self._play_alert_sound()
+                        self._save_recovery_snapshot()
+                        
+                        # CHANGE: Do NOT set last_pause_start. 
+                        # This ensures the timer keeps running during the wait.
+                        return
+
+        if self.step_elapsed_time >= duration_sec:
+            if hasattr(step, 'additions'):
+                if any(not a.triggered for a in step.additions):
+                    return 
+
+            if duration_val > 0.0:
+                self._play_alert_sound()
+
+            if step.timeout_behavior == TimeoutBehavior.AUTO_ADVANCE:
+                self.advance_step()
+            else:
+                self.status = SequenceStatus.WAITING_FOR_USER
+                self.last_pause_start = time.monotonic() # Keep this pause for End of Step
+                self.current_alert_text = "Step Complete"
+                self._save_recovery_snapshot()
+            return
                     
     def _manage_temperature_generic(self, target):
         """PID control for Manual Mode."""
@@ -1039,6 +1166,18 @@ class SequenceManager:
         print(f"[Sequence] Restored Step {self.current_step_index + 1}. Temp Reached: {self.temp_reached}, Elapsed: {saved_elapsed:.1f}s")
 
     def _manage_temperature(self, step):
+        # 1. Determine Target Temperature
+        # START CHANGE
+        if step.step_type == StepType.BOIL:
+            # If step is BOIL, override target with System Boil Setting
+            target = self.settings.get_system_setting("boil_temp_f", 212.0)
+        else:
+            target = step.setpoint_f
+        # END CHANGE
+
+        # 2. Safety Clamp
+        if target > 215: target = 215
+        
         # Safety Protocol
         if self.current_temp is None:
             self.relay.set_relays(False, False, False)
@@ -1064,10 +1203,40 @@ class SequenceManager:
                 # Clamp trigger to system boil temp
                 sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
                 if self.current_temp >= min(target, sys_boil):
+                    
+                    # --- START NEW LOGIC: BOIL ACTION DELAY ---
+                    # If this is a BOIL step, check if we have an addition at the exact start (Duration == Time Point).
+                    # If so, trigger the alert BUT DO NOT start the timer (leave temp_reached = False).
+                    if step.step_type == StepType.BOIL and hasattr(step, 'additions'):
+                         start_of_boil_alert = None
+                         for add in step.additions:
+                             # Check if addition is at the start (allow small float error)
+                             # Note: In countdown logic, "Start" means time_point == duration
+                             if not add.triggered and abs(add.time_point_min - step.duration_min) < 0.1:
+                                 start_of_boil_alert = add
+                                 break
+                        
+                         if start_of_boil_alert:
+                            # 1. Mark Triggered
+                            start_of_boil_alert.triggered = True
+                            
+                            # 2. Set Status to Wait
+                            self.status = SequenceStatus.WAITING_FOR_USER
+                            self.current_alert_text = start_of_boil_alert.name
+                            
+                            # 3. Alerts
+                            self._play_alert_sound()
+                            self._save_recovery_snapshot()
+                            
+                            # 4. IMPORTANT: Exit without setting temp_reached=True
+                            # This keeps the heater in PID mode (Boil) but prevents the timer from ticking.
+                            return 
+                    # --- END NEW LOGIC ---
+
                     self.temp_reached = True
                     self.step_start_time = time.monotonic()
                     
-                    # Alert sound logic
+                    # Alert sound logic (standard start beep)
                     start_t = getattr(self, 'initial_step_temp', 0.0)
                     if start_t < (target - 0.5):
                         self._play_alert_sound()
@@ -1138,73 +1307,31 @@ class SequenceManager:
 
         self.relay.set_relays(h1, h2, False)
 
-    def _process_time_logic(self, step):
-        if not self.temp_reached:
-            self.step_elapsed_time = 0
-            return 
 
-        now = time.monotonic()
-        self.step_elapsed_time = now - self.step_start_time - self.total_paused_time
-        
-        duration_val = step.duration_min if step.duration_min is not None else 0.0
-        duration_sec = duration_val * 60.0
-        remaining_sec = duration_sec - self.step_elapsed_time
-        remaining_min = remaining_sec / 60.0
-
-        if hasattr(step, 'additions'):
-            for add in step.additions:
-                if not add.triggered:
-                    should_trigger = False
-                    if remaining_min <= (add.time_point_min + 0.005):
-                        should_trigger = True
-                    if duration_val <= 0.0:
-                        should_trigger = True
-
-                    if should_trigger:
-                        add.triggered = True 
-                        self.status = SequenceStatus.WAITING_FOR_USER
-                        self.current_alert_text = add.name
-                        
-                        # SOUND: Play Alert Sound
-                        self._play_alert_sound()
-                        
-                        # Save state on Alert
-                        self._save_recovery_snapshot()
-                        
-                        if self.step_elapsed_time < 1.0 or duration_val <= 0.0:
-                             self.last_pause_start = time.monotonic()
-                        return
-
-        if self.step_elapsed_time >= duration_sec:
-            if hasattr(step, 'additions'):
-                if any(not a.triggered for a in step.additions):
-                    return 
-
-            # SOUND: Step Complete (Only if it actually had a duration)
-            if duration_val > 0.0:
-                self._play_alert_sound()
-
-            if step.timeout_behavior == TimeoutBehavior.AUTO_ADVANCE:
-                self.advance_step()
-            else:
-                self.status = SequenceStatus.WAITING_FOR_USER
-                self.last_pause_start = time.monotonic()
-                self.current_alert_text = "Step Complete"
-                self._save_recovery_snapshot()
-            return
-                        
     def get_display_timer(self):
+        # 1. Manual Mode
         if self.status == SequenceStatus.MANUAL:
-            # Always show the bucket value
-            # If we are pre-heating (not temp_reached), bucket is full duration
-            # If we are running/paused, bucket is remaining time
             return self._fmt_time(self.manual_timer_remaining)
             
-        # --- NEW: Show pending timer during Delay Wait ---
+        # 2. Delayed Wait
         if self.status == SequenceStatus.DELAYED_WAIT:
-             # Show the duration we have configured to run (e.g. 30:00)
              val = getattr(self, 'manual_timer_duration', 0.0)
              return self._fmt_time(val)
+
+        # 3. Auto Mode (Running/Paused/Waiting)
+        if self.current_profile and self.current_step_index >= 0:
+            step = self.current_profile.steps[self.current_step_index]
+            
+            # Calculate duration in seconds
+            duration_sec = (step.duration_min * 60.0) if step.duration_min else 0.0
+            
+            # Calculate remaining
+            # Note: step_elapsed_time only increments once temp is reached. 
+            # So this stays at "Full Duration" while heating, which is correct.
+            remaining = duration_sec - self.step_elapsed_time
+            if remaining < 0: remaining = 0
+            
+            return self._fmt_time(remaining)
             
         return "00:00"
 

@@ -8,6 +8,7 @@ import signal  # <--- NEW IMPORT
 from datetime import datetime, timedelta
 from sequence_manager import SequenceStatus
 import atexit
+from profile_data import BrewProfile, BrewStep, BrewAddition, StepType, TimeoutBehavior
 
 # This tells the OS: "My Window ID is 'KettleBrain', not 'python'"
 os.environ['SDL_VIDEO_X11_WMCLASS'] = "KettleBrain"
@@ -108,57 +109,15 @@ signal.signal(signal.SIGHUP, handle_signal)  # Terminal closed
 # which triggers atexit automatically, so we don't strictly need it here, but it doesn't hurt.
 signal.signal(signal.SIGINT, handle_signal)
 
-# --- MANUAL CLASS DEFINITIONS (To fix import errors) ---
-class ProfileAddition:
-    def __init__(self, name="New Alert", time_point_min=0.0):
-        self.id = str(uuid.uuid4())
-        self.name = name
-        self.time_point_min = time_point_min
-        self.triggered = False
 
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "time_point_min": float(self.time_point_min),
-            "triggered": self.triggered
-        }
 
-class ProfileStep:
-    def __init__(self, name="New Step", setpoint_f=150.0, duration_min=60):
-        self.name = name
-        self.setpoint_f = setpoint_f
-        self.duration_min = duration_min
-        self.additions = [] 
-
-    def to_dict(self):
-        # Handle additions safely
-        adds_data = []
-        for a in self.additions:
-            if hasattr(a, 'to_dict'):
-                adds_data.append(a.to_dict())
-            else:
-                # Fallback for existing additions loaded from backend objects
-                adds_data.append({
-                    "id": getattr(a, 'id', str(uuid.uuid4())),
-                    "name": getattr(a, 'name', "Unknown"),
-                    "time_point_min": float(getattr(a, 'time_point_min', 0)),
-                    "triggered": False
-                })
-                
-        return {
-            "name": self.name,
-            "setpoint_f": float(self.setpoint_f),
-            "duration_min": float(self.duration_min),
-            "additions": adds_data
-        }
-
-# --- KIVY WIDGET CLASSES ---
+# --- 1. UPDATE WIDGET CLASS ---
 class StepItem(BoxLayout):
     step_index = StringProperty("")
     step_name = StringProperty("")
     step_target = StringProperty("")
     step_duration = StringProperty("")
+    step_ready = StringProperty("")  # <--- NEW PROPERTY
     bg_color = ListProperty([0.2, 0.2, 0.2, 1])
     text_color = ListProperty([1, 1, 1, 1])
 
@@ -186,249 +145,492 @@ class ProfileOptionsPopup(Popup):
         app.launch_profile_editor(self.profile_id)
         self.dismiss()
 
+
+# SHOULD BE ABLE TO DELETE THIS CLASS
 # --- HELPER: Single Row for an Alert ---
-class AlertRow(BoxLayout):
-    def __init__(self, addition_obj, remove_callback, **kwargs):
-        super().__init__(**kwargs)
-        self.addition = addition_obj
-        self.orientation = 'horizontal'
-        self.size_hint_y = None
-        self.height = dp(40)
-        self.spacing = dp(5)
+# ~ class AlertRow(BoxLayout):
+    # ~ def __init__(self, addition_obj, remove_callback, **kwargs):
+        # ~ super().__init__(**kwargs)
+        # ~ self.addition = addition_obj
+        # ~ self.orientation = 'horizontal'
+        # ~ self.size_hint_y = None
+        # ~ self.height = dp(40)
+        # ~ self.spacing = dp(5)
 
-        # Name Input
-        self.txt_name = TextInput(text=addition_obj.name, multiline=False, size_hint_x=0.6)
-        self.txt_name.bind(text=self.on_name_change)
-        self.add_widget(self.txt_name)
+        # ~ # Name Input
+        # ~ self.txt_name = TextInput(text=addition_obj.name, multiline=False, size_hint_x=0.6)
+        # ~ self.txt_name.bind(text=self.on_name_change)
+        # ~ self.add_widget(self.txt_name)
 
-        # Time Input
-        self.txt_time = TextInput(text=str(addition_obj.time_point_min), multiline=False, size_hint_x=0.25, input_filter='float')
-        self.txt_time.bind(text=self.on_time_change)
-        self.add_widget(self.txt_time)
+        # ~ # Time Input
+        # ~ self.txt_time = TextInput(text=str(addition_obj.time_point_min), multiline=False, size_hint_x=0.25, input_filter='float')
+        # ~ self.txt_time.bind(text=self.on_time_change)
+        # ~ self.add_widget(self.txt_time)
         
-        self.add_widget(Label(text="m", size_hint_x=None, width=dp(20)))
+        # ~ self.add_widget(Label(text="m", size_hint_x=None, width=dp(20)))
 
-        # Remove Button
-        btn_remove = Button(text="X", size_hint_x=None, width=dp(40), background_color=(1, 0, 0, 1))
-        btn_remove.bind(on_release=lambda x: remove_callback(self))
-        self.add_widget(btn_remove)
+        # ~ # Remove Button
+        # ~ btn_remove = Button(text="X", size_hint_x=None, width=dp(40), background_color=(1, 0, 0, 1))
+        # ~ btn_remove.bind(on_release=lambda x: remove_callback(self))
+        # ~ self.add_widget(btn_remove)
 
-    def on_name_change(self, instance, value):
-        self.addition.name = value
+    # ~ def on_name_change(self, instance, value):
+        # ~ self.addition.name = value
 
-    def on_time_change(self, instance, value):
-        if value:
-            try: self.addition.time_point_min = float(value)
-            except: pass
+    # ~ def on_time_change(self, instance, value):
+        # ~ if value:
+            # ~ try: self.addition.time_point_min = float(value)
+            # ~ except: pass
 
+class AlertChildItem(BoxLayout):
+    """
+    Visual row for the 'Child' addition/alert.
+    """
+    alert_name = StringProperty("")
+    bg_color = ListProperty([0.15, 0.15, 0.15, 1])
+    text_color = ListProperty([0.8, 0.8, 0.8, 1])
 
 # --- 1. Define the Alert Row Item ---
 class AlertItem(BoxLayout):
+    """
+    Data container for the RecycleView row.
+    Logic and Layout are handled in kettle.kv.
+    """
     name = StringProperty("")
     time = NumericProperty(0)
-    # Event to tell the parent to remove this item
-    def on_remove(self):
-        # This will be bound in KV or Python
-        pass
+    index = NumericProperty(0) # Ensure this property exists for the buttons to use
 
 # --- 2. Define the Full Screen Editor ---
+# In main.py, find class StepEditorScreen(Screen) and update it:
+
+# In main.py
+
 class StepEditorScreen(Screen):
-    # Kivy Properties
+    # --- CORE DATA ---
     step_index = NumericProperty(-1)
     step_name = StringProperty("New Step")
+    
+    # --- SPINNERS ---
+    step_type_options = ListProperty([s.value for s in StepType]) 
+    selected_type = StringProperty("Step")
+    
+    # Exclude 'End Program' from options if desired
+    advance_options = ListProperty([TimeoutBehavior.AUTO_ADVANCE.value, TimeoutBehavior.MANUAL_ADVANCE.value])
+    selected_advance = StringProperty(TimeoutBehavior.AUTO_ADVANCE.value)
+
+    # --- SLIDERS ---
     step_temp = NumericProperty(150.0)
     step_dur = NumericProperty(60.0)
+    step_vol = NumericProperty(0.0)
     
-    # Alert Input
-    new_alert_name = StringProperty("Hops")
-    new_alert_time = NumericProperty(10.0)
+    # Power (Discrete Map)
+    step_power_idx = NumericProperty(3)
+    watts_map = ListProperty([800, 1000, 1400, 1800])
+    display_power = StringProperty("1800W")
     
-    # Data List for RecycleView
-    current_additions = ListProperty([])
+    # Label Display Property
+    step_target_display = StringProperty("Target: 150 F") 
 
-    # Internal reference
+    # --- STATE TRACKING (DIRTY CHECK) ---
+    is_temp_locked = BooleanProperty(False)
+    current_additions = ListProperty([])
     step_obj_ref = None
+    
+    is_dirty = BooleanProperty(False)
+    original_state = {}
+
+    def on_step_power_idx(self, instance, value):
+        idx = int(value)
+        if 0 <= idx < len(self.watts_map):
+            self.display_power = f"{self.watts_map[idx]}W"
+        self._check_dirty()
+
+    def on_step_temp(self, instance, value):
+        self._update_target_display()
+        self._check_dirty()
+
+    def on_step_name(self, instance, value): self._check_dirty()
+    def on_step_dur(self, instance, value): self._check_dirty()
+    def on_step_vol(self, instance, value): self._check_dirty()
+    def on_selected_type(self, instance, value): 
+        self._handle_type_change(value)
+        self._check_dirty()
+    def on_selected_advance(self, instance, value): self._check_dirty()
+    def on_current_additions(self, instance, value): self._check_dirty()
+
+    def _update_target_display(self):
+        """Formats the label to show (BOIL) if at boiling point."""
+        app = App.get_running_app()
+        if not app: return
+        val = int(self.step_temp)
+        sys_boil = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+        
+        if val >= sys_boil:
+            self.step_target_display = f"Target: {val} F (BOIL)"
+        else:
+            self.step_target_display = f"Target: {val} F"
+
+    def _handle_type_change(self, value):
+        app = App.get_running_app()
+        if not app: return
+        
+        if value == "Boil":
+            sys_boil = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+            self.step_temp = sys_boil
+            self.is_temp_locked = True
+        elif value == "Chill":
+            self.step_temp = 70.0
+            self.is_temp_locked = False
+        else:
+            self.is_temp_locked = False
+        self._update_target_display()
+
+    def _get_current_state(self):
+        """Returns a snapshot dictionary of the current UI values."""
+        # Normalize additions for accurate comparison
+        adds = [{'name': x['name'], 'time': float(x['time'])} for x in self.current_additions]
+        adds.sort(key=lambda x: (x['time'], x['name']))
+        
+        return {
+            'name': self.step_name,
+            'type': self.selected_type,
+            'advance': self.selected_advance,
+            'temp': float(self.step_temp),
+            'dur': float(self.step_dur),
+            'vol': float(self.step_vol),
+            'power': int(self.step_power_idx),
+            'additions': adds
+        }
+
+    def _check_dirty(self):
+        """Compares current UI to the original loaded state."""
+        if not self.original_state: return
+        current = self._get_current_state()
+        self.is_dirty = (current != self.original_state)
 
     def load_step(self, step_obj, index):
+        """Populates the UI and takes a 'clean' snapshot."""
         self.step_obj_ref = step_obj
         self.step_index = index
-        self.step_name = step_obj.name
-        self.step_temp = float(step_obj.setpoint_f) if step_obj.setpoint_f else 0.0
-        self.step_dur = float(step_obj.duration_min) if step_obj.duration_min else 0.0
+        self.step_name = step_obj.name 
         
+        try: self.selected_type = step_obj.step_type.value
+        except: self.selected_type = "Step"
+        
+        try: self.selected_advance = step_obj.timeout_behavior.value
+        except: self.selected_advance = TimeoutBehavior.AUTO_ADVANCE.value
+
+        self.step_temp = float(step_obj.setpoint_f or 0.0)
+        self.step_dur = float(step_obj.duration_min or 0.0)
+        
+        v = float(step_obj.lauter_volume or 0.0)
+        self.step_vol = v if v >= 2.0 else 6.0 
+        
+        w = getattr(step_obj, 'power_watts', 1800)
+        self.step_power_idx = self.watts_map.index(w) if w in self.watts_map else 3
+
         # Load Alerts
         temp_list = []
         if hasattr(step_obj, 'additions'):
             for a in step_obj.additions:
-                if isinstance(a, dict):
-                    n = a.get('name', 'Alert')
-                    t = a.get('time_point_min', 0)
-                else:
-                    n = getattr(a, 'name', 'Alert')
-                    t = getattr(a, 'time_point_min', 0)
-                temp_list.append({'name': n, 'time': t})
+                n = a.get('name', 'Alert') if isinstance(a, dict) else getattr(a, 'name', 'Alert')
+                t = a.get('time_point_min', 0) if isinstance(a, dict) else getattr(a, 'time_point_min', 0)
+                temp_list.append({'name': n, 'time': float(t)})
+        
+        temp_list.sort(key=lambda x: x['time'], reverse=True)
         self.current_additions = temp_list
+        
+        self._update_target_display()
+        
+        # TAKE SNAPSHOT
+        self.original_state = self._get_current_state()
+        self.is_dirty = False
 
-    def add_alert(self):
-        if not self.new_alert_name: return
-        self.current_additions.append({
-            'name': self.new_alert_name,
-            'time': float(self.new_alert_time)
-        })
-        self.new_alert_name = "Hops"
-
-    def remove_alert_by_index(self, index):
-        if 0 <= index < len(self.current_additions):
-            self.current_additions.pop(index)
+    def open_alerts_screen(self):
+        self.manager.transition.direction = 'left'
+        self.manager.current = 'step_alerts'
+        self.manager.get_screen('step_alerts').load_data(self.step_name, self.current_additions)
 
     def save_step(self):
+        """Commits changes to memory (the object) and exits."""
         if self.step_obj_ref:
             self.step_obj_ref.name = self.step_name
             self.step_obj_ref.setpoint_f = self.step_temp
             self.step_obj_ref.duration_min = self.step_dur
+            self.step_obj_ref.lauter_volume = self.step_vol 
             
-            # Rebuild Additions objects
+            try: self.step_obj_ref.step_type = StepType(self.selected_type)
+            except: pass 
+            try: self.step_obj_ref.timeout_behavior = TimeoutBehavior(self.selected_advance)
+            except: pass
+
+            idx = int(self.step_power_idx)
+            if 0 <= idx < len(self.watts_map):
+                self.step_obj_ref.power_watts = self.watts_map[idx]
+            
             new_list = []
             for item in self.current_additions:
-                new_list.append(ProfileAddition(item['name'], item['time']))
+                new_list.append(BrewAddition(name=item['name'], time_point_min=item['time']))
             self.step_obj_ref.additions = new_list
 
-        # Refresh the Profile Editor List
+        # Refresh Main Editor List
         app = App.get_running_app()
-        app.editor_screen.refresh_steps()
-        
-        # Go back to the Profile Editor
+        app.root.get_screen('editor').refresh_steps()
         app.root.current = 'editor'
 
     def cancel(self):
-        # Just go back without saving
+        """Exits without saving (Discard Changes)."""
+        # Since we haven't touched step_obj_ref yet, simply leaving discards the changes.
         App.get_running_app().root.current = 'editor'
+
+
+class StepAlertsScreen(Screen):
+    step_name = StringProperty("")
+    new_alert_name = StringProperty("Hops")
+    new_alert_time = NumericProperty(10.0)
+    
+    # Edit Logic
+    editing_index = NumericProperty(-1)
+    btn_text = StringProperty("ADD ALERT")
+    
+    local_additions = ListProperty([])
+    
+    # --- DIRTY STATE TRACKING ---
+    is_dirty = BooleanProperty(False)
+    original_additions = [] # Snapshot list
+
+    def load_data(self, step_name, additions_list):
+        self.step_name = step_name
+        
+        # FIX: Convert Kivy's "ObservableList" to a standard "list" before deepcopying
+        # This prevents the "TypeError: no default __reduce__" crash.
+        plain_list = list(additions_list)
+        
+        # Copy list for editing
+        self.local_additions = copy.deepcopy(plain_list) 
+        
+        # Take Snapshot for dirty check
+        self.original_additions = copy.deepcopy(plain_list)
+        
+        self.is_dirty = False
+        self._reset_inputs()
+
+    def _reset_inputs(self):
+        self.new_alert_name = "Hops"
+        self.new_alert_time = 10.0
+        self.editing_index = -1
+        self.btn_text = "ADD ALERT"
+
+    def _check_dirty(self):
+        # Compare lists. We sort first to ensure order doesn't trigger false dirty if logic elsewhere changes it.
+        # (Though list order usually matters for display, simple equality check is good enough here)
+        current = [{'name': x['name'], 'time': float(x['time'])} for x in self.local_additions]
+        orig = [{'name': x['name'], 'time': float(x['time'])} for x in self.original_additions]
+        
+        # Sort by time to ensure consistent comparison
+        current.sort(key=lambda x: (x['time'], x['name']))
+        orig.sort(key=lambda x: (x['time'], x['name']))
+        
+        self.is_dirty = (current != orig)
+
+    def load_for_edit(self, index):
+        """Called when user clicks EDIT on a row."""
+        if 0 <= index < len(self.local_additions):
+            item = self.local_additions[index]
+            self.new_alert_name = item['name']
+            self.new_alert_time = float(item['time'])
+            self.editing_index = index
+            self.btn_text = "UPDATE ALERT"
+
+    def add_or_update(self):
+        if not self.new_alert_name: return
+        
+        data = {'name': self.new_alert_name, 'time': self.new_alert_time}
+        new_list = list(self.local_additions)
+        
+        if self.editing_index >= 0:
+            # Update Existing
+            new_list[self.editing_index] = data
+        else:
+            # Add New
+            new_list.append(data)
+            
+        new_list.sort(key=lambda x: x['time'], reverse=True)
+        self.local_additions = new_list
+        self._reset_inputs()
+        self._check_dirty()
+
+    def remove_alert_by_index(self, index):
+        if 0 <= index < len(self.local_additions):
+            new_list = list(self.local_additions)
+            new_list.pop(index)
+            self.local_additions = new_list
+            self._reset_inputs()
+            self._check_dirty()
+
+    def apply_changes(self):
+        """Save changes back to parent screen."""
+        parent = self.manager.get_screen('step_editor')
+        parent.current_additions = self.local_additions
+        self.manager.transition.direction = 'right'
+        self.manager.current = 'step_editor'
+
+    def discard_changes(self):
+        """Exit without saving."""
+        # No need to revert parent properties, just leave.
+        self.manager.transition.direction = 'right'
+        self.manager.current = 'step_editor'
+
+# --- ADD THESE CLASSES TO main.py ---
+class EditorStepItem(BoxLayout):
+    """Row for the Parent Step in Profile Editor"""
+    # Define properties to prevent binding errors
+    step_index = NumericProperty(0)
+    display_index = StringProperty("")
+    step_name = StringProperty("")
+    step_desc = StringProperty("")
+    arrow_text = StringProperty(">")
+    arrow_opacity = NumericProperty(1)
+    arrow_disabled = BooleanProperty(False)
+
+class EditorAlertChildItem(BoxLayout):
+    """Row for the Child Alert in Profile Editor"""
+    text = StringProperty("")
+
 
 class ProfileEditorScreen(Screen):
     temp_name = StringProperty("")
-    editing_profile = ObjectProperty(None) 
+    editing_profile = ObjectProperty(None)
+    expanded_indices = ListProperty([])
+    
+    # --- NEW: Dirty State Tracking ---
+    is_dirty = BooleanProperty(False)
+    original_snapshot = ""  # We will store a string representation for easy comparison
 
     def load_data(self, profile):
+        # Deep copy ensures we don't accidentally modify the live profile running in the sequencer
         self.editing_profile = copy.deepcopy(profile)
         self.temp_name = self.editing_profile.name
+        self.expanded_indices = []
+        
+        # Take a snapshot of the "Clean" state
+        self.original_snapshot = self._generate_snapshot()
+        self.is_dirty = False
+        
+        self.refresh_steps()
+
+    def on_temp_name(self, instance, value):
+        # Update name in object so snapshot matches
+        if self.editing_profile:
+            self.editing_profile.name = value
+        self._check_dirty()
+
+    def _generate_snapshot(self):
+        """Generates a string representation of the profile data for comparison."""
+        if not self.editing_profile: return ""
+        
+        # Build a simple dict structure of all data that matters
+        data = {
+            'name': self.editing_profile.name,
+            'steps': []
+        }
+        
+        for s in self.editing_profile.steps:
+            # Normalize additions
+            adds = sorted([{'n': a.name, 't': float(a.time_point_min)} for a in s.additions], key=lambda x: x['t'])
+            
+            step_data = {
+                'n': s.name,
+                'type': getattr(s.step_type, 'value', 'Step'),
+                'temp': float(s.setpoint_f or 0),
+                'dur': float(s.duration_min or 0),
+                'vol': float(s.lauter_volume or 0),
+                'pwr': getattr(s, 'power_watts', 1800),
+                'adds': adds
+            }
+            data['steps'].append(step_data)
+            
+        import json
+        # Return sorted JSON string to ensure consistent order
+        return json.dumps(data, sort_keys=True)
+
+    def _check_dirty(self):
+        current = self._generate_snapshot()
+        self.is_dirty = (current != self.original_snapshot)
+
+    def toggle_step_expansion(self, step_index):
+        if step_index in self.expanded_indices:
+            self.expanded_indices.remove(step_index)
+        else:
+            self.expanded_indices.append(step_index)
         self.refresh_steps()
 
     def refresh_steps(self):
+        # 1. Update Dirty Status first
+        self._check_dirty()
+        
         data = []
         if self.editing_profile:
             for i, step in enumerate(self.editing_profile.steps):
-                t = getattr(step, 'setpoint_f', 0)
-                d = getattr(step, 'duration_min', 0)
-                adds_count = len(step.additions) if hasattr(step, 'additions') else 0
+                # ... (Existing Logic for Parent Row) ...
+                if hasattr(step, 'step_type') and step.step_type == StepType.BOIL:
+                    type_str = "BOIL"
+                else:
+                    t = step.setpoint_f if step.setpoint_f else 0.0
+                    type_str = f"{int(t)}°F"
+
+                d_str = f"{int(step.duration_min)}m" if step.duration_min else "0m"
+                desc = f"{type_str} / {d_str}"
                 
-                desc = f"{int(t)}F / {int(d)}m"
-                if adds_count > 0:
-                    desc += f" ({adds_count} alerts)"
+                alerts_count = len(step.additions) if hasattr(step, 'additions') else 0
+                has_children = (alerts_count > 0)
                 
+                arrow_icon = "v" if i in self.expanded_indices else ">"
+                
+                # Add PARENT Row
                 data.append({
-                    'step_index': i + 1,
+                    'view_type': 'EditorStepItem',
+                    'step_index': i,        # Use 1-based indexing
+                    'display_index': str(i + 1),
                     'step_name': step.name,
-                    'step_desc': desc
+                    'step_desc': desc,
+                    'arrow_text': arrow_icon,
+                    'arrow_opacity': 1 if has_children else 0,
+                    'arrow_disabled': not has_children
                 })
+
+                # Add CHILD Rows
+                if i in self.expanded_indices and has_children:
+                    sorted_adds = sorted(step.additions, key=lambda x: x.time_point_min, reverse=True)
+                    for add in sorted_adds:
+                        n = getattr(add, 'name', 'Alert')
+                        t = getattr(add, 'time_point_min', 0)
+                        
+                        data.append({
+                            'view_type': 'EditorAlertChildItem',
+                            'text': f"{n} (@ {int(t)}m)"
+                        })
+
         self.ids.rv_editor_steps.data = data
 
     def add_new_step(self):
-        new_step = ProfileStep(name="New Step", setpoint_f=150, duration_min=60)
+        new_step = BrewStep(name="New Step", setpoint_f=150, duration_min=60)
         self.editing_profile.steps.append(new_step)
         self.refresh_steps()
+        # Auto-open the editor
+        new_index = len(self.editing_profile.steps) - 1
+        App.get_running_app().open_step_editor(new_index)
 
     def save_profile(self):
+        """Commits the profile to disk."""
         app = App.get_running_app()
         self.editing_profile.name = self.temp_name
         app.settings_manager.save_profile(self.editing_profile)
         app.open_profiles()
 
     def cancel_edit(self):
+        """Exits without saving."""
         App.get_running_app().open_profiles()
-
-# ~ class DelayedStartPopup(Popup):
-    # ~ # Dropdown Data
-    # ~ hour_values = ListProperty([str(i) for i in range(1, 13)])
-    # ~ min_values = ListProperty([f"{i:02d}" for i in range(0, 60)])
-    # ~ ampm_values = ListProperty(["AM", "PM"])
-    
-    # ~ # Selected Values
-    # ~ sel_hour = StringProperty("6")
-    # ~ sel_min = StringProperty("00")
-    # ~ sel_ampm = StringProperty("AM")
-    
-    # ~ # Target Values
-    # ~ target_temp = NumericProperty(154.0)
-    # ~ target_vol = NumericProperty(8.0)
-    
-    # ~ def __init__(self, **kwargs):
-        # ~ super().__init__(**kwargs)
-        # ~ self.app = App.get_running_app()
-        # ~ self._load_defaults()
-        
-    # ~ def _load_defaults(self):
-        # ~ # 1. Calculate Default Time (6:00 AM tomorrow if passed)
-        # ~ now = datetime.now()
-        # ~ next_target = now.replace(hour=6, minute=0, second=0, microsecond=0)
-        # ~ if next_target <= now:
-            # ~ next_target += timedelta(days=1)
-            
-        # ~ self.sel_hour = next_target.strftime("%I").lstrip('0')
-        # ~ self.sel_min = next_target.strftime("%M")
-        # ~ self.sel_ampm = next_target.strftime("%p")
-        
-        # ~ # 2. Load Last Used Settings
-        # ~ sm = self.app.settings_manager
-        # ~ self.target_temp = sm.get("manual_mode_settings", "last_setpoint_f", 154.0)
-        # ~ self.target_vol = sm.get("manual_mode_settings", "last_volume_gal", 8.0)
-
-    # ~ def activate_delay(self):
-        # ~ try:
-            # ~ # 1. Parse Time
-            # ~ h = int(self.sel_hour)
-            # ~ m = int(self.sel_min)
-            # ~ is_pm = (self.sel_ampm == "PM")
-            
-            # ~ # Convert 12h -> 24h
-            # ~ if is_pm and h != 12: h += 12
-            # ~ if not is_pm and h == 12: h = 0
-            
-            # ~ now = datetime.now()
-            # ~ target_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
-            
-            # ~ # If time is in past, assume tomorrow
-            # ~ if target_dt <= now:
-                # ~ target_dt += timedelta(days=1)
-                
-            # ~ # 2. Determine Context (Were we in Auto or Manual?)
-            # ~ # If we are currently in Manual, we want to return to Manual if canceled.
-            # ~ is_auto = (self.app.sequencer.status != SequenceStatus.MANUAL)
-            
-            # ~ # 3. Call Backend
-            # ~ self.app.sequencer.start_delayed_mode(
-                # ~ self.target_temp, 
-                # ~ self.target_vol, 
-                # ~ target_dt, 
-                # ~ from_auto_mode=is_auto
-            # ~ )
-            
-            # ~ # 4. Update UI
-            # ~ if self.app.sequencer.status == SequenceStatus.DELAYED_WAIT:
-                # ~ # Force MainScreen update
-                # ~ self.app.root.get_screen('main').update_status_display()
-                # ~ self.dismiss()
-            # ~ else:
-                # ~ print("Error: Sequencer refused Delayed Mode")
-                
-        # ~ except Exception as e:
-            # ~ print(f"Delay Activation Error: {e}")
-
-# ~ class DelayedStartActionPopup(Popup):
-    # ~ def do_cancel(self):
-        # ~ app = App.get_running_app()
-        # ~ app.sequencer.cancel_delayed_mode()
-        # ~ app.root.get_screen('main').update_status_display()
-        # ~ self.dismiss()
 
 class MainScreen(Screen):
     display_temp = StringProperty("--.- °F")
@@ -439,11 +641,14 @@ class MainScreen(Screen):
     display_power_watts = StringProperty("1800")
     action_button_text = StringProperty("START")
     temp_color = ListProperty([0.2, 0.8, 0.2, 1])
+    manual_target_display = StringProperty("Target: -- F")
     
     # Properties for Mode Switch Logic
     mode_switch_target = StringProperty("") # 'auto' or 'manual'
     mode_confirm_msg = StringProperty("")
     mode_reset_btn_text = StringProperty("")
+    
+    
     
     # --- NEW DELAY PROPERTIES ---
     delay_hour = NumericProperty(6)
@@ -460,6 +665,10 @@ class MainScreen(Screen):
     heater_2_active = BooleanProperty(False) # 800W
     is_delay_active = BooleanProperty(False)
     heartbeat_color = ListProperty([0.2, 0.2, 0.2, 1]) # Grey default
+    _heartbeat_anim = None # Track the animation object
+    
+    expanded_indices = ListProperty([])
+
     
     action_button_text = StringProperty("START")
     action_button_color = ListProperty([0.2, 0.4, 0.8, 1]) # <--- ADD THIS
@@ -475,8 +684,9 @@ class MainScreen(Screen):
         self.app = App.get_running_app()
         self.last_profile_id = None
         self.last_step_index = -1
+        self.last_status = SequenceStatus.IDLE  # <--- NEW TRACKER
         self.watts_map = [800, 1000, 1400, 1800] 
-
+        
     def on_enter(self):
         """Syncs UI with saved settings."""
         self._load_manual_settings()
@@ -498,12 +708,26 @@ class MainScreen(Screen):
             self.slider_power_val = 3
         
         self.display_power_watts = str(last_watts)
+        
+        # NEW: Trigger label update so BOIL text appears on load if needed
+        self.on_slider_drag('temp', last_temp)
+        
         self._update_prediction()
-
+        
     def on_slider_drag(self, slider_type, value):
         """Updates VISUALS (labels/prediction) immediately."""
         if slider_type == 'temp': 
+            val = int(value)
             self.slider_temp_val = float(value)
+            
+            # NEW: Check System Boil Setting for Label
+            boil_temp = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+            
+            if val >= boil_temp:
+                self.manual_target_display = f"Target: {val} F (BOIL)"
+            else:
+                self.manual_target_display = f"Target: {val} F"
+
         elif slider_type == 'vol': 
             self.slider_vol_val = float(value)
         elif slider_type == 'time': 
@@ -565,6 +789,12 @@ class MainScreen(Screen):
         """
         seq = self.app.sequencer
         
+        # NEW: If Delay is Active, just show the screen.
+        # Do NOT change mode, do NOT call enter_manual_mode().
+        if seq.status == SequenceStatus.DELAYED_WAIT:
+             self.ids.center_content.current = 'page_manual'
+             return
+
         # 1. Check if AUTO is Active (Running, Paused, or Waiting)
         if seq.status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
             self._prompt_mode_switch('manual', active_mode="AUTO", inactive_mode="MANUAL")
@@ -582,6 +812,11 @@ class MainScreen(Screen):
         If Manual is currently running (Timer/PID active), ask for confirmation.
         """
         seq = self.app.sequencer
+        
+        # NEW: If Delay is Active, just show the screen.
+        if seq.status == SequenceStatus.DELAYED_WAIT:
+             self.ids.center_content.current = 'page_auto'
+             return
         
         # 1. Check if MANUAL is Active (Heater or Timer running)
         if seq.status == SequenceStatus.MANUAL and getattr(seq, 'is_manual_running', False):
@@ -679,6 +914,28 @@ class MainScreen(Screen):
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
 
+    def on_confirm_resume(self):
+        """
+        Called by the RESUME SESSION button in the Stop/Confirm menu.
+        Restarts the Sequence or Manual Mode and restores the UI.
+        """
+        seq = self.app.sequencer
+        
+        # 1. Resume based on Status
+        if seq.status == SequenceStatus.PAUSED:
+            # Auto Mode was running -> Resume
+            if hasattr(seq, 'resume_sequence'): 
+                seq.resume_sequence()
+                
+        elif seq.status == SequenceStatus.MANUAL:
+            # Manual Mode was active -> Restart Heater/Timer
+            # (emergency_cut_power turns is_manual_running=False, so we must start it again)
+            seq.start_manual()
+
+        # 2. Restore Bottom Navigation
+        self.ids.bottom_nav.transition.direction = 'down'
+        self.ids.bottom_nav.current = 'nav_standard'
+    
     def on_stop_click(self):
         # Legacy catch-all, redirects to new logic
         self.on_stop_request()
@@ -694,32 +951,6 @@ class MainScreen(Screen):
     def open_settings(self):
         self.manager.current = 'sys_settings'
 
-    def refresh_step_list(self):
-        seq = self.app.sequencer
-        if not seq.current_profile:
-            self.ids.rv_steps.data = []
-            return
-        data = []
-        current_idx = seq.current_step_index
-        for i, step in enumerate(seq.current_profile.steps):
-            is_active = (i == current_idx)
-            is_done = (i < current_idx)
-            bg = [0.2, 0.2, 0.2, 1]
-            txt = [1, 1, 1, 1]
-            if is_active: bg = [0.2, 0.6, 0.3, 1]
-            elif is_done: txt = [0.5, 0.5, 0.5, 1]
-            t_str = f"{step.setpoint_f}°F" if step.setpoint_f else "--"
-            d_str = f"{step.duration_min} min" if step.duration_min > 0 else "--"
-            data.append({
-                'step_index': str(i + 1),
-                'step_name': step.name,
-                'step_target': t_str,
-                'step_duration': d_str,
-                'bg_color': bg,
-                'text_color': txt
-            })
-        self.ids.rv_steps.data = data
-        
     def get_delay_time_str(self, total_minutes):
         """Formats 0-1440 minutes into HH:MM AM/PM string for the label."""
         val = int(total_minutes)
@@ -737,6 +968,181 @@ class MainScreen(Screen):
             h = 12
             
         return f"{h}:{m:02d} {ampm}"
+
+    def toggle_step_expansion(self, step_index):
+        """Called when the arrow button is clicked."""
+        idx = int(step_index)
+        if idx in self.expanded_indices:
+            self.expanded_indices.remove(idx)
+        else:
+            self.expanded_indices.append(idx)
+        
+        # Force a refresh of the list
+        self.refresh_step_list()
+
+    def refresh_step_list(self):
+        seq = self.app.sequencer
+        if not seq.current_profile:
+            self.ids.rv_steps.data = []
+            return
+        
+        # 1. Force Refresh Predictions
+        if hasattr(seq, 'update_predictions'):
+            seq.update_predictions()
+
+        # 2. Auto-Expand the Current Step
+        current_idx = seq.current_step_index
+        if current_idx != -1 and current_idx not in self.expanded_indices:
+            self.expanded_indices.append(current_idx)
+
+        data = []
+        
+        # We need to track which row index (0, 1, 2...) corresponds to the "active" item
+        active_list_index = -1
+        current_row_count = 0
+        
+        # Check if we are searching for a specific alert child
+        active_alert_name = None
+        if seq.status == SequenceStatus.WAITING_FOR_USER and seq.current_alert_text:
+            active_alert_name = seq.current_alert_text
+
+        for i, step in enumerate(seq.current_profile.steps):
+            # --- PARENT STEP LOGIC ---
+            is_current_step = (i == current_idx)
+            is_done = (i < current_idx)
+            
+            # Default Colors
+            bg = [0.2, 0.2, 0.2, 1]
+            txt = [1, 1, 1, 1]
+            
+            # Determine Status & Highlighting for Parent
+            if is_current_step:
+                if active_alert_name: 
+                    bg = [0.2, 0.4, 0.6, 1] # Parent is active context
+                else:
+                    bg = [0.2, 0.8, 0.2, 1] # Parent is THE active item
+                    active_list_index = current_row_count 
+            elif is_done:
+                txt = [0.5, 0.5, 0.5, 1]
+
+            # Text Data
+            # NEW: CHECK FOR BOIL TYPE
+            if step.step_type == StepType.BOIL:
+                sys_boil = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+                t_str = f"{sys_boil:.0f}°F (BOIL)"
+            elif step.setpoint_f:
+                t_str = f"{step.setpoint_f:.0f}°F"
+            else:
+                t_str = "--"
+
+            d_str = f"{step.duration_min} min" if step.duration_min > 0 else "--"
+            r_str = getattr(step, 'predicted_ready_time', "--")
+
+            # Expansion Logic
+            has_children = (len(step.additions) > 0)
+            is_expanded = (i in self.expanded_indices)
+            arrow_icon = ""
+            if has_children:
+                arrow_icon = "v" if is_expanded else ">"
+
+            # Add Parent Row
+            data.append({
+                'view_type': 'StepItem',
+                'step_index': str(i + 1),
+                'internal_index': i,
+                'step_name': step.name,
+                'step_target': t_str,
+                'step_duration': d_str,
+                'step_ready': r_str,
+                'bg_color': bg,
+                'text_color': txt,
+                'arrow_text': arrow_icon,
+                'arrow_disabled': not has_children
+            })
+            current_row_count += 1
+
+            # --- CHILD ROW LOGIC ---
+            if is_expanded and has_children:
+                sorted_adds = sorted(step.additions, key=lambda x: x.time_point_min, reverse=True)
+                
+                for add in sorted_adds:
+                    # Check if this child is the one alerting
+                    is_active_child = False
+                    if is_current_step and active_alert_name:
+                        if add.name in active_alert_name or active_alert_name in add.name:
+                            is_active_child = True
+                    
+                    child_bg = [0.15, 0.15, 0.15, 1]
+                    child_txt = [0.7, 0.7, 0.7, 1]
+                    
+                    if is_active_child:
+                        child_bg = [0.2, 0.8, 0.2, 1] 
+                        child_txt = [1, 1, 1, 1]       
+                        active_list_index = current_row_count 
+
+                    data.append({
+                        'view_type': 'AlertChildItem',
+                        'alert_name': f"(@ {int(add.time_point_min)} min) {add.name}",
+                        'bg_color': child_bg,
+                        'text_color': child_txt
+                    })
+                    current_row_count += 1
+
+        self.ids.rv_steps.data = data
+        
+        # 3. Trigger Auto-Scroll 
+        if active_list_index != -1:
+            self.scroll_to_active(active_list_index)
+        
+    def scroll_to_active(self, index):
+        """
+        Manually calculates scroll_y to place the item at 'index' at the top.
+        """
+        rv = self.ids.rv_steps
+        if not rv.data: return
+        
+        # Calculate the total height of the list and the position of our target
+        # We assume StepItems are 50dp and AlertChildItems are 40dp
+        total_height = 0
+        target_top_offset = 0
+        
+        # Use dp to match Kivy's scaling
+        from kivy.metrics import dp
+        
+        for i, item in enumerate(rv.data):
+            # Determine height of this specific row
+            row_h = dp(40) if item.get('view_type') == 'AlertChildItem' else dp(50)
+            
+            # If this is a row ABOVE our target, add to offset
+            if i < index:
+                target_top_offset += row_h
+            
+            total_height += row_h
+            
+        # Calculate Viewport parameters
+        viewport_height = rv.height
+        scrollable_distance = total_height - viewport_height
+        
+        # If content fits entirely in screen, just go to top
+        if scrollable_distance <= 0:
+            rv.scroll_y = 1.0
+            return
+
+        # Calculate scroll_y (1.0 is top, 0.0 is bottom)
+        # We want the top of our target row to be at the top of the viewport.
+        # This means we need to hide 'target_top_offset' pixels above the viewport.
+        pixels_from_bottom = total_height - target_top_offset - viewport_height
+        new_scroll_y = pixels_from_bottom / scrollable_distance
+        
+        # Clamp between 0 and 1 (don't scroll past bounds)
+        new_scroll_y = max(0.0, min(1.0, new_scroll_y))
+        
+        # Apply scroll only if changed (prevents jitter)
+        if not hasattr(self, '_last_scrolled_index'): self._last_scrolled_index = -1
+        
+        if self._last_scrolled_index != index:
+            rv.scroll_y = new_scroll_y
+            self._last_scrolled_index = index
 
     def open_delay_setup(self):
         """Called when DELAY START (or ACTIVE) is clicked."""
@@ -822,27 +1228,6 @@ class MainScreen(Screen):
         self.update_status_display()
         self.close_delay_setup()
     
-    # ~ # DELETE THIS FUNCTION?
-    # ~ def open_delay_start(self):
-        # ~ """Called by the DELAY START button."""
-        # ~ status = self.app.sequencer.status
-        
-        # ~ # 1. If already delayed, show management options
-        # ~ if status == SequenceStatus.DELAYED_WAIT:
-            # ~ p = DelayedStartActionPopup()
-            # ~ p.open()
-            # ~ return
-
-        # ~ # 2. If running (Heating), prevent changes
-        # ~ if status not in [SequenceStatus.IDLE, SequenceStatus.MANUAL]:
-            # ~ # You might want a simple alert popup here, printing for now
-            # ~ print("Cannot start delay while system is running.")
-            # ~ return
-
-        # ~ # 3. Open Setup Popup
-        # ~ p = DelayedStartPopup()
-        # ~ p.open()
-
     def update_status_display(self):
         """
         Updates the Status Text, Delay Button, and Control Locking 
@@ -1406,6 +1791,7 @@ class KettleApp(App):
         self.profiles_screen = ProfilesScreen(name='profiles')
         self.editor_screen = ProfileEditorScreen(name='editor')
         self.step_editor_screen = StepEditorScreen(name='step_editor')
+        self.alerts_screen = StepAlertsScreen(name='step_alerts') # <--- ADD THIS
         
         # NEW SETTINGS SCREENS
         self.sys_settings_screen = SystemSettingsScreen(name='sys_settings')
@@ -1413,11 +1799,13 @@ class KettleApp(App):
         self.app_settings_screen = AppSettingsScreen(name='settings_app')
         self.cal_settings_screen = CalibrationSettingsScreen(name='settings_cal')
         self.updates_screen = UpdatesSettingsScreen(name='settings_updates')
-          
+        
+                  
         sm.add_widget(self.main_screen)
         sm.add_widget(self.profiles_screen)
         sm.add_widget(self.editor_screen)
         sm.add_widget(self.step_editor_screen)
+        sm.add_widget(self.alerts_screen) # <--- ADD THIS
         sm.add_widget(self.cal_settings_screen)
         sm.add_widget(self.updates_screen)
         
@@ -1442,15 +1830,13 @@ class KettleApp(App):
         screen = self.main_screen
         status = seq.status
         
-        # --- 1. TEMPERATURES & COLORS ---
+        # --- 1. TEMPERATURE COLORS ONLY ---
+        # (Target Text is now handled in Section 2 below)
         current_temp = seq.current_temp if seq.current_temp else 0.0
-        screen.display_temp = f"{current_temp:.1f} °F"
+        tgt_check = seq.get_target_temp()
         
-        tgt = seq.get_target_temp()
-        screen.display_target = f"{tgt:.0f} °F" if tgt else "--"
-        
-        if tgt:
-            diff = current_temp - tgt
+        if tgt_check:
+            diff = current_temp - tgt_check
             if abs(diff) < 1.0: 
                 screen.temp_color = [0.2, 0.8, 0.2, 1] # Green (Good)
             elif diff < 0: 
@@ -1460,30 +1846,76 @@ class KettleApp(App):
         else:
             screen.temp_color = [0.2, 0.8, 0.2, 1] 
             
-        # --- 2. TIMERS ---
+        # --- 2. UPDATE LABELS (Temp, Target, Timer) ---
+        screen.display_temp = f"{current_temp:.1f} °F"
         screen.display_timer = seq.get_display_timer()
         screen.display_elapsed = seq.get_global_elapsed_time_str()
+        
+        # Handle Target Text with BOIL logic
+        sys_boil = self.settings_manager.get_system_setting("boil_temp_f", 212.0)
+
+        # A. MANUAL MODE
+        if status == SequenceStatus.MANUAL:
+            if getattr(seq, 'is_manual_running', False):
+                val = seq.target_temp
+            else:
+                val = screen.slider_temp_val
+            
+            # FIX: Use int() to match slider display exactly
+            if val >= sys_boil:
+                screen.display_target = f"{int(val)} (BOIL)"
+            else:
+                screen.display_target = f"{int(val)} °F"
+
+        # B. DELAYED WAIT
+        elif status == SequenceStatus.DELAYED_WAIT:
+            val = screen.delay_temp
+            if val >= sys_boil:
+                screen.display_target = f"{int(val)} (BOIL)"
+            else:
+                screen.display_target = f"{int(val)} °F"
+
+        # C. AUTO MODE
+        elif seq.current_profile and seq.current_step_index >= 0:
+            step = seq.current_profile.steps[seq.current_step_index]
+            
+            if step.step_type == StepType.BOIL:
+                # Always show BOIL for boil steps
+                screen.display_target = f"{int(sys_boil)} (BOIL)"
+            else:
+                val = step.setpoint_f if step.setpoint_f else 0.0
+                screen.display_target = f"{int(val)} °F"
+        
+        # D. FALLBACK / IDLE
+        else:
+            screen.display_target = "--"
 
         # --- 3. HEARTBEAT PULSE ---
         import time
         now = time.time()
         
-        if status == SequenceStatus.MANUAL and getattr(seq, 'is_manual_running', False):
-            # RUNNING: Pulse Green
+        is_manual_active = (status == SequenceStatus.MANUAL and getattr(seq, 'is_manual_running', False))
+        is_auto_active = (status == SequenceStatus.RUNNING or status == SequenceStatus.WAITING_FOR_USER)
+
+        if is_manual_active or is_auto_active:
+            # RUNNING / ALERT: Pulse Green
             if int(now * 2) % 2 == 0: screen.heartbeat_color = [0, 1, 0, 1] 
             else: screen.heartbeat_color = [0, 0.3, 0, 1]
+            
         elif status == SequenceStatus.PAUSED:
             # PAUSED: Pulse Blue
             if int(now * 2) % 2 == 0: screen.heartbeat_color = [0.2, 0.4, 0.8, 1] 
             else: screen.heartbeat_color = [0.1, 0.2, 0.4, 1] 
+            
         elif status == SequenceStatus.DELAYED_WAIT:
             # SLEEPING: Slow Pulse Teal
             if int(now) % 2 == 0: screen.heartbeat_color = [0.2, 0.6, 0.8, 1]
             else: screen.heartbeat_color = [0.1, 0.3, 0.4, 1]
+            
         else:
             # IDLE: Grey
             screen.heartbeat_color = [0.2, 0.2, 0.2, 1]
-
+            
         # --- 4. HEATER INDICATORS ---
         relay_obj = getattr(seq, 'relay', getattr(seq, 'relays', None))
         if relay_obj and hasattr(relay_obj, 'relay_states'):
@@ -1517,25 +1949,43 @@ class KettleApp(App):
 
         # --- 6. VIEW SWITCHING ---
         # Allow browsing in IDLE, but snap to Manual/Auto if running/sleeping
-        if status == SequenceStatus.MANUAL:
+        
+        # A. HANDLE WAKE UP SNAP (The "Gotcha" Fix)
+        if screen.last_status == SequenceStatus.DELAYED_WAIT and status == SequenceStatus.MANUAL:
+            screen.ids.center_content.current = 'page_manual'
+            if hasattr(screen, '_update_prediction'): screen._update_prediction()
+
+        # B. NORMAL SNAPPING
+        elif status == SequenceStatus.MANUAL:
             if screen.ids.center_content.current != 'page_manual': 
                 screen.ids.center_content.current = 'page_manual'
-                # Force prediction update
                 if hasattr(screen, '_update_prediction'): screen._update_prediction()
-        elif status == SequenceStatus.DELAYED_WAIT:
-            if screen.ids.center_content.current != 'page_manual':
-                screen.ids.center_content.current = 'page_manual'
+                
         elif status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
             if screen.ids.center_content.current != 'page_auto': 
                 screen.ids.center_content.current = 'page_auto'
 
         # --- 7. AUTO MODE LIST REFRESH ---
+        # Refresh on step change OR every 10 seconds to update timestamps
+        import time
+        now = time.time()
+        
         current_id = seq.current_profile.id if seq.current_profile else None
         current_idx = seq.current_step_index
+        
+        if not hasattr(screen, 'last_refresh_time'): screen.last_refresh_time = 0
+        
+        should_refresh = False
         if current_id != screen.last_profile_id or current_idx != screen.last_step_index:
+            should_refresh = True
+        elif seq.status == SequenceStatus.RUNNING and (now - screen.last_refresh_time > 10.0):
+            should_refresh = True
+            
+        if should_refresh:
             screen.refresh_step_list()
             screen.last_profile_id = current_id
             screen.last_step_index = current_idx
+            screen.last_refresh_time = now
 
         # --- 8. ACTION BUTTON TEXT ---
         if status == SequenceStatus.MANUAL: 
@@ -1560,15 +2010,13 @@ class KettleApp(App):
                 screen.action_button_text = "NEXT STEP"
                 screen.action_button_color = [0.2, 0.8, 0.4, 1]
             else: 
-                screen.action_button_text = "ACKNOWLEDGE"
+                screen.action_button_text = "CONFIRM"
                 screen.action_button_color = [0.8, 0.4, 0.2, 1]
         else: 
             screen.action_button_text = "START"
             screen.action_button_color = [0.2, 0.8, 0.4, 1]
 
         # --- 9. DELAYED START SYNC (Automatic Unlock) ---
-        # This ensures that when the backend automatically transitions 
-        # from DELAYED_WAIT -> MANUAL, the UI Unlocks immediately.
         if status == SequenceStatus.DELAYED_WAIT:
             # Lock UI
             screen.is_delay_active = True
@@ -1581,7 +2029,9 @@ class KettleApp(App):
             screen.controls_disabled = False
             screen.delay_btn_text = "DELAY START"
             screen.delay_btn_color = [0.2, 0.2, 0.4, 1]
-
+            
+        # Track status for next frame
+        screen.last_status = status
     def open_profile_options(self, profile_id, profile_name):
         popup = ProfileOptionsPopup()
         popup.profile_id = profile_id
@@ -1591,9 +2041,24 @@ class KettleApp(App):
     def load_profile(self, profile_id):
         profile = self.settings_manager.get_profile_by_id(profile_id)
         if profile:
-            self.sequencer.load_profile(profile)
-            self.root.current = 'main'
-            self.main_screen.ids.center_content.current = 'page_auto'
+            seq = self.sequencer
+            
+            # CHECK: Is Delay Active?
+            if seq.status == SequenceStatus.DELAYED_WAIT:
+                # 1. Inject Profile Data silently (Do NOT call load_profile which resets status)
+                seq.current_profile = profile
+                seq.current_step_index = 0 # Pre-select first step
+                
+                # 2. Update UI View
+                self.root.current = 'main'
+                self.main_screen.ids.center_content.current = 'page_auto'
+                
+                # Note: update_ui loop will see the new profile and refresh the list automatically.
+            else:
+                # Normal Load (Resets system to IDLE/Ready)
+                seq.load_profile(profile)
+                self.root.current = 'main'
+                self.main_screen.ids.center_content.current = 'page_auto'
 
     def copy_profile(self, profile_id):
         original = self.settings_manager.get_profile_by_id(profile_id)

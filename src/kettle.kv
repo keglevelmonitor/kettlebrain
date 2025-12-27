@@ -1,6 +1,8 @@
 #:kivy 2.3.0
 
 # --- GLOBAL STYLES ---
+
+# --- SINGLE DEFINITION FOR ALERT ROW ---
 <AlertItem>:
     orientation: 'horizontal'
     size_hint_y: None
@@ -13,19 +15,30 @@
         Rectangle:
             pos: self.pos
             size: self.size
+            
+    # Label (Name & Time)
     Label:
         text: root.name + " @ " + str(int(root.time)) + "m"
         font_size: '18sp'
         halign: 'left'
         valign: 'middle'
         text_size: self.size
+        
+    # EDIT Button
+    Button:
+        text: "EDIT"
+        size_hint_x: None
+        width: '60dp'
+        background_color: 0.2, 0.4, 0.8, 1
+        on_release: app.root.get_screen('step_alerts').load_for_edit(root.index)
+
+    # DEL Button
     Button:
         text: "DEL"
         size_hint_x: None
         width: '60dp'
         background_color: 0.8, 0.2, 0.2, 1
-        # Find the screen manager, get the 'step_editor' screen, call remove
-        on_release: app.root.get_screen('step_editor').remove_alert_by_index(app.root.get_screen('step_editor').current_additions.index({'name': root.name, 'time': root.time}))
+        on_release: app.root.get_screen('step_alerts').remove_alert_by_index(root.index)
                 
 <Label>:
     font_size: '18sp'
@@ -69,11 +82,16 @@
 
 # --- STEP LIST ITEM (Auto View) ---
 <StepItem>:
+    # Add these properties for the toggle logic
+    arrow_text: ""
+    arrow_disabled: True
+    internal_index: 0 # Passed from Python
+    
     orientation: 'horizontal'
     size_hint_y: None
     height: '50dp'
     padding: 5
-    spacing: 10
+    spacing: 5
     canvas.before:
         Color:
             rgba: root.bg_color
@@ -81,29 +99,84 @@
             pos: self.pos
             size: self.size
 
+    # ARROW BUTTON (Toggle)
+    Button:
+        text: root.arrow_text
+        disabled: root.arrow_disabled
+        size_hint_x: 0.1
+        background_color: 0, 0, 0, 0 # Transparent background
+        color: (1, 1, 1, 1) if not self.disabled else (0, 0, 0, 0) # Hide text if disabled
+        font_size: '24sp'
+        bold: True
+        # Call the toggle function in MainScreen
+        on_release: app.root.get_screen('main').toggle_step_expansion(root.internal_index)
+
+    # Index
     Label:
         text: root.step_index
-        size_hint_x: 0.1
+        size_hint_x: 0.08
         font_size: '20sp'
         bold: True
         color: root.text_color
+
+    # Name
     Label:
         text: root.step_name
-        size_hint_x: 0.5
+        size_hint_x: 0.32
         halign: 'left'
         text_size: self.size
         font_size: '20sp'
         valign: 'center'
         color: root.text_color
+
+    # Target
     Label:
         text: root.step_target
-        size_hint_x: 0.2
-        color: root.text_color
-    Label:
-        text: root.step_duration
-        size_hint_x: 0.2
+        size_hint_x: 0.15
         color: root.text_color
 
+    # Duration
+    Label:
+        text: root.step_duration
+        size_hint_x: 0.15
+        color: root.text_color
+
+    # Ready At
+    Label:
+        text: root.step_ready
+        size_hint_x: 0.2
+        color: root.text_color
+        bold: True
+        
+<AlertChildItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '40dp' # Slightly smaller than parent
+    padding: [40, 0, 10, 0] # Indent left side to look nested
+    canvas.before:
+        Color:
+            rgba: root.bg_color
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    
+    # Simple icon or bullet
+    Label:
+        text: "↳" 
+        size_hint_x: None
+        width: '30dp'
+        color: root.text_color
+        font_size: '20sp'
+        
+    Label:
+        text: root.alert_name
+        halign: 'left'
+        text_size: self.size
+        valign: 'center'
+        color: root.text_color
+        font_size: '16sp'
+        italic: True
+        
 # --- MAIN SCREEN ---
 <MainScreen>:
     BoxLayout:
@@ -227,26 +300,28 @@
                     BoxLayout:
                         orientation: 'vertical'
                         size_hint_x: 0.75
-                        spacing: 0 # Tight spacing to fit 3 rows in 120dp
+                        spacing: 0
 
-                        # ROW 1: TIME (0 - 1435 minutes)
+                        # ROW 1: TIME
                         BoxLayout:
                             spacing: 10
                             Slider:
-                                size_hint_x: 0.8
+                                # REDUCED WIDTH (Was 0.8)
+                                size_hint_x: 0.7
                                 min: 0
-                                max: 1435 # 23 hr * 60 min + 55 min
+                                max: 1435
                                 step: 5
                                 value: root.delay_minutes_total
                                 on_value: root.delay_minutes_total = self.value
                                 cursor_size: dp(30), dp(30)
                             Label:
-                                size_hint_x: 0.2
-                                text: "Ready At:\n" + root.get_delay_time_str(root.delay_minutes_total)
-                                font_size: '16sp'
-                                color: 0.2, 0.8, 1, 1
+                                # INCREASED WIDTH (Was 0.2)
+                                size_hint_x: 0.3
+                                # MATCHING STYLE
+                                text: "Ready At: " + root.get_delay_time_str(root.delay_minutes_total)
+                                font_size: '18sp'
                                 bold: True
-                                halign: 'center' # Centered looks better with 2 lines
+                                halign: 'left'
                                 valign: 'middle'
                                 text_size: self.size
 
@@ -254,7 +329,7 @@
                         BoxLayout:
                             spacing: 10
                             Slider:
-                                size_hint_x: 0.8
+                                size_hint_x: 0.7
                                 min: 70
                                 max: 212
                                 step: 1
@@ -262,8 +337,8 @@
                                 on_value: root.delay_temp = self.value
                                 cursor_size: dp(30), dp(30)
                             Label:
-                                size_hint_x: 0.2
-                                text: str(int(root.delay_temp)) + " F"
+                                size_hint_x: 0.3
+                                text: "Target: " + str(int(root.delay_temp)) + " F"
                                 font_size: '18sp'
                                 bold: True
                                 halign: 'left'
@@ -274,7 +349,7 @@
                         BoxLayout:
                             spacing: 10
                             Slider:
-                                size_hint_x: 0.8
+                                size_hint_x: 0.7
                                 min: 2
                                 max: 9
                                 step: 0.25
@@ -282,8 +357,8 @@
                                 on_value: root.delay_vol = self.value
                                 cursor_size: dp(30), dp(30)
                             Label:
-                                size_hint_x: 0.2
-                                text: str(round(root.delay_vol, 2)) + " Gal"
+                                size_hint_x: 0.3
+                                text: "Volume: " + str(round(root.delay_vol, 2)) + " Gal"
                                 font_size: '18sp'
                                 bold: True
                                 halign: 'left'
@@ -335,7 +410,8 @@
                         BoxLayout:
                             orientation: 'vertical'
                             Label:
-                                text: "Set Temp: " + str(int(temp_slider.value)) + " F"
+                                # CHANGED: Uses property to allow "(BOIL)" text
+                                text: root.manual_target_display
                                 size_hint_y: 0.4
                                 color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
                             Slider:
@@ -401,6 +477,7 @@
                     BoxLayout:
                         size_hint_y: None
                         height: '30dp'
+                        spacing: 5
                         canvas.before:
                             Color:
                                 rgba: 0.2, 0.2, 0.2, 1
@@ -413,26 +490,35 @@
                             bold: True
                         Label:
                             text: "Step Name"
-                            size_hint_x: 0.5
+                            size_hint_x: 0.35 # Match StepItem
                             halign: 'left'
                             text_size: self.size
                             padding_x: 10
                             bold: True
                         Label:
                             text: "Target"
-                            size_hint_x: 0.2
+                            size_hint_x: 0.15 # Match StepItem
                             bold: True
                         Label:
                             text: "Duration"
-                            size_hint_x: 0.2
+                            size_hint_x: 0.2 # Match StepItem
                             bold: True
+                        Label:
+                            text: "Ready At"
+                            size_hint_x: 0.2 # Match StepItem
+                            bold: True
+                    
                     RecycleView:
                         id: rv_steps
-                        viewclass: 'StepItem'
+                        
+                        # KEY CHANGE: Tell it to look at 'view_type' in the dict
+                        key_viewclass: 'view_type' 
+                        
                         scroll_type: ['bars', 'content']
                         bar_width: 10
                         RecycleBoxLayout:
-                            default_size: None, dp(50)
+                            # UPDATED for variable row heights
+                            default_size: None, None
                             default_size_hint: 1, None
                             size_hint_y: None
                             height: self.minimum_height
@@ -449,14 +535,25 @@
                 name: 'nav_standard'
                 BoxLayout:
                     spacing: 2
-                    Button:
-                        text: "AUTO"
-                        background_color: (0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_auto' else (0.3, 0.3, 0.3, 1)
-                        on_release: root.switch_to_auto()
+                    
+                    # 1. MANUAL
                     Button:
                         text: "MANUAL"
-                        background_color: (0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_manual' else (0.3, 0.3, 0.3, 1)
+                        # LOGIC:
+                        # 1. If Delay Active AND Manual Page -> DARK BLUE (Waiting Context)
+                        # 2. If Delay Active AND NOT Manual Page -> DARK GRAY (Inactive)
+                        # 3. If Normal AND Manual Page -> GREEN (Running Context)
+                        # 4. Else -> DARK GRAY
+                        background_color: (0.1, 0.2, 0.4, 1) if (root.is_delay_active and root.ids.center_content.current == 'page_manual') else ((0.3, 0.3, 0.3, 1) if root.is_delay_active else ((0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_manual' else (0.3, 0.3, 0.3, 1)))
                         on_release: root.switch_to_manual()
+
+                    # 2. AUTO
+                    Button:
+                        text: "AUTO"
+                        # SAME LOGIC for Auto Page
+                        background_color: (0.1, 0.2, 0.4, 1) if (root.is_delay_active and root.ids.center_content.current == 'page_auto') else ((0.3, 0.3, 0.3, 1) if root.is_delay_active else ((0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_auto' else (0.3, 0.3, 0.3, 1)))
+                        on_release: root.switch_to_auto()
+                        
                     Button:
                         text: root.action_button_text
                         background_color: root.action_button_color
@@ -468,39 +565,40 @@
                         on_release: root.on_stop_request()
                     Button:
                         text: "PROFILES"
-                        background_color: 0.2, 0.4, 0.8, 1
+                        background_color: 0.3, 0.3, 0.3, 1
                         on_release: root.open_profiles()
                     Button:
                         text: "SETTINGS"
                         background_color: 0.3, 0.3, 0.3, 1
                         on_release: root.open_settings()
+            
             Screen:
                 name: 'nav_confirm'
                 BoxLayout:
-                    orientation: 'vertical'
+                    orientation: 'horizontal'
                     padding: 5
+                    spacing: 10
                     canvas.before:
                         Color:
-                            rgba: 0.1, 0, 0, 1
+                            rgba: 0.1, 0, 0, 1 # Dark Red Warning Background
                         Rectangle:
                             pos: self.pos
                             size: self.size
-                    Label:
-                        text: "Heaters are OFF. RESET to END SESSION or PAUSE to SUSPEND SESSION."
-                        color: 1, 0.5, 0.5, 1
-                        bold: True
-                        font_size: '14sp'
-                        size_hint_y: 0.4
-                    BoxLayout:
-                        spacing: 20
-                        Button:
-                            text: "RESET (END SESSION)"
-                            background_color: 0.8, 0.2, 0.2, 1
-                            on_release: root.on_confirm_reset()
-                        Button:
-                            text: "PAUSE (SUSPEND SESSION)"
-                            background_color: 0.2, 0.4, 0.8, 1
-                            on_release: root.on_recover_pause()
+                    
+                    Button:
+                        text: "RESET SESSION"
+                        background_color: 0.8, 0.2, 0.2, 1
+                        on_release: root.on_confirm_reset()
+
+                    Button:
+                        text: "PAUSE SESSION"
+                        background_color: 0.2, 0.4, 0.8, 1
+                        on_release: root.on_recover_pause()
+
+                    Button:
+                        text: "RESUME SESSION"
+                        background_color: 0.2, 0.8, 0.2, 1
+                        on_release: root.on_confirm_resume()
                             
             Screen:
                 name: 'nav_mode_confirm'
@@ -646,139 +744,164 @@
     background_color: 0.2, 0.2, 0.2, 1
     on_release: app.open_profile_options(self.profile_id, self.text)
 
-# --- PROFILE EDITOR SCREEN ---
-<ProfileEditorScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: 10
-        spacing: 10
-        canvas.before:
-            Color:
-                rgba: 0.05, 0.05, 0.05, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
-
-        # Header
-        BoxLayout:
-            size_hint_y: None
-            height: '50dp'
-            spacing: 10
-            Label:
-                text: "Profile Name:"
-                size_hint_x: 0.25
-                color: 0.6, 0.6, 0.6, 1
-            TextInput:
-                id: input_name
-                text: root.temp_name
-                font_size: '24sp'
-                multiline: False
-                background_color: 0.2, 0.2, 0.2, 1
-                foreground_color: 1, 1, 1, 1
-                cursor_color: 0.2, 0.8, 0.2, 1
-                on_text: root.temp_name = self.text
-
-        # Steps Header
-        BoxLayout:
-            size_hint_y: None
-            height: '30dp'
-            canvas.before:
-                Color:
-                    rgba: 0.2, 0.2, 0.2, 1
-                Rectangle:
-                    pos: self.pos
-                    size: self.size
-            Label:
-                text: "#"
-                size_hint_x: 0.1
-                bold: True
-            Label:
-                text: "Step Name"
-                size_hint_x: 0.5
-                bold: True
-            Label:
-                text: "Target / Time"
-                size_hint_x: 0.3
-                bold: True
-            Label:
-                text: "Action"
-                size_hint_x: 0.1
-                bold: True
-
-        # Editable Steps List
-        RecycleView:
-            id: rv_editor_steps
-            viewclass: 'EditorStepItem'
-            scroll_type: ['bars', 'content']
-            bar_width: 10
-            RecycleBoxLayout:
-                default_size: None, dp(60)
-                default_size_hint: 1, None
-                size_hint_y: None
-                height: self.minimum_height
-                orientation: 'vertical'
-                spacing: 2
-
-        # Footer Actions
-        BoxLayout:
-            size_hint_y: None
-            height: '60dp'
-            spacing: 10
-            
-            Button:
-                text: "CANCEL"
-                background_color: 0.8, 0.2, 0.2, 1
-                on_release: root.cancel_edit()
-            
-            Button:
-                text: "ADD STEP"
-                background_color: 0.2, 0.4, 0.8, 1
-                on_release: root.add_new_step()
-
-            Button:
-                text: "SAVE PROFILE"
-                background_color: 0.2, 0.8, 0.2, 1
-                on_release: root.save_profile()
-
-<EditorStepItem@BoxLayout>:
-    step_index: 0
-    step_name: ''
-    step_desc: ''
+# --- NEW: Child Row for Alerts (Indented) ---
+<EditorAlertChildItem>:
     orientation: 'horizontal'
     size_hint_y: None
-    height: '60dp'
-    padding: 5
+    height: '35dp'
+    padding: [50, 0, 10, 0]
     canvas.before:
         Color:
             rgba: 0.15, 0.15, 0.15, 1
         Rectangle:
             pos: self.pos
             size: self.size
-
     Label:
-        text: str(root.step_index)
-        size_hint_x: 0.1
-    
-    Button:
-        text: root.step_name
-        size_hint_x: 0.5
-        background_color: 0, 0, 0, 0
+        text: root.text
+        font_size: '16sp'
+        color: 0.7, 0.7, 0.7, 1
         halign: 'left'
-        valign: 'center'
         text_size: self.size
-        on_release: app.open_step_editor(root.step_index - 1)
+        valign: 'middle'
 
+# --- UPDATED: Parent Step Row with Arrow ---
+<EditorStepItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '50dp'
+    padding: 5
+    spacing: 10
+    canvas.before:
+        Color:
+            rgba: 0.2, 0.2, 0.2, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            
+    # Arrow / Expander
+    Button:
+        text: root.arrow_text
+        size_hint_x: None
+        width: '40dp'
+        background_color: 0,0,0,0
+        opacity: root.arrow_opacity
+        disabled: root.arrow_disabled
+        on_release: app.root.get_screen('editor').toggle_step_expansion(root.step_index)
+
+    # Index
     Label:
-        text: root.step_desc
-        size_hint_x: 0.3
-        color: 0.6, 0.6, 0.6, 1
+        text: root.display_index
+        size_hint_x: None
+        width: '30dp'
+        bold: True
+        color: 0.5, 0.5, 0.5, 1
 
+    # Name & Desc
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: root.step_name
+            text_size: self.size
+            halign: 'left'
+            valign: 'bottom'
+            bold: True
+            font_size: '18sp'
+        Label:
+            text: root.step_desc
+            text_size: self.size
+            halign: 'left'
+            valign: 'top'
+            font_size: '14sp'
+            color: 0.7, 0.7, 0.7, 1
+
+    # Edit
+    Button:
+        text: "EDIT"
+        size_hint_x: None
+        width: '60dp'
+        background_color: 0.2, 0.4, 0.8, 1
+        on_release: app.open_step_editor(root.step_index)
+
+    # Delete
     Button:
         text: "X"
-        size_hint_x: 0.1
+        size_hint_x: None
+        width: '40dp'
         background_color: 0.8, 0.2, 0.2, 1
-        on_release: app.delete_step_from_editor(root.step_index - 1)
+        on_release: app.delete_step_from_editor(root.step_index)
 
+
+# --- UPDATED: Profile Editor Screen RecycleView ---
+<ProfileEditorScreen>:
+    name: 'editor'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 15
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # Header (Name Input)
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            spacing: 10
+            Label:
+                text: "Profile Name:"
+                size_hint_x: None
+                width: '120dp'
+            TextInput:
+                text: root.temp_name
+                multiline: False
+                font_size: '20sp'
+                on_text: root.temp_name = self.text
+
+        # --- STEPS LIST (FIXED) ---
+        RecycleView:
+            id: rv_editor_steps
+            key_viewclass: 'view_type'
+            scroll_type: ['bars', 'content']
+            bar_width: 15
+            
+            # USE GRID LAYOUT TO FORCE 1 COLUMN
+            RecycleGridLayout:
+                cols: 1                       # <--- GUARANTEES 1 COLUMN
+                default_size: None, None
+                default_size_hint: 1, None    # Forces items to full width
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: 2
+
+        # Footer Actions
+        BoxLayout:
+            size_hint_y: None
+            height: '60dp'
+            spacing: 40
+            
+            # DYNAMIC CANCEL BUTTON
+            Button:
+                text: "DISCARD CHANGES" if root.is_dirty else "CANCEL"
+                background_color: (0.8, 0.2, 0.2, 1) if root.is_dirty else (0.6, 0.2, 0.2, 1)
+                on_release: root.cancel_edit()
+
+            # ADD BUTTON (Always available)
+            Button:
+                text: "ADD STEP"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.add_new_step()
+
+            # DYNAMIC SAVE BUTTON
+            Button:
+                text: "SAVE CHANGES" if root.is_dirty else "SAVE PROFILE"
+                background_color: (0.2, 0.8, 0.2, 1) if root.is_dirty else (0.2, 0.6, 0.2, 1)
+                on_release: root.save_profile()
+
+
+# --- NEW STEP EDITOR SCREEN ---
 <StepEditorScreen>:
     name: 'step_editor'
     BoxLayout:
@@ -794,57 +917,76 @@
 
         # --- HEADER ---
         Label:
-            text: "Editing Step: " + root.step_name
-            font_size: '24sp'
+            text: "Edit Step Configuration"
+            font_size: '22sp'
             bold: True
             size_hint_y: None
-            height: '40dp'
+            height: '30dp'
             color: 0.2, 0.8, 0.2, 1
 
-        # --- MAIN CONTROLS (Name, Temp, Time) ---
+        # --- TOP ROW: Type & Advance ---
         BoxLayout:
-            orientation: 'horizontal'
             size_hint_y: None
-            height: '180dp'
+            height: '40dp'
             spacing: 20
+            
+            # Type Spinner
+            Spinner:
+                text: root.selected_type
+                values: root.step_type_options
+                on_text: root.selected_type = self.text
+                background_color: 0.2, 0.4, 0.8, 1
+                size_hint_x: 0.5
 
-            # Left Col: Inputs
+            # Advance Spinner
+            Spinner:
+                text: root.selected_advance
+                values: root.advance_options
+                on_text: root.selected_advance = self.text
+                background_color: 0.3, 0.3, 0.3, 1
+                size_hint_x: 0.5
+
+        # --- NAME INPUT ---
+        BoxLayout:
+            size_hint_y: None
+            height: '40dp'
+            Label:
+                text: "Step Name:"
+                size_hint_x: 0.25
+                halign: 'left'
+            TextInput:
+                text: root.step_name
+                multiline: False
+                on_text: root.step_name = self.text
+                size_hint_x: 0.75
+
+        # --- SLIDERS CONTAINER ---
+        BoxLayout:
+            orientation: 'vertical'
+            spacing: 10
+            
+            # 1. TEMP
             BoxLayout:
-                orientation: 'vertical'
-                spacing: 20
-                
-                # Name
-                BoxLayout:
-                    size_hint_y: None
-                    height: '40dp'
-                    Label:
-                        text: "Name:"
-                        size_hint_x: 0.3
-                    TextInput:
-                        text: root.step_name
-                        multiline: False
-                        on_text: root.step_name = self.text
-
-                # Temp Slider
-                BoxLayout:
-                    orientation: 'vertical'
-                    Label:
-                        text: "Temp: " + str(int(s_temp.value)) + " F"
-                        font_size: '18sp'
-                        color: 0.2, 0.8, 0.2, 1
-                    Slider:
-                        id: s_temp
-                        min: 0
-                        max: 212
-                        value: root.step_temp
-                        on_value: root.step_temp = self.value
-
-            # Right Col: Duration Slider
+                size_hint_y: 1
+                Label: 
+                    # UPDATED: Uses python property for "(BOIL)" logic
+                    text: root.step_target_display
+                    size_hint_x: 0.25
+                    color: (0.5, 0.5, 0.5, 1) if root.is_temp_locked else (1,1,1,1)
+                Slider:
+                    id: s_temp
+                    min: 70
+                    max: 212
+                    value: root.step_temp
+                    disabled: root.is_temp_locked
+                    on_value: if not self.disabled: root.step_temp = self.value     # <--- USE THIS
+            
+            # 2. DURATION
             BoxLayout:
-                orientation: 'vertical'
-                Label:
-                    text: "Duration: " + str(int(s_dur.value)) + " min"
-                    font_size: '18sp'
+                size_hint_y: 1
+                Label: 
+                    text: f"Time: {int(s_dur.value)} m"
+                    size_hint_x: 0.25
                     color: 0.2, 0.6, 1, 1
                 Slider:
                     id: s_dur
@@ -853,18 +995,90 @@
                     value: root.step_dur
                     on_value: root.step_dur = self.value
 
-        # --- SEPARATOR ---
-        Label:
-            text: "Alerts & Additions"
-            size_hint_y: None
-            height: '30dp'
-            bold: True
+            # 3. VOLUME
+            BoxLayout:
+                size_hint_y: 1
+                Label: 
+                    # UPDATED: "Volume" and 2 decimal places
+                    text: f"Volume: {root.step_vol:.2f} Gal"
+                    size_hint_x: 0.25
+                    color: 0.2, 0.6, 0.8, 1
+                Slider:
+                    id: s_vol
+                    min: 2     # UPDATED
+                    max: 9     # UPDATED
+                    step: 0.25 # UPDATED
+                    value: root.step_vol
+                    on_value: root.step_vol = self.value
 
-        # --- ALERTS LIST ---
+            # 4. POWER
+            BoxLayout:
+                size_hint_y: 1
+                Label: 
+                    # UPDATED: "Power" label
+                    text: f"Power: {root.display_power}"
+                    size_hint_x: 0.25
+                    color: 1, 0.6, 0.2, 1
+                Slider:
+                    id: s_pwr
+                    min: 0
+                    max: 3
+                    step: 1
+                    value: root.step_power_idx
+                    on_value: root.step_power_idx = self.value
+
+        # --- FOOTER ACTIONS ---
+        BoxLayout:
+            size_hint_y: None
+            height: '60dp'
+            spacing: 20
+            padding: [0, 10, 0, 0]
+            
+            # DYNAMIC LEFT BUTTON
+            Button:
+                text: "DISCARD CHANGES" if root.is_dirty else "CANCEL"
+                background_color: (0.8, 0.2, 0.2, 1) if root.is_dirty else (0.5, 0.5, 0.5, 1)
+                on_release: root.cancel()
+
+            Button:
+                text: "ALERTS & ADDITIONS >"
+                background_color: 0.2, 0.4, 0.6, 1
+                on_release: root.open_alerts_screen()
+                
+            # DYNAMIC RIGHT BUTTON
+            Button:
+                text: "APPLY CHANGES" if root.is_dirty else "APPLY"
+                background_color: (0.2, 0.8, 0.2, 1) if root.is_dirty else (0.3, 0.6, 0.3, 1)
+                on_release: root.save_step()
+
+# --- NEW ALERTS MANAGEMENT SCREEN ---
+<StepAlertsScreen>:
+    name: 'step_alerts'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.08, 0.08, 0.08, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # --- HEADER ---
+        Label:
+            text: "Alerts for: " + root.step_name
+            font_size: '20sp'
+            size_hint_y: None
+            height: '40dp'
+            color: 0.2, 0.6, 1, 1
+
+        # --- LIST ---
         RecycleView:
             id: rv_alerts
             viewclass: 'AlertItem'
-            data: [{'name': x['name'], 'time': x['time']} for x in root.current_additions]
+            # Pass index to enable click-to-edit
+            data: [{'name': x['name'], 'time': x['time'], 'index': i} for i, x in enumerate(root.local_additions)]
             scroll_type: ['bars', 'content']
             bar_width: 15
             RecycleBoxLayout:
@@ -875,83 +1089,79 @@
                 orientation: 'vertical'
                 spacing: 2
 
-        # --- ADD NEW ALERT ROW ---
+        # --- EDITING AREA ---
         BoxLayout:
+            orientation: 'vertical'
             size_hint_y: None
-            height: '50dp'
+            height: '140dp'
             spacing: 10
-            TextInput:
-                text: root.new_alert_name
-                hint_text: "Alert Name"
-                multiline: False
-                size_hint_x: 0.4
-                on_text: root.new_alert_name = self.text
+            padding: 10
+            canvas.before:
+                Color: 
+                    rgba: 0.15, 0.15, 0.15, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
             
-            Label:
-                text: "@ " + str(int(alert_slider.value)) + "m"
-                size_hint_x: 0.15
+            # Inputs
+            BoxLayout:
+                size_hint_y: 0.5
+                spacing: 10
+                TextInput:
+                    text: root.new_alert_name
+                    hint_text: "Alert Name"
+                    multiline: False
+                    size_hint_x: 0.6
+                    on_text: root.new_alert_name = self.text
+                
+                Label:
+                    text: f"@ {int(alert_slider.value)} min"
+                    size_hint_x: 0.4
             
+            # Slider
             Slider:
                 id: alert_slider
                 min: 0
                 max: 120
+                size_hint_y: 0.4
                 value: root.new_alert_time
                 on_value: root.new_alert_time = self.value
-                size_hint_x: 0.3
-            
-            Button:
-                text: "ADD"
-                size_hint_x: 0.15
-                background_color: 0.2, 0.6, 0.2, 1
-                on_release: root.add_alert()
 
-        # --- FOOTER ACTIONS ---
+            # Action Buttons
+            BoxLayout:
+                size_hint_y: 0.5
+                spacing: 20
+                
+                Button:
+                    text: "DELETE"
+                    disabled: root.editing_index == -1
+                    background_color: (0.8, 0.2, 0.2, 1) if not self.disabled else (0.3, 0.3, 0.3, 1)
+                    on_release: root.delete_alert()
+
+                Button:
+                    text: root.btn_text
+                    background_color: 0.2, 0.6, 0.2, 1
+                    on_release: root.add_or_update()
+
+        # --- FOOTER ---
         BoxLayout:
             size_hint_y: None
             height: '60dp'
-            spacing: 40
-            padding: [20, 10, 20, 0]
+            spacing: 20
             
+            # Left Button: DISCARD / CANCEL
             Button:
-                text: "CANCEL"
-                font_size: '18sp'
-                background_color: 0.6, 0.2, 0.2, 1
-                on_release: root.cancel()
-            
-            Button:
-                text: "SAVE STEP"
-                font_size: '18sp'
-                background_color: 0.2, 0.8, 0.2, 1
-                on_release: root.save_step()
+                text: "DISCARD CHANGES" if root.is_dirty else "CANCEL"
+                background_color: (0.8, 0.2, 0.2, 1) if root.is_dirty else (0.5, 0.5, 0.5, 1)
+                on_release: root.discard_changes()
 
-# Item row for the Alerts list
-<AlertItem@BoxLayout>:
-    orientation: 'horizontal'
-    name: ''
-    time: 0
-    canvas.before:
-        Color:
-            rgba: 0.2, 0.2, 0.2, 1
-        Rectangle:
-            pos: self.pos
-            size: self.size
-            
-    Label:
-        text: root.name
-        size_hint_x: 0.6
-        halign: 'left'
-        text_size: self.size
-        valign: 'center'
-        padding_x: 10
-    Label:
-        text: "@ " + str(int(root.time)) + " min"
-        size_hint_x: 0.3
-    Button:
-        text: "X"
-        size_hint_x: 0.1
-        background_color: 0.8, 0.2, 0.2, 1
-        on_release: app.get_running_app().remove_alert_from_popup(root.name)
-        
+            # Right Button: APPLY
+            Button:
+                text: "APPLY CHANGES" if root.is_dirty else "APPLY"
+                background_color: (0.2, 0.8, 0.2, 1) if root.is_dirty else (0.2, 0.6, 0.2, 1)
+                on_release: root.apply_changes()
+
+       
 # --- SETTINGS HUB ---
 <SystemSettingsScreen>:
     BoxLayout:
