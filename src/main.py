@@ -789,6 +789,18 @@ class MainScreen(Screen):
         """
         seq = self.app.sequencer
         
+        # --- NEW SAFETY CHECK ---
+        # If temp is 0.0 or None, it likely means Unassigned or Error
+        # But allow bypass if user is just navigating, unless they try to START heaters.
+        # Ideally, we block entry entirely or block the START button.
+        # Per request, we intercept the navigation here.
+        current_temp = seq.current_temp if seq.current_temp is not None else 0.0
+        if current_temp == 0.0:
+             self.ids.bottom_nav.transition.direction = 'up'
+             self.ids.bottom_nav.current = 'nav_temp_warning'
+             return
+        # ------------------------
+
         # NEW: If Delay is Active, just show the screen.
         # Do NOT change mode, do NOT call enter_manual_mode().
         if seq.status == SequenceStatus.DELAYED_WAIT:
@@ -812,6 +824,14 @@ class MainScreen(Screen):
         If Manual is currently running (Timer/PID active), ask for confirmation.
         """
         seq = self.app.sequencer
+        
+        # --- NEW SAFETY CHECK ---
+        current_temp = seq.current_temp if seq.current_temp is not None else 0.0
+        if current_temp == 0.0:
+             self.ids.bottom_nav.transition.direction = 'up'
+             self.ids.bottom_nav.current = 'nav_temp_warning'
+             return
+        # ------------------------
         
         # NEW: If Delay is Active, just show the screen.
         if seq.status == SequenceStatus.DELAYED_WAIT:
@@ -838,26 +858,65 @@ class MainScreen(Screen):
         self.ids.bottom_nav.transition.direction = 'up'
         self.ids.bottom_nav.current = 'nav_mode_confirm'
 
-    def confirm_mode_switch(self):
-        """Executed when user clicks RESET SESSION."""
-        # 1. Hard Stop the current session
-        self.app.sequencer.stop()
+    def prompt_profile_load(self):
+        """
+        Redirects user to Dashboard and slides up the Warning.
+        """
+        # 1. Force navigation to Dashboard so they see the running state
+        self.manager.current = 'main'
         
-        # 2. Perform the switch based on target
-        if self.mode_switch_target == 'manual':
+        # 2. Configure the shared Confirmation Slider
+        self.mode_switch_target = 'profile_load'
+        self.mode_reset_btn_text = "RESET SESSION & LOAD PROFILE"
+        
+        # 3. Slide it up
+        self.ids.bottom_nav.transition.direction = 'up'
+        self.ids.bottom_nav.current = 'nav_mode_confirm'
+
+    # UPDATE this existing method
+    def confirm_mode_switch(self):
+        """Executed when user clicks the Red Action Button."""
+        
+        # 1. Handle Profile Load (NEW)
+        if self.mode_switch_target == 'profile_load':
+            self.app.finish_pending_load()
+            
+        # 2. Handle Manual Switch (Existing)
+        elif self.mode_switch_target == 'manual':
+            self.app.sequencer.stop() # Hard Stop
             self.ids.center_content.current = 'page_manual'
             self.app.sequencer.enter_manual_mode()
             
+        # 3. Handle Auto Switch (Existing)
         elif self.mode_switch_target == 'auto':
+            self.app.sequencer.stop() # Hard Stop
             self.ids.center_content.current = 'page_auto'
-            # seq.stop() already put us in IDLE, which is correct for Auto start
             
-        # 3. Restore Bottom Nav
+        # 4. Restore Bottom Nav
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
 
     def cancel_mode_switch(self):
         """Executed when user clicks CANCEL."""
+        self.ids.bottom_nav.transition.direction = 'down'
+        self.ids.bottom_nav.current = 'nav_standard'
+    
+    def open_hardware_setup(self):
+        """
+        Called by 'ASSIGN TEMP PROBE' button in the warning slider.
+        Navigates to the Hardware Settings screen.
+        """
+        # 1. Close the warning slider immediately
+        self.ids.bottom_nav.transition.direction = 'down'
+        self.ids.bottom_nav.current = 'nav_standard'
+        
+        # 2. Navigate to Hardware Settings
+        self.manager.current = 'settings_hw'
+
+    def cancel_temp_warning(self):
+        """
+        Called by 'CANCEL' button in the warning slider.
+        """
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
     
@@ -895,6 +954,8 @@ class MainScreen(Screen):
         self.ids.bottom_nav.transition.direction = 'up'
         self.ids.bottom_nav.current = 'nav_confirm'
 
+    # In src/main.py
+
     def on_confirm_reset(self):
         """
         Resets the system but keeps the user on their current mode (Manual or Auto).
@@ -907,8 +968,9 @@ class MainScreen(Screen):
             # If we were in Manual, this Resets the sequencer AND sets status back to MANUAL
             self.app.sequencer.enter_manual_mode()
         else:
-            # If we were in Auto, this Resets the sequencer to IDLE (which defaults to Auto view)
-            self.app.sequencer.stop()
+            # If we were in Auto, calling stop() would unload the profile.
+            # reset_profile() stops the relays and rewinds to Step 1, but keeps the profile loaded.
+            self.app.sequencer.reset_profile()
 
         # 3. Restore Bottom Navigation
         self.ids.bottom_nav.transition.direction = 'down'
@@ -1770,13 +1832,14 @@ class KettleApp(App):
     
     def build(self):
         self.title = "KettleBrain"
-        # ... (Existing Path Logic) ...
         src_dir = os.path.dirname(os.path.abspath(__file__))
         project_dir = os.path.dirname(src_dir)
         root_dir = os.path.dirname(project_dir)
         
         self.settings_manager = SettingsManager(root_dir)
         self.hw = HardwareInterface(self.settings_manager)
+        
+        pending_profile_id = StringProperty(None)
         
         # Initialize relay control and sequencer
         from relay_control import RelayControl
@@ -2039,27 +2102,43 @@ class KettleApp(App):
         popup.open()
 
     def load_profile(self, profile_id):
+        """
+        Request to load a profile.
+        If system is IDLE, loads immediately.
+        If system is BUSY (Manual/Auto/Delay), prompts user on Main Screen.
+        """
+        seq = self.sequencer
+        
+        # 1. Check if System is Busy
+        # We consider anything other than IDLE as "Active/Running" for safety.
+        if seq.status != SequenceStatus.IDLE:
+            # Store ID and Prompt User
+            self.pending_profile_id = profile_id
+            self.main_screen.prompt_profile_load()
+            return
+
+        # 2. Immediate Load (System is Idle)
+        self._execute_load_profile(profile_id)
+
+    def finish_pending_load(self):
+        """Called by MainScreen when user confirms RESET & LOAD."""
+        if self.pending_profile_id:
+            # Force Stop (clears status, relays, but not profile object yet)
+            self.sequencer.stop()
+            # Execute Load
+            self._execute_load_profile(self.pending_profile_id)
+            self.pending_profile_id = None
+
+    def _execute_load_profile(self, profile_id):
+        """Internal helper to actually load the data and switch views."""
         profile = self.settings_manager.get_profile_by_id(profile_id)
         if profile:
-            seq = self.sequencer
-            
-            # CHECK: Is Delay Active?
-            if seq.status == SequenceStatus.DELAYED_WAIT:
-                # 1. Inject Profile Data silently (Do NOT call load_profile which resets status)
-                seq.current_profile = profile
-                seq.current_step_index = 0 # Pre-select first step
-                
-                # 2. Update UI View
-                self.root.current = 'main'
-                self.main_screen.ids.center_content.current = 'page_auto'
-                
-                # Note: update_ui loop will see the new profile and refresh the list automatically.
-            else:
-                # Normal Load (Resets system to IDLE/Ready)
-                seq.load_profile(profile)
-                self.root.current = 'main'
-                self.main_screen.ids.center_content.current = 'page_auto'
-
+            self.sequencer.load_profile(profile)
+            self.root.current = 'main'
+            self.main_screen.ids.center_content.current = 'page_auto'
+            # Trigger refresh
+            self.main_screen.refresh_step_list()
+    
     def copy_profile(self, profile_id):
         original = self.settings_manager.get_profile_by_id(profile_id)
         if original:

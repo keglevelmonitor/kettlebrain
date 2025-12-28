@@ -603,30 +603,49 @@
             Screen:
                 name: 'nav_mode_confirm'
                 BoxLayout:
-                    orientation: 'vertical'
+                    orientation: 'horizontal'
                     padding: 5
+                    spacing: 10
                     canvas.before:
                         Color:
                             rgba: 0.15, 0.05, 0, 1 # Dark Amber/Red Background
                         Rectangle:
                             pos: self.pos
                             size: self.size
-                    Label:
-                        text: root.mode_confirm_msg
-                        color: 1, 0.8, 0, 1 # Warning Orange
-                        bold: True
-                        font_size: '14sp'
-                        size_hint_y: 0.4
-                    BoxLayout:
-                        spacing: 20
-                        Button:
-                            text: root.mode_reset_btn_text
-                            background_color: 0.8, 0.2, 0.2, 1 # Red
-                            on_release: root.confirm_mode_switch()
-                        Button:
-                            text: "CANCEL"
-                            background_color: 0.5, 0.5, 0.5, 1 # Grey
-                            on_release: root.cancel_mode_switch()
+                    
+                    # Text removed as requested. Buttons now fill the space.
+
+                    Button:
+                        text: root.mode_reset_btn_text
+                        background_color: 0.8, 0.2, 0.2, 1 # Red
+                        on_release: root.confirm_mode_switch()
+                    Button:
+                        text: "CANCEL"
+                        background_color: 0.5, 0.5, 0.5, 1 # Grey
+                        on_release: root.cancel_mode_switch()
+                        
+            Screen:
+                name: 'nav_temp_warning'
+                BoxLayout:
+                    orientation: 'horizontal'
+                    padding: 5
+                    spacing: 10
+                    canvas.before:
+                        Color:
+                            rgba: 0.2, 0.2, 0.2, 1
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+                    
+                    Button:
+                        text: "ASSIGN TEMP PROBE"
+                        background_color: 1, 0.6, 0, 1 # Orange/Amber
+                        on_release: root.open_hardware_setup()
+
+                    Button:
+                        text: "CANCEL"
+                        background_color: 0.5, 0.5, 0.5, 1
+                        on_release: root.cancel_temp_warning()
 
 # --- PROFILES SCREEN ---
 <ProfilesScreen>:
@@ -1343,6 +1362,7 @@
                 on_release: root.save_changes()
 
 # --- NEW APP SETTINGS SCREEN ---
+# --- NEW APP SETTINGS SCREEN (Refactored Layout) ---
 <AppSettingsScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -1374,107 +1394,160 @@
                 BoxLayout:
                     size_hint_y: None
                     height: '60dp'
+                    
+                    # 1. Label Column (50% Width)
                     Label:
                         text: "Display Units:"
-                        size_hint_x: 0.7
+                        size_hint_x: 0.5
                         halign: 'left'
                         text_size: self.size
                         valign: 'middle'
+                        padding_x: 20
+
+                    # 2. Control (Fixed Width, near center)
                     Spinner:
                         text: root.units_text
                         values: ["Imperial (°F / Gal)", "Metric (°C / L)"]
-                        size_hint_x: 0.3
+                        size_hint_x: None
+                        width: '200dp'
                         background_color: 0.2, 0.2, 0.2, 1
                         on_text: root.units_text = self.text
+                        
+                    # 3. Spacer (Takes remaining space on right)
+                    Widget:
+                        size_hint_x: 0.5
 
                 # --- AUTO START ---
                 BoxLayout:
                     size_hint_y: None
                     height: '60dp'
+                    
+                    # 1. Text Column (50% Width)
                     BoxLayout:
                         orientation: 'vertical'
+                        size_hint_x: 0.5
                         Label:
                             text: "Auto-Start on Boot"
                             halign: 'left'
                             text_size: self.size
                             valign: 'middle'
                             bold: True
+                            padding_x: 20
                         Label:
                             text: "Launch KettleBrain when Pi boots up"
                             color: 0.6, 0.6, 0.6, 1
                             font_size: '14sp'
                             halign: 'left'
                             text_size: self.size
+                            padding_x: 20
+                    
+                    # 2. Control
                     Switch:
                         active: root.auto_start
                         on_active: root.auto_start = self.active
                         size_hint_x: None
                         width: '80dp'
+                        
+                    # 3. Spacer
+                    Widget:
+                        size_hint_x: 0.5
 
-                # --- AUTO RESUME (Dependent on Auto Start) ---
+                # --- AUTO RESUME ---
                 BoxLayout:
                     size_hint_y: None
                     height: '60dp'
                     opacity: 1 if root.auto_start else 0.5
+                    
+                    # 1. Text Column (50% Width)
                     BoxLayout:
                         orientation: 'vertical'
+                        size_hint_x: 0.5
                         Label:
                             text: "Auto-Resume Logic"
                             halign: 'left'
                             text_size: self.size
                             valign: 'middle'
                             bold: True
+                            padding_x: 20
                         Label:
                             text: "Recover state after power loss"
                             color: 0.6, 0.6, 0.6, 1
                             font_size: '14sp'
                             halign: 'left'
                             text_size: self.size
+                            padding_x: 20
+                    
+                    # 2. Control
                     Switch:
                         active: root.auto_resume
                         disabled: not root.auto_start
                         on_active: root.auto_resume = self.active
                         size_hint_x: None
                         width: '80dp'
+                        
+                    # 3. Spacer
+                    Widget:
+                        size_hint_x: 0.5
 
                 # --- FORCE NUMLOCK ---
                 BoxLayout:
                     size_hint_y: None
                     height: '60dp'
+                    
+                    # 1. Text Column
                     Label:
                         text: "Force NumLock ON"
                         halign: 'left'
                         text_size: self.size
                         valign: 'middle'
+                        padding_x: 20
+                        size_hint_x: 0.5
+                    
+                    # 2. Control
                     Switch:
                         active: root.force_numlock
                         on_active: root.force_numlock = self.active
                         size_hint_x: None
                         width: '80dp'
+                        
+                    # 3. Spacer
+                    Widget:
+                        size_hint_x: 0.5
 
                 # --- CSV LOGGING ---
                 BoxLayout:
                     size_hint_y: None
                     height: '60dp'
+                    
+                    # 1. Text Column
                     BoxLayout:
                         orientation: 'vertical'
+                        size_hint_x: 0.5
                         Label:
                             text: "CSV Data Logging"
                             halign: 'left'
                             text_size: self.size
                             valign: 'middle'
                             bold: True
+                            padding_x: 20
                         Label:
                             text: "Save Temp/Power logs to file"
                             color: 0.6, 0.6, 0.6, 1
                             font_size: '14sp'
                             halign: 'left'
                             text_size: self.size
+                            padding_x: 20
+                    
+                    # 2. Control
                     Switch:
                         active: root.csv_logging
                         on_active: root.csv_logging = self.active
                         size_hint_x: None
                         width: '80dp'
+                        
+                    # 3. Spacer
+                    Widget:
+                        size_hint_x: 0.5
 
         # --- FOOTER ---
         BoxLayout:
@@ -1678,5 +1751,3 @@
                 disabled: root.is_working
                 on_release: root.go_back()
 
-
-            

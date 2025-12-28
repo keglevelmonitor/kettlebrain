@@ -1,6 +1,6 @@
 {
-    "5999b813-cce7-44cd-8cde-5e28987a1153": {
-        "id": "5999b813-cce7-44cd-8cde-5e28987a1153",
+    "77a25e1c-2473-443d-b1c5-9703de92de78": {
+        "id": "77a25e1c-2473-443d-b1c5-9703de92de78",
         "name": "Default Profile",
         "water_data": {
             "calc_method": "no_sparge",
@@ -17,7 +17,7 @@
         "chemistry_data": {},
         "steps": [
             {
-                "id": "958fb6f3-ebc1-4b82-9adb-ab9304e0cb15",
+                "id": "d32fd6ff-1f0b-47bb-88ca-fd21b06ef0e6",
                 "name": "Step",
                 "step_type": "Step",
                 "note": "Heat to dough-in, reserve water, dough-in.",
@@ -34,24 +34,24 @@
                 "lauter_volume": 7.5,
                 "additions": [
                     {
-                        "id": "da32af66-dcbc-46c1-a28b-d67af5c7e612",
+                        "id": "653c563a-dcc1-4e57-88d8-fe8492c2730c",
                         "name": "Reserve 1.5 Gal for lautering",
                         "time_point_min": 0
                     },
                     {
-                        "id": "d6efd576-6e25-4e34-87ad-032446224740",
+                        "id": "06777243-9a70-4aa2-8d1b-d153d944d19a",
                         "name": "Dough-in",
                         "time_point_min": 0
                     },
                     {
-                        "id": "e9ebd06d-6c7d-43c5-902a-b927fc442349",
+                        "id": "9e21eb7a-4208-4a94-bca4-4f2b115ff0e4",
                         "name": "Turn on pump",
                         "time_point_min": 0
                     }
                 ]
             },
             {
-                "id": "f3c5f1a5-2ee7-4dce-8e40-c663f1ba6ed1",
+                "id": "1a72d955-a3ba-483c-a61c-100d311f8c4e",
                 "name": "Mash",
                 "step_type": "Mash",
                 "note": "Mash and take SG reading",
@@ -68,14 +68,14 @@
                 "lauter_volume": 6.5,
                 "additions": [
                     {
-                        "id": "f081fb25-2c9a-4d8f-99db-80814b9a6259",
+                        "id": "971f734a-10dd-4070-b902-0fba9c292c01",
                         "name": "Take SG reading",
                         "time_point_min": 0
                     }
                 ]
             },
             {
-                "id": "7117fac7-fcd1-46d3-a843-97e4e9355eee",
+                "id": "51fa53ab-b15b-4849-ba09-382b3e4337e1",
                 "name": "Mash-out",
                 "step_type": "Mash-out",
                 "note": "Mash-out, turn off pump, lift basket, lauter",
@@ -92,24 +92,24 @@
                 "lauter_volume": null,
                 "additions": [
                     {
-                        "id": "326ec3a6-3f6c-4873-8cf6-0cc0f101c172",
+                        "id": "f2519d4c-8764-437b-b9c3-1479ec83465e",
                         "name": "Turn off pump",
                         "time_point_min": 0
                     },
                     {
-                        "id": "3179d5e2-3fa3-41f6-9379-536b170fb8f7",
+                        "id": "bfcc7ff0-6e1a-43c6-9f73-9bf0095b2886",
                         "name": "Lift grain basket",
                         "time_point_min": 0
                     },
                     {
-                        "id": "fd7ad4a7-26dd-4de4-ade1-c3d8fad0df2f",
+                        "id": "ff233f7a-b2ea-462e-a71e-44b102a0a346",
                         "name": "Lauter with reserved water",
                         "time_point_min": 0
                     }
                 ]
             },
             {
-                "id": "edee7358-1d15-4ffa-a025-ddbbc4225b76",
+                "id": "c3f0a8c5-b4ad-4b93-8f5d-251b5a077708",
                 "name": "Boil",
                 "step_type": "Boil",
                 "note": "Boil and follow hops schedule",
@@ -126,29 +126,29 @@
                 "lauter_volume": 6.5,
                 "additions": [
                     {
-                        "id": "99c69eb5-af2a-4cd4-8958-26ac3efd4ce5",
+                        "id": "342b92b6-1f8d-498c-89bb-8dad2e8e61a7",
                         "name": "Bittering hops",
                         "time_point_min": 60
                     },
                     {
-                        "id": "7c88008b-eaa6-4fce-86ee-7ad7611f2eb5",
+                        "id": "50732e74-5205-4c0d-9815-7305418dcef3",
                         "name": "Flavor hops",
                         "time_point_min": 30
                     },
                     {
-                        "id": "032deeff-a0c2-4e77-9656-bb40bb1a88d6",
+                        "id": "63685a40-88cf-4bda-8373-191c9b0f1bbd",
                         "name": "Irish Moss",
                         "time_point_min": 10
                     },
                     {
-                        "id": "9855b910-1770-413b-8026-f2e112130824",
+                        "id": "cb1bf31a-e026-436b-9f24-acbab151f353",
                         "name": "Aroma hops",
                         "time_point_min": 5
                     }
                 ]
             },
             {
-                "id": "31b99e66-cc6c-427c-9c51-dcb912dda185",
+                "id": "1ddc57a8-9a2f-46ae-a794-801fcc7f3346",
                 "name": "Chill",
                 "step_type": "Chill",
                 "note": "",
@@ -165,7 +165,7 @@
                 "lauter_volume": 5.5,
                 "additions": [
                     {
-                        "id": "3c384659-06cd-4b04-9f1e-cbf9bfb27963",
+                        "id": "ae31411d-d657-4d29-96a3-de04b971b8a3",
                         "name": "Take SG reading",
                         "time_point_min": 0
                     }

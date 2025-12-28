@@ -156,10 +156,9 @@ class SequenceManager:
 
     def reset_profile(self):
         """
-        Stops the current sequence and resets the profile pointers to the beginning,
-        clearing all triggered alerts so the profile can be run again from scratch.
+        Stops the sequence and rewinds to Step 1.
         """
-        # 1. Safety Stop (Heaters Off, Status=IDLE, Index=-1)
+        # 1. Stop (Now safe to use)
         self.stop()
         
         # 2. Rewind to Step 0 (Ready to Start)
@@ -524,14 +523,14 @@ class SequenceManager:
         self.is_manual_running = False
         self.is_heating = False
         
-        # FIX: Use RelayControl method, not HardwareInterface
+        # Turn off hardware
         if hasattr(self, 'relay'):
             self.relay.stop_all()
         elif hasattr(self, 'relays'):
              self.relays.stop_all()
         
         self.current_step_index = -1
-        self.current_profile = None
+        # REMOVED: self.current_profile = None  <-- Kept to ensure profile persists
         self.step_start_time = 0.0
         self.log_message("STOPPED / RESET")
 
