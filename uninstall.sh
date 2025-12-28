@@ -13,8 +13,10 @@ clear
 echo "=========================================="
 echo "    KettleBrain Suite Uninstaller"
 echo "=========================================="
-# ... (Keep existing prompt logic "APP" vs "ALL" from your original file) ...
-
+echo "Please choose an option (Case Sensitive):"
+echo "  APP  - Uninstall ONLY the application."
+echo "  ALL  - Uninstall the application AND all data."
+echo ""
 read -p "Enter your choice (APP or ALL): " choice
 
 if [ "$choice" == "APP" ]; then
@@ -25,7 +27,16 @@ else
     exit 0
 fi
 
-# ... (Keep existing confirmation prompt) ...
+echo "------------------------------------------"
+echo "YOU ARE ABOUT TO DELETE:"
+echo "$TO_DELETE"
+echo "------------------------------------------"
+read -p "Type YES to confirm: " confirm
+
+if [ "$confirm" != "YES" ]; then
+    echo "Cancelled."
+    exit 0
+fi
 
 echo "Removing files..."
 
@@ -43,13 +54,13 @@ fi
 # 2. Remove App Directory
 if [ -d "$APP_DIR" ]; then
     rm -rf "$APP_DIR"
-    echo " - Removed application directory: $APP_DIR"
+    echo " - Removed application directory"
 fi
 
 # 3. Remove Data Directory
 if [ "$choice" == "ALL" ] && [ -d "$DATA_DIR" ]; then
     rm -rf "$DATA_DIR"
-    echo " - Removed data directory: $DATA_DIR"
+    echo " - Removed data directory"
 fi
 
 # 4. Remove AutoStart
