@@ -34,9 +34,9 @@
             tab_width: self.parent.width / 3
             background_color: 0.1, 0.1, 0.1, 1
             
-            # --- TAB 1: GRAIN BILL (The Main Inputs) ---
+            # --- TAB 1: WATER (Renamed & No Button) ---
             TabbedPanelItem:
-                text: "Grain Bill"
+                text: "WATER"
                 GridLayout:
                     cols: 2
                     padding: 5
@@ -56,7 +56,7 @@
                                 font_size: '14sp'
                             Spinner:
                                 text: root.mash_method
-                                values: ["Sparge", "BIAB"]
+                                values: ["No Sparge (BIAB)", "Sparge"]
                                 on_text: root.mash_method = self.text
                                 size_hint_x: 0.65
                                 background_color: 0.2, 0.4, 0.6, 1
@@ -69,8 +69,8 @@
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
-                                min: 0.5
-                                max: 30
+                                min: 2.0
+                                max: 15.0
                                 step: 0.5
                                 value: root.grain_wt
                                 on_value: root.grain_wt = self.value
@@ -84,12 +84,12 @@
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
-                                text: "G-Temp"
+                                text: "Grain"
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
-                                min: 40
-                                max: 90
+                                min: 50
+                                max: 80
                                 step: 1
                                 value: root.grain_temp
                                 on_value: root.grain_temp = self.value
@@ -103,11 +103,11 @@
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
-                                text: "M-Temp"
+                                text: "Mash"
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
-                                min: 140
+                                min: 145
                                 max: 165
                                 step: 1
                                 value: root.mash_temp
@@ -118,7 +118,7 @@
                                 size_hint_x: 0.2
                                 font_size: '14sp'
 
-                        # 5. Boil Time (Was Boil Temp)
+                        # 5. Boil Time
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
@@ -137,17 +137,21 @@
                                 size_hint_x: 0.2
                                 font_size: '14sp'
 
-                        # 6. Fermenter Vol
+                        # 6. Into Fermenter
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
-                                text: "Ferm Vol"
+                                text: "Into Fermenter"
+                                text_size: self.size
+                                halign: 'right'
+                                valign: 'middle'
+                                padding_x: 10
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
-                                min: 3
-                                max: 12
-                                step: 0.25
+                                min: 2.0
+                                max: 8.0
+                                step: 0.5
                                 value: root.ferm_vol
                                 on_value: root.ferm_vol = self.value
                                 size_hint_x: 0.5
@@ -175,42 +179,42 @@
                                 size_hint_x: 0.65
                                 background_color: 0.2, 0.4, 0.6, 1
 
-                        # 2. Grain Absorption
+                        # 2. Absorption
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
-                                text: "Absorp"
+                                text: "Absorption"
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
-                                min: 0.0
-                                max: 1.5
+                                min: 0.20
+                                max: 1.20
                                 step: 0.05
                                 value: root.abs_rate
                                 on_value: root.abs_rate = self.value
                                 size_hint_x: 0.5
                             Label:
-                                text: f"{root.abs_rate:.2f}"
+                                text: f"{root.abs_rate:.2f} {'L/kg' if root.is_metric else 'qt/lb'}"
                                 size_hint_x: 0.2
                                 font_size: '14sp'
 
-                        # 3. Mash Thickness
+                        # 3. Thickness
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
-                                text: "Thick"
+                                text: "Thickness"
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
-                                min: 1.0
-                                max: 4.0
+                                min: 0.5
+                                max: 3.0
                                 step: 0.1
                                 value: root.thickness
-                                disabled: root.mash_method == "BIAB"
+                                disabled: root.mash_method == "No Sparge (BIAB)"
                                 on_value: root.thickness = self.value
                                 size_hint_x: 0.5
                             Label:
-                                text: f"{root.thickness:.1f}"
+                                text: f"{root.thickness:.1f} {'L/kg' if root.is_metric else 'qt/lb'}"
                                 color: (1,1,1,1) if root.mash_method == "Sparge" else (0.4,0.4,0.4,1)
                                 size_hint_x: 0.2
                                 font_size: '14sp'
@@ -223,8 +227,8 @@
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
-                                min: 0.0
-                                max: 4.0
+                                min: 0.5
+                                max: 3.5
                                 step: 0.1
                                 value: root.boiloff
                                 on_value: root.boiloff = self.value
@@ -244,7 +248,7 @@
                             Slider:
                                 min: 0.0
                                 max: 3.0
-                                step: 0.125
+                                step: 0.25
                                 value: root.trub_vol
                                 on_value: root.trub_vol = self.value
                                 size_hint_x: 0.5
@@ -252,34 +256,28 @@
                                 text: f"{root.trub_vol:.2f} {'L' if root.is_metric else 'G'}"
                                 size_hint_x: 0.2
                                 font_size: '14sp'
+                        
+                        # FILLER WIDGET (Since button is gone)
+                        Widget:
 
-                        # 6. ACTION BUTTON
-                        Button:
-                            text: "CALC VOLS"
-                            background_color: 0.2, 0.8, 0.2, 1
-                            size_hint_y: 1
-                            bold: True
-                            on_release: root.calculate_volumes()
-
-            # --- TAB 2: CHEMISTRY (Placeholder for now) ---
-            # --- TAB 2: CHEMISTRY ---
+            # --- TAB 2: CHEMISTRY (Final Polish) ---
             TabbedPanelItem:
-                text: "Chemistry"
+                text: "CHEMISTRY"
                 BoxLayout:
                     orientation: 'vertical'
                     padding: 20
                     spacing: 10
 
-                    # --- TOP SECTION (Split Cols) ---
+                    # --- TOP SECTION (Grid) ---
                     GridLayout:
                         cols: 2
                         spacing: 20
-                        size_hint_y: 0.55
+                        size_hint_y: 0.5
 
                         # COLUMN 0 (Left)
                         BoxLayout:
                             orientation: 'vertical'
-                            spacing: 5
+                            spacing: 20  # <--- INCREASED from 10 to 20
                             
                             # 1. Profile Spinner
                             BoxLayout:
@@ -338,7 +336,7 @@
                         # COLUMN 1 (Right)
                         BoxLayout:
                             orientation: 'vertical'
-                            spacing: 5
+                            spacing: 20  # <--- INCREASED from 10 to 20
 
                             # 1. Target pH
                             BoxLayout:
@@ -399,14 +397,22 @@
                                     size_hint_x: 0.2
                                     font_size: '14sp'
 
-                    # --- BOTTOM SECTION (Full Width Sliders) ---
+                    # --- BOTTOM SECTION (PINNED - DO NOT TOUCH) ---
                     BoxLayout:
                         orientation: 'vertical'
-                        size_hint_y: 0.45
-                        spacing: 5
+                        size_hint_y: 0.5
+                        spacing: 0
+                        padding: 0
 
-                        # 1. Sulfate (SO4)
+                        # 1. TOP SPACER (Locks Sulfate Position)
+                        Widget:
+                            size_hint_y: None
+                            height: '100dp'
+
+                        # 2. Sulfate (SO4)
                         BoxLayout:
+                            size_hint_y: None
+                            height: '40dp'
                             Label: 
                                 text: "Sulfate (SO4)"
                                 size_hint_x: 0.25
@@ -426,8 +432,15 @@
                                 size_hint_x: 0.1
                                 bold: True
 
-                        # 2. Chloride (Cl)
+                        # 3. MIDDLE SPACER (Locks Chloride Position)
+                        Widget:
+                            size_hint_y: None
+                            height: '20dp'
+
+                        # 4. Chloride (Cl)
                         BoxLayout:
+                            size_hint_y: None
+                            height: '40dp'
                             Label: 
                                 text: "Chloride (Cl)"
                                 size_hint_x: 0.25
@@ -446,14 +459,9 @@
                                 text: str(int(root.tgt_cl))
                                 size_hint_x: 0.1
                                 bold: True
-
-                        # 3. ACTION BUTTON
-                        Button:
-                            text: "CALCULATE SALTS"
-                            background_color: 0.2, 0.8, 0.2, 1
-                            size_hint_y: 1.2
-                            bold: True
-                            on_release: root.calculate_chemistry()
+                        
+                        # 5. BOTTOM FILLER
+                        Widget:
 
             # --- TAB 3: RESULTS ---
             TabbedPanelItem:
@@ -461,73 +469,236 @@
                 text: "RESULTS"
                 BoxLayout:
                     orientation: 'vertical'
-                    padding: 20
-                    spacing: 10
+                    padding: 10
+                    spacing: 5
                     
-                    # Water Row
-                    BoxLayout:
-                        spacing: 10
-                        BoxLayout:
-                            orientation: 'vertical'
-                            canvas.before:
-                                Color: 
-                                    rgba: 0.15, 0.15, 0.15, 1
-                                Rectangle: 
-                                    pos: self.pos
-                                    size: self.size
-                            Label:
-                                text: "Strike Water"
-                                color: 0.2, 0.6, 1, 1
-                            Label:
-                                text: root.strike_vol
-                                font_size: '24sp'
-                                bold: True
-                        
-                        BoxLayout:
-                            orientation: 'vertical'
-                            canvas.before:
-                                Color: 
-                                    rgba: 0.15, 0.15, 0.15, 1
-                                Rectangle: 
-                                    pos: self.pos
-                                    size: self.size
-                            Label:
-                                text: "Strike Temp"
-                                color: 1, 0.6, 0.2, 1
-                            Label:
-                                text: root.strike_temp
-                                font_size: '24sp'
-                                bold: True
-
-                    # Salts Row
                     GridLayout:
-                        cols: 3
-                        spacing: 5
-                        size_hint_y: 0.6
+                        cols: 2
+                        spacing: 10
                         
-                        Label:
-                            text: "Gypsum\n" + root.res_gypsum
-                            halign: 'center'
-                        Label:
-                            text: "CaCl2\n" + root.res_cacl2
-                            halign: 'center'
-                        Label:
-                            text: "Epsom\n" + root.res_epsom
-                            halign: 'center'
-                        Label:
-                            text: "Salt\n" + root.res_salt
-                            halign: 'center'
-                        Label:
-                            text: "Acid (88%)\n" + root.res_acid
-                            color: 1, 0.2, 0.2, 1
-                            halign: 'center'
+                        # --- COLUMN 0: WATER REQUIREMENTS (Optimized) ---
+                        BoxLayout:
+                            orientation: 'vertical'
+                            spacing: 5
+                            canvas.before:
+                                Color: 
+                                    rgba: 0.15, 0.15, 0.15, 1
+                                Rectangle: 
+                                    pos: self.pos
+                                    size: self.size
+                            
+                            # Title
+                            Label:
+                                text: "Water Requirements"
+                                size_hint_y: None
+                                height: '35dp'
+                                bold: True
+                                color: 0.2, 0.6, 1, 1
+                                font_size: '18sp'
+                                canvas.before:
+                                    Color:
+                                        rgba: 0.1, 0.1, 0.1, 1
+                                    Rectangle:
+                                        pos: self.pos
+                                        size: self.size
+
+                            # DATA GRID
+                            GridLayout:
+                                cols: 2
+                                spacing: 5
+                                size_hint_y: None
+                                height: self.minimum_height
+                                
+                                # ROW 1
+                                ResultRow:
+                                    title: "Strike"
+                                    value: root.strike_vol
+                                ResultRow:
+                                    title: "Temp"
+                                    value: root.strike_temp
+                                    value_color: (1, 0.6, 0.2, 1)
+
+                                # ROW 2
+                                ResultRow:
+                                    title: "Sparge"
+                                    value: root.sparge_vol
+                                Widget: # Spacer
+                                    size_hint_y: None
+                                    height: '30dp'
+
+                                # ROW 3
+                                ResultRow:
+                                    title: "Pre-Boil"
+                                    value: root.pre_boil_vol
+                                Widget: # Spacer
+                                    size_hint_y: None
+                                    height: '30dp'
+
+                            # SPACER
+                            Widget: 
+
+                            # BLUE WARNING BOX
+                            BoxLayout:
+                                orientation: 'vertical'
+                                size_hint_y: None
+                                height: '80dp'
+                                padding: 5
+                                canvas.before:
+                                    Color:
+                                        rgba: 0.1, 0.2, 0.4, 1 # Blue Background
+                                    Rectangle:
+                                        pos: self.pos
+                                        size: self.size
+                                
+                                BoxLayout:
+                                    Label:
+                                        text: "Total Mash Volume"
+                                        halign: 'left'
+                                        text_size: self.size
+                                        valign: 'middle'
+                                        color: 0.7, 0.8, 1, 1
+                                        font_size: '16sp'
+                                    Label:
+                                        text: root.total_mash_vol
+                                        halign: 'right'
+                                        text_size: self.size
+                                        valign: 'middle'
+                                        bold: True
+                                        font_size: '18sp'
+                                        color: 1, 1, 1, 1
+
+                                Label:
+                                    text: "Ensure your Mash Tun is large enough to hold the Total Mash Volume."
+                                    text_size: self.width, None
+                                    halign: 'left'
+                                    valign: 'top'
+                                    color: 0.8, 0.8, 0.8, 1
+                                    font_size: '13sp'
+
+                        # --- COLUMN 1: SALT ADDITIONS (Optimized) ---
+                        BoxLayout:
+                            orientation: 'vertical'
+                            spacing: 5
+                            canvas.before:
+                                Color: 
+                                    rgba: 0.15, 0.15, 0.15, 1
+                                Rectangle: 
+                                    pos: self.pos
+                                    size: self.size
+
+                            # Title
+                            Label:
+                                text: "Salt Additions"
+                                size_hint_y: None
+                                height: '35dp'
+                                bold: True
+                                color: 0.2, 0.8, 0.2, 1
+                                font_size: '18sp'
+                                canvas.before:
+                                    Color:
+                                        rgba: 0.1, 0.1, 0.1, 1
+                                    Rectangle:
+                                        pos: self.pos
+                                        size: self.size
+
+                            # DATA GRID
+                            GridLayout:
+                                cols: 2
+                                spacing: 5
+                                size_hint_y: None
+                                height: self.minimum_height
+                                
+                                # ROW 1
+                                ResultRow:
+                                    title: "Gypsum"
+                                    value: root.res_gypsum
+                                ResultRow:
+                                    title: "Salt (NaCl)"
+                                    value: root.res_salt
+
+                                # ROW 2
+                                ResultRow:
+                                    title: "CaCl2"
+                                    value: root.res_cacl2
+                                ResultRow:
+                                    title: "Lime"
+                                    value: root.res_lime
+
+                                # ROW 3
+                                ResultRow:
+                                    title: "Epsom"
+                                    value: root.res_epsom
+                                Widget:
+                                    size_hint_y: None
+                                    height: '30dp'
+
+                            # SPACER
+                            Widget:
+
+                            # LACTIC ACID BOX
+                            BoxLayout:
+                                size_hint_y: None
+                                height: '50dp'
+                                padding: 10
+                                canvas.before:
+                                    Color:
+                                        rgba: 0.25, 0.25, 0.25, 1 # Light Gray
+                                    Rectangle:
+                                        pos: self.pos
+                                        size: self.size
+                                Label:
+                                    text: "Lactic Acid (88%)"
+                                    text_size: self.size
+                                    halign: 'left'
+                                    valign: 'middle'
+                                    color: 0.6, 0.6, 0.6, 1
+                                    font_size: '16sp'
+                                Label:
+                                    text: root.res_acid + " / " + root.res_acid_g
+                                    text_size: self.size
+                                    halign: 'right'
+                                    valign: 'middle'
+                                    bold: True
+                                    font_size: '18sp'
+                                    color: 1, 0.2, 0.2, 1 # Red Text
+
+                    # Footer Buttons (Split)
+                    BoxLayout:
+                        size_hint_y: None
+                        height: '50dp'
+                        spacing: 20
+                        
+                        Button:
+                            text: "CALCULATE"
+                            background_color: 0.2, 0.8, 0.2, 1
                             bold: True
-                        Label:
-                            text: "Slaked Lime\n" + root.res_lime
-                            halign: 'center'
-                    
-                    Button:
-                        text: "EXIT"
-                        size_hint_y: 0.2
-                        background_color: 0.8, 0.2, 0.2, 1
-                        on_release: root.exit_app()
+                            on_release: root.calculate_all()
+
+                        Button:
+                            text: "EXIT APP"
+                            background_color: 0.8, 0.2, 0.2, 1
+                            bold: True
+                            on_release: root.exit_app()
+
+# --- HELPER WIDGET FOR RESULTS ---
+<ResultRow@BoxLayout>:
+    title: ""
+    value: ""
+    value_color: (1, 1, 1, 1)
+    size_hint_y: None
+    height: '30dp'
+    Label:
+        text: root.title
+        text_size: self.size
+        halign: 'left'
+        valign: 'middle'
+        padding_x: 10
+        color: 0.7, 0.7, 0.7, 1
+    Label:
+        text: root.value
+        text_size: self.size
+        halign: 'right'
+        valign: 'middle'
+        padding_x: 10
+        bold: True
+        color: root.value_color
