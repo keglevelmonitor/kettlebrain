@@ -267,11 +267,20 @@ class StepEditorScreen(Screen):
     def on_selected_advance(self, instance, value): self._check_dirty()
     def on_current_additions(self, instance, value): self._check_dirty()
 
+    # In src/main.py inside class StepEditorScreen(Screen):
+
     def _update_target_display(self):
-        """Formats the label to show (BOIL) if at boiling point."""
+        """Formats the label to show (BOIL), (No Heat), or standard temp."""
         app = App.get_running_app()
         if not app: return
         val = int(self.step_temp)
+        
+        # --- NEW LOGIC: Handle "No Heat" ---
+        if val < 60:
+            self.step_target_display = "Target: -- (No Heat)"
+            return
+        # -----------------------------------
+
         sys_boil = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
         
         if val >= sys_boil:

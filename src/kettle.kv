@@ -1030,11 +1030,15 @@
                     color: (0.5, 0.5, 0.5, 1) if root.is_temp_locked else (1,1,1,1)
                 Slider:
                     id: s_temp
-                    min: 70
-                    max: 212
-                    value: root.step_temp
+                    min: 0
+                    max: 143
+                    # MAP DISPLAY: If temp is < 70, slider stays at 0. Else, subtract 69 (so 70 becomes 1).
+                    value: 0 if root.step_temp < 70 else (root.step_temp - 69)
+                    
                     disabled: root.is_temp_locked
-                    on_value: if not self.disabled: root.step_temp = self.value     # <--- USE THIS
+                    
+                    # MAP INPUT: If slider is 0, temp is 0. Else, add 69 (so 1 becomes 70).
+                    on_value: if not self.disabled: root.step_temp = (self.value + 69) if self.value > 0 else 0
             
             # 2. DURATION
             BoxLayout:
