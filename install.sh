@@ -1,12 +1,12 @@
 #!/bin/bash
 # install.sh
-# Installation script for KettleBrain AND WaterBrain.
+# Installation script for KettleBrain.
 
 # Stop on any error
 set -e
 
 echo "=========================================="
-echo "    KettleBrain Suite Installer"
+echo "    KettleBrain Installer"
 echo "=========================================="
 
 # --- 1. Define Variables ---
@@ -18,10 +18,6 @@ VENV_PYTHON_EXEC="$VENV_DIR/bin/python"
 # File Paths
 KB_TEMPLATE="$PROJECT_DIR/kettlebrain.desktop"
 KB_INSTALL_LOC="$HOME/.local/share/applications/kettlebrain.desktop"
-
-# We don't assume a template exists for WaterBrain yet, but we define the path just in case
-WB_TEMPLATE="$PROJECT_DIR/waterbrain.desktop"
-WB_INSTALL_LOC="$HOME/.local/share/applications/waterbrain.desktop"
 
 DATA_DIR="$HOME/kettlebrain-data"
 TEMP_DESKTOP_FILE="/tmp/kettlebrain_temp.desktop"
@@ -37,117 +33,83 @@ sudo apt-get install -y \
     libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
     libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev \
     zlib1g-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-    libgstreamer1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    libgstreamer1.0-0 gstreamer1.0-plugins-base \
     libmtdev-dev xclip xsel libjpeg-dev
 
-# --- 3. Setup Python Environment ---
+# --- 3. Install Python Dependencies ---
 echo ""
-echo "--- [Step 2/5] Setting up Virtual Environment ---"
-if [ -d "$VENV_DIR" ]; then
-    rm -rf "$VENV_DIR"
-fi
-$PYTHON_EXEC -m venv "$VENV_DIR" --system-site-packages
+echo "--- [Step 2/5] Setting up Python Environment ---"
 
-# --- 4. Install Python Libraries ---
-echo ""
-echo "--- [Step 3/5] Installing Python Libraries ---"
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating virtual environment..."
+    $PYTHON_EXEC -m venv "$VENV_DIR"
+fi
+
+echo "Installing/Updating Python requirements..."
 "$VENV_PYTHON_EXEC" -m pip install --upgrade pip setuptools wheel
-if [ -f "$PROJECT_DIR/requirements.txt" ]; then
-    "$VENV_PYTHON_EXEC" -m pip install -r "$PROJECT_DIR/requirements.txt"
-else
-    "$VENV_PYTHON_EXEC" -m pip install "kivy[base]" rpi-lgpio
-fi
+"$VENV_PYTHON_EXEC" -m pip install kivy[full] RPi.GPIO lgpio smbus2
 
-# --- 5. Create User Data Directory ---
+# --- 4. Create Desktop Shortcut ---
 echo ""
-echo "--- [Step 4/5] Configuring Data Directory ---"
-mkdir -p "$DATA_DIR"
+echo "--- [Step 3/5] Installing Desktop Shortcut ---"
 
-# --- 6. Install Desktop Shortcuts ---
-echo ""
-echo "--- [Step 5/5] Installing Desktop Shortcuts ---"
+# Ensure local applications directory exists
 mkdir -p "$HOME/.local/share/applications"
 
-# ==========================================
-# 6A. KETTLEBRAIN SHORTCUT (Restored Logic)
-# ==========================================
+# --- INSTALL KETTLEBRAIN SHORTCUT ---
+# We use the template logic: Check for template, else generate default.
 if [ -f "$KB_TEMPLATE" ]; then
     echo "Using existing KettleBrain template..."
     cp "$KB_TEMPLATE" "$TEMP_DESKTOP_FILE"
     
-    # Inject paths (Original logic)
     EXEC_CMD="$VENV_PYTHON_EXEC $PROJECT_DIR/src/main.py"
     ICON_PATH="$PROJECT_DIR/src/assets/kettle.png"
     
+    # Replace placeholders using | as delimiter to avoid path clashes
     sed -i "s|Exec=PLACEHOLDER_EXEC_PATH|Exec=$EXEC_CMD|g" "$TEMP_DESKTOP_FILE"
     sed -i "s|Path=PLACEHOLDER_PATH|Path=$PROJECT_DIR|g" "$TEMP_DESKTOP_FILE"
     sed -i "s|Icon=PLACEHOLDER_ICON_PATH|Icon=$ICON_PATH|g" "$TEMP_DESKTOP_FILE"
     
     mv "$TEMP_DESKTOP_FILE" "$KB_INSTALL_LOC"
 else
-    echo "Creating default KettleBrain shortcut (No Utility category)..."
-    # Note: Removed 'Utility' to ensure it goes to 'Other'
+    echo "Creating default KettleBrain shortcut..."
     cat <<EOF > "$KB_INSTALL_LOC"
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=KettleBrain
-Comment=Raspberry Pi Brewing Controller
+Comment=Brewing Controller
 Path=$PROJECT_DIR
 Exec=$VENV_PYTHON_EXEC $PROJECT_DIR/src/main.py
 Icon=$PROJECT_DIR/src/assets/kettle.png
 Terminal=false
 StartupNotify=true
-Categories=Application;
+Categories=Utility;
 StartupWMClass=KettleBrain
 EOF
 fi
+
+# Make executable
 chmod +x "$KB_INSTALL_LOC"
-echo " - KettleBrain Installed"
+echo " - KettleBrain shortcut installed."
 
-# ==========================================
-# 6B. WATERBRAIN SHORTCUT (New Logic)
-# ==========================================
-# We use the same logic: Check for template, else generate default.
-if [ -f "$WB_TEMPLATE" ]; then
-    echo "Using existing WaterBrain template..."
-    cp "$WB_TEMPLATE" "$TEMP_DESKTOP_FILE"
-    
-    EXEC_CMD="$VENV_PYTHON_EXEC $PROJECT_DIR/src/main_water.py"
-    ICON_PATH="$PROJECT_DIR/src/assets/water-drop.png"
-    
-    sed -i "s|Exec=PLACEHOLDER_EXEC_PATH|Exec=$EXEC_CMD|g" "$TEMP_DESKTOP_FILE"
-    sed -i "s|Path=PLACEHOLDER_PATH|Path=$PROJECT_DIR|g" "$TEMP_DESKTOP_FILE"
-    sed -i "s|Icon=PLACEHOLDER_ICON_PATH|Icon=$ICON_PATH|g" "$TEMP_DESKTOP_FILE"
-    
-    mv "$TEMP_DESKTOP_FILE" "$WB_INSTALL_LOC"
+# --- 5. Create Data Directory ---
+echo ""
+echo "--- [Step 4/5] Setting up Data Directory ---"
+if [ ! -d "$DATA_DIR" ]; then
+    mkdir -p "$DATA_DIR"
+    echo "Created data directory at: $DATA_DIR"
 else
-    echo "Creating default WaterBrain shortcut (No Utility category)..."
-    # We use 'Application;' category to force it into 'Other'
-    cat <<EOF > "$WB_INSTALL_LOC"
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=WaterBrain
-Comment=Water Chemistry Calculator
-Path=$PROJECT_DIR
-Exec=$VENV_PYTHON_EXEC $PROJECT_DIR/src/main_water.py
-Icon=$PROJECT_DIR/src/assets/water-drop.png
-Terminal=false
-StartupNotify=true
-Categories=Application;
-StartupWMClass=WaterBrain
-EOF
+    echo "Data directory already exists."
 fi
-chmod +x "$WB_INSTALL_LOC"
-echo " - WaterBrain Installed"
 
-# Force menu refresh
-update-desktop-database "$HOME/.local/share/applications" || true
+# --- 6. Set Permissions ---
+echo ""
+echo "--- [Step 5/5] Finalizing Permissions ---"
+chmod -R 755 "$PROJECT_DIR"
 
 echo ""
-echo "================================================="
-echo "Installation complete!"
-echo "Check the 'Other' menu for your apps."
-echo "================================================="
-exit 0
+echo "=========================================="
+echo "    Installation Complete!"
+echo "    You can now launch KettleBrain from the application menu."
+echo "=========================================="

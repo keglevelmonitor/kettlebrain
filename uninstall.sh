@@ -1,17 +1,16 @@
 #!/bin/bash
 # uninstall.sh
-# Uninstallation script for KettleBrain & WaterBrain
+# Uninstallation script for KettleBrain
 
 APP_DIR="$HOME/kettlebrain"
 DATA_DIR="$HOME/kettlebrain-data"
 
-# Define both shortcut paths
+# Define shortcut path
 KB_DESKTOP_FILE="$HOME/.local/share/applications/kettlebrain.desktop"
-WB_DESKTOP_FILE="$HOME/.local/share/applications/waterbrain.desktop"
 
 clear
 echo "=========================================="
-echo "    KettleBrain Suite Uninstaller"
+echo "    KettleBrain Uninstaller"
 echo "=========================================="
 echo "Please choose an option (Case Sensitive):"
 echo "  APP  - Uninstall ONLY the application."
@@ -40,15 +39,10 @@ fi
 
 echo "Removing files..."
 
-# 1. Remove Desktop Shortcuts
+# 1. Remove Desktop Shortcut
 if [ -f "$KB_DESKTOP_FILE" ]; then
     rm "$KB_DESKTOP_FILE"
     echo " - Removed KettleBrain shortcut"
-fi
-
-if [ -f "$WB_DESKTOP_FILE" ]; then
-    rm "$WB_DESKTOP_FILE"
-    echo " - Removed WaterBrain shortcut"
 fi
 
 # 2. Remove App Directory
@@ -63,10 +57,5 @@ if [ "$choice" == "ALL" ] && [ -d "$DATA_DIR" ]; then
     echo " - Removed data directory"
 fi
 
-# 4. Remove AutoStart
-if [ -f "$HOME/.config/autostart/kettlebrain.desktop" ]; then
-    rm "$HOME/.config/autostart/kettlebrain.desktop"
-    echo " - Removed auto-start configuration"
-fi
-
-echo "Uninstallation Complete"
+echo ""
+echo "Uninstallation Complete."
