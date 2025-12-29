@@ -34,6 +34,7 @@ DEFAULT_SETTINGS = {
         "enable_csv_logging": False,
         "heater_ref_volume_gal": 8.0,
         "heater_ref_rate_fpm": 1.3,
+        "last_profile_id": None  # <--- Ensure this exists
     },
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
@@ -42,29 +43,32 @@ DEFAULT_SETTINGS = {
         "last_volume_gal": 6.0,
         "heater_enabled": False
     },
-    # Default values for Quick Calculators
-    "no_sparge_settings": {
-        "calc_method": "no_sparge",
-        "grain_weight": 10.0,
-        "grain_temp": 65.0,
+    # --- COMBINED WATER DEFAULTS (The "House Defaults") ---
+    "water_defaults": {
+        # Water Calc
+        "mash_method": "No Sparge (BIAB)",
+        "grain_wt": 10.0,
+        "grain_temp": 68.0,
         "mash_temp": 152.0,
-        "target_vol": 5.5,
-        "trub_loss": 0.50,
         "boil_time": 60.0,
-        "boiloff_rate": 0.5,
-        "abs_rate": 0.6,
-        "mash_thickness": 1.5
-    },
-    "chemistry_settings": {
-        "water_vol": 8.0,
-        "beer_srm": 5.0,
+        "ferm_vol": 5.5,
+        "trub_vol": 0.25,
+        "boiloff": 1.0,
+        "abs_rate": 0.5,
+        "thickness": 1.5,
+        # Chemistry
+        "srm": 5.0,
         "target_ph": 5.4,
-        "target_ca": 80.0,
-        "target_mg": 5.0,
-        "target_na": 25.0,
-        "target_so4": 80.0,
-        "target_cl": 75.0
+        "tgt_ca": 50,
+        "tgt_mg": 10,
+        "tgt_na": 15,
+        "tgt_so4": 75,
+        "tgt_cl": 63
     },
+    # --- MANUAL SESSION (Resets to defaults on boot) ---
+    "manual_water_session": {}, 
+    
+    # [Keep pid_settings and recovery_state as they were]
     "pid_settings": {
         "kp": 50.0,
         "ki": 0.1,
@@ -198,6 +202,8 @@ class SettingsManager:
             import copy
             if not os.path.exists(self.settings_file):
                 self.settings = copy.deepcopy(DEFAULT_SETTINGS)
+                # Initialize session with defaults on new file creation
+                self.settings["manual_water_session"] = copy.deepcopy(self.settings["water_defaults"])
                 self._save_settings()
             else:
                 try:
@@ -212,12 +218,18 @@ class SettingsManager:
                             for key, val in data.items():
                                 if key not in self.settings[section]:
                                     self.settings[section][key] = val
+                                    
+                    # --- CRITICAL: RESET MANUAL WATER SESSION ON BOOT ---
+                    # As requested, manual mode water settings do not persist across reboots.
+                    self.settings["manual_water_session"] = copy.deepcopy(self.settings.get("water_defaults", defaults["water_defaults"]))
+                    
                 except Exception as e:
                     print(f"[SettingsManager] Error loading settings: {e}. Reverting to defaults.")
                     self.settings = copy.deepcopy(DEFAULT_SETTINGS)
+                    self.settings["manual_water_session"] = copy.deepcopy(self.settings["water_defaults"])
             
+            # [Keep the rest of _load_settings]
             self.last_shutdown_was_clean = self.settings.get("system_settings", {}).get("controlled_shutdown", False)
-            
             if "system_settings" not in self.settings: self.settings["system_settings"] = {}
             self.settings["system_settings"]["controlled_shutdown"] = False
             self._save_settings()

@@ -4,11 +4,13 @@ import copy
 import subprocess
 import sys
 import threading
-import signal  # <--- NEW IMPORT
+import signal
+import atexit
+import json
 from datetime import datetime, timedelta
 from sequence_manager import SequenceStatus
-import atexit
 from profile_data import BrewProfile, BrewStep, BrewAddition, StepType, TimeoutBehavior
+from brew_math import BrewMath
 
 # This tells the OS: "My Window ID is 'KettleBrain', not 'python'"
 os.environ['SDL_VIDEO_X11_WMCLASS'] = "KettleBrain"
@@ -72,14 +74,21 @@ def failsafe_cleanup():
             print("[Main] Relays disabled via App reference.")
         else:
             # Fallback: Create a temporary RelayControl to force shutdown
-            # We avoid using __file__ here as it may be undefined during exit
             from relay_control import RelayControl
             from settings_manager import SettingsManager
             
-            # Use current working directory logic to find config
-            root_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-            if os.path.basename(root_dir) == 'src':
-                root_dir = os.path.dirname(root_dir)
+            # 1. Determine Path (Match logic in build() to avoid creating wrong data folder)
+            script_path = os.path.abspath(sys.argv[0])
+            src_dir = os.path.dirname(script_path)
+            
+            # Default to current dir
+            root_dir = src_dir
+            
+            # If running from src, go up TWO levels to find the true root 
+            # (parent of kettlebrain, so data ends up in ../kettlebrain-data)
+            if os.path.basename(src_dir) == 'src':
+                project_dir = os.path.dirname(src_dir) # e.g. /home/pi/kettlebrain
+                root_dir = os.path.dirname(project_dir) # e.g. /home/pi
             
             sm = SettingsManager(root_dir)
             rc = RelayControl(sm)
@@ -643,6 +652,8 @@ class MainScreen(Screen):
     temp_color = ListProperty([0.2, 0.8, 0.2, 1])
     manual_target_display = StringProperty("Target: -- F")
     
+    is_profile_loaded = BooleanProperty(False)
+    
     # Properties for Mode Switch Logic
     mode_switch_target = StringProperty("") # 'auto' or 'manual'
     mode_confirm_msg = StringProperty("")
@@ -781,6 +792,17 @@ class MainScreen(Screen):
                 self.display_status = f"Ready At: {dt.strftime('%H:%M')}"
         else:
             self.display_status = "System Idle"
+
+    def open_water_calculator(self):
+        """Called by the WATER button."""
+        app = App.get_running_app()
+        seq = app.sequencer
+        
+        # Logic: If Auto Mode and No Profile, do nothing (Button should be disabled visually, but safe check here)
+        if seq.status != SequenceStatus.MANUAL and not seq.current_profile:
+            return
+
+        self.manager.current = 'water_calc'
 
     def switch_to_manual(self):
         """
@@ -1854,7 +1876,10 @@ class KettleApp(App):
         self.profiles_screen = ProfilesScreen(name='profiles')
         self.editor_screen = ProfileEditorScreen(name='editor')
         self.step_editor_screen = StepEditorScreen(name='step_editor')
-        self.alerts_screen = StepAlertsScreen(name='step_alerts') # <--- ADD THIS
+        self.alerts_screen = StepAlertsScreen(name='step_alerts')
+        
+        # ADDED: Water Screen
+        self.water_screen = WaterScreen(name='water_calc')
         
         # NEW SETTINGS SCREENS
         self.sys_settings_screen = SystemSettingsScreen(name='sys_settings')
@@ -1863,12 +1888,13 @@ class KettleApp(App):
         self.cal_settings_screen = CalibrationSettingsScreen(name='settings_cal')
         self.updates_screen = UpdatesSettingsScreen(name='settings_updates')
         
-                  
+        # Add widgets to ScreenManager         
         sm.add_widget(self.main_screen)
         sm.add_widget(self.profiles_screen)
         sm.add_widget(self.editor_screen)
         sm.add_widget(self.step_editor_screen)
-        sm.add_widget(self.alerts_screen) # <--- ADD THIS
+        sm.add_widget(self.alerts_screen)
+        sm.add_widget(self.water_screen) # <--- ADDED WIDGET
         sm.add_widget(self.cal_settings_screen)
         sm.add_widget(self.updates_screen)
         
@@ -1879,6 +1905,56 @@ class KettleApp(App):
                 
         Clock.schedule_interval(self.update_ui, 0.1)
         return sm
+    
+    # ~ def build(self):
+        # ~ self.title = "KettleBrain"
+        # ~ src_dir = os.path.dirname(os.path.abspath(__file__))
+        # ~ project_dir = os.path.dirname(src_dir)
+        # ~ root_dir = os.path.dirname(project_dir)
+        
+        # ~ self.settings_manager = SettingsManager(root_dir)
+        # ~ self.hw = HardwareInterface(self.settings_manager)
+        
+        # ~ pending_profile_id = StringProperty(None)
+        
+        # ~ # Initialize relay control and sequencer
+        # ~ from relay_control import RelayControl
+        # ~ self.relay = RelayControl(self.settings_manager)
+        # ~ self.sequencer = SequenceManager(self.settings_manager, self.relay, self.hw)
+        # ~ self.sequencer.enter_manual_mode()
+        
+        # ~ # --- SCREEN MANAGER SETUP ---
+        # ~ sm = ScreenManager()
+        
+        # ~ self.main_screen = MainScreen(name='main')
+        # ~ self.profiles_screen = ProfilesScreen(name='profiles')
+        # ~ self.editor_screen = ProfileEditorScreen(name='editor')
+        # ~ self.step_editor_screen = StepEditorScreen(name='step_editor')
+        # ~ self.alerts_screen = StepAlertsScreen(name='step_alerts') # <--- ADD THIS
+        
+        # ~ # NEW SETTINGS SCREENS
+        # ~ self.sys_settings_screen = SystemSettingsScreen(name='sys_settings')
+        # ~ self.hw_settings_screen = HardwareSettingsScreen(name='settings_hw')
+        # ~ self.app_settings_screen = AppSettingsScreen(name='settings_app')
+        # ~ self.cal_settings_screen = CalibrationSettingsScreen(name='settings_cal')
+        # ~ self.updates_screen = UpdatesSettingsScreen(name='settings_updates')
+        
+                  
+        # ~ sm.add_widget(self.main_screen)
+        # ~ sm.add_widget(self.profiles_screen)
+        # ~ sm.add_widget(self.editor_screen)
+        # ~ sm.add_widget(self.step_editor_screen)
+        # ~ sm.add_widget(self.alerts_screen) # <--- ADD THIS
+        # ~ sm.add_widget(self.cal_settings_screen)
+        # ~ sm.add_widget(self.updates_screen)
+        
+        # ~ # Add the new settings screens
+        # ~ sm.add_widget(self.sys_settings_screen)
+        # ~ sm.add_widget(self.hw_settings_screen)
+        # ~ sm.add_widget(self.app_settings_screen)
+                
+        # ~ Clock.schedule_interval(self.update_ui, 0.1)
+        # ~ return sm
         
     def update_ui(self, dt):
         """
@@ -1892,6 +1968,8 @@ class KettleApp(App):
         seq = self.sequencer
         screen = self.main_screen
         status = seq.status
+        
+        screen.is_profile_loaded = (seq.current_profile is not None)
         
         # --- 1. TEMPERATURE COLORS ONLY ---
         # (Target Text is now handled in Section 2 below)
@@ -2165,6 +2243,22 @@ class KettleApp(App):
         self.root.current = 'profiles'
         self.profiles_screen.refresh_list()
 
+    # DOUBLE VISION ---------------------------------------------------
+    def move_step_up(self, index):
+        """Swaps the selected step with the one above it."""
+        steps = self.editor_screen.editing_profile.steps
+        if index > 0 and index < len(steps):
+            steps[index], steps[index-1] = steps[index-1], steps[index]
+            self.editor_screen.refresh_steps()
+
+    def move_step_down(self, index):
+        """Swaps the selected step with the one below it."""
+        steps = self.editor_screen.editing_profile.steps
+        if index >= 0 and index < len(steps) - 1:
+            steps[index], steps[index+1] = steps[index+1], steps[index]
+            self.editor_screen.refresh_steps()
+    # DOUBLE VISION ---------------------------------------------------
+       
     def delete_step_from_editor(self, index):
         steps = self.editor_screen.editing_profile.steps
         if 0 <= index < len(steps):
@@ -2227,5 +2321,345 @@ class KettleApp(App):
             # If HardwareInterface has a cleanup, call it
             pass
 
+class WaterScreen(Screen):
+    # --- GLOBAL SETTINGS ---
+    is_metric = BooleanProperty(False)
+    mash_method = StringProperty("No Sparge (BIAB)")
+    
+    # --- INPUTS: WATER ---
+    grain_wt = NumericProperty(10.0)
+    boil_time = NumericProperty(60.0)
+    grain_temp = NumericProperty(68.0)
+    mash_temp = NumericProperty(152.0)
+    boiloff = NumericProperty(1.0)
+    abs_rate = NumericProperty(0.5)
+    trub_vol = NumericProperty(0.25)
+    ferm_vol = NumericProperty(5.5)
+    thickness = NumericProperty(1.5)
+    
+    # --- INPUTS: CHEMISTRY ---
+    srm = NumericProperty(5.0)
+    target_ph = NumericProperty(5.4)
+    tgt_ca = NumericProperty(50)
+    tgt_mg = NumericProperty(10)
+    tgt_na = NumericProperty(15)
+    tgt_so4 = NumericProperty(75)
+    tgt_cl = NumericProperty(63)
+    
+    profile_names = ListProperty(["Default"])
+    loaded_profiles = []
+
+    # --- PROFILE TRACKING (NEW) ---
+    profile_text_color = ListProperty([1, 1, 1, 1]) # Default White
+    last_loaded_profile_data = {}
+    current_profile_clean_name = StringProperty("")
+
+    # --- RESULTS ---
+    strike_vol = StringProperty("--")
+    sparge_vol = StringProperty("--")
+    strike_temp = StringProperty("--")
+    pre_boil_vol = StringProperty("--")
+    total_mash_vol = StringProperty("--")
+    total_water = NumericProperty(0.0) 
+    
+    res_gypsum = StringProperty("0.0 g")
+    res_cacl2 = StringProperty("0.0 g")
+    res_epsom = StringProperty("0.0 g")
+    res_salt = StringProperty("0.0 g")
+    res_lime = StringProperty("0.0 g")
+    res_acid = StringProperty("0.0 ml")
+    res_acid_g = StringProperty("0.0 g")
+    
+    # --- CONTEXT TRACKING ---
+    context = StringProperty("MANUAL") # "MANUAL" or "AUTO"
+
+    def on_pre_enter(self):
+        app = App.get_running_app()
+        seq = app.sequencer
+        sm = app.settings_manager
+        
+        # 1. Determine Context
+        if seq.status != SequenceStatus.IDLE and seq.status != SequenceStatus.MANUAL and seq.current_profile:
+            self.context = "AUTO"
+        elif seq.status == SequenceStatus.MANUAL:
+            self.context = "MANUAL"
+        else:
+            if seq.current_profile:
+                self.context = "AUTO"
+            else:
+                self.context = "MANUAL"
+
+        # 2. Load Profile Definitions
+        self._load_target_profiles()
+
+        # 3. Retrieve Saved Data based on Context
+        data = {}
+        if self.context == "AUTO" and seq.current_profile:
+            w_data = getattr(seq.current_profile, 'water_data', {}) or {}
+            c_data = getattr(seq.current_profile, 'chemistry_data', {}) or {}
+            
+            if not w_data and not c_data:
+                 data = sm.settings.get("water_defaults", {})
+            else:
+                 data = {**w_data, **c_data}
+        else:
+            data = sm.settings.get("manual_water_session", {})
+            if not data: 
+                data = sm.settings.get("water_defaults", {})
+
+        # 4. DECISION: Fresh Start vs Restore
+        is_fresh = "profile_name" not in data and "grain_wt" not in data
+        
+        if is_fresh:
+            # Fresh Start: Load defaults completely
+            if self.profile_names:
+                self.load_target_profile(self.profile_names[0])
+            self._apply_dict_to_ui(data)
+        else:
+            # Restore Session: Apply saved values FIRST
+            self._apply_dict_to_ui(data)
+            
+            # Restore Profile Context
+            p_name = data.get("profile_name", "")
+            if p_name and p_name in self.profile_names:
+                self.current_profile_clean_name = p_name
+                
+                # --- FIX 3: Silence the Spinner Trigger ---
+                self._ignore_spinner_load = True
+                self.ids.profile_spinner.text = p_name
+                self._ignore_spinner_load = False
+                # ------------------------------------------
+                
+                # Manually populate baseline data for the asterisk check
+                for p in self.loaded_profiles:
+                    if p['name'] == p_name:
+                        self.last_loaded_profile_data = {
+                            'ca': int(p.get('ca', 0)),
+                            'mg': int(p.get('mg', 0)),
+                            'na': int(p.get('na', 0)),
+                            'so4': int(p.get('so4', 0)),
+                            'cl': int(p.get('cl', 0))
+                        }
+                        break
+                
+                self.check_profile_match()
+                
+            elif self.profile_names:
+                 # Fallback
+                 self._ignore_spinner_load = True
+                 self.ids.profile_spinner.text = self.profile_names[0]
+                 self._ignore_spinner_load = False
+
+        # 5. UI Setup
+        self.ids.tabs.switch_to(self.ids.tab_results)
+        self.calculate_all()
+
+    def _apply_dict_to_ui(self, data):
+        self.mash_method = data.get("mash_method", "No Sparge (BIAB)")
+        self.grain_wt = float(data.get("grain_wt", 10.0))
+        self.grain_temp = float(data.get("grain_temp", 68.0))
+        self.mash_temp = float(data.get("mash_temp", 152.0))
+        self.boil_time = float(data.get("boil_time", 60.0))
+        self.ferm_vol = float(data.get("ferm_vol", 5.5))
+        self.trub_vol = float(data.get("trub_vol", 0.25))
+        self.boiloff = float(data.get("boiloff", 1.0))
+        self.abs_rate = float(data.get("abs_rate", 0.5))
+        self.thickness = float(data.get("thickness", 1.5))
+        
+        self.srm = float(data.get("srm", 5.0))
+        self.target_ph = float(data.get("target_ph", 5.4))
+        self.tgt_ca = int(data.get("tgt_ca", 50))
+        self.tgt_mg = int(data.get("tgt_mg", 10))
+        self.tgt_na = int(data.get("tgt_na", 15))
+        self.tgt_so4 = int(data.get("tgt_so4", 75))
+        self.tgt_cl = int(data.get("tgt_cl", 63))
+
+    def _scrape_ui_to_dict(self):
+        return {
+            "mash_method": self.mash_method,
+            "grain_wt": self.grain_wt,
+            "grain_temp": self.grain_temp,
+            "mash_temp": self.mash_temp,
+            "boil_time": self.boil_time,
+            "ferm_vol": self.ferm_vol,
+            "trub_vol": self.trub_vol,
+            "boiloff": self.boiloff,
+            "abs_rate": self.abs_rate,
+            "thickness": self.thickness,
+            "srm": self.srm,
+            "target_ph": self.target_ph,
+            "tgt_ca": self.tgt_ca,
+            "tgt_mg": self.tgt_mg,
+            "tgt_na": self.tgt_na,
+            "tgt_so4": self.tgt_so4,
+            "tgt_cl": self.tgt_cl,
+            # NEW: Save the clean name of the current profile
+            "profile_name": self.current_profile_clean_name 
+        }
+
+    def save_and_exit(self):
+        """Save data to the correct context and return to dashboard."""
+        app = App.get_running_app()
+        sm = app.settings_manager
+        seq = app.sequencer
+        
+        # Scrape all UI values into one dict
+        full_data = self._scrape_ui_to_dict()
+        
+        if self.context == "AUTO" and seq.current_profile:
+            # FIX: Split data back into Water vs Chemistry for the Profile Object
+            chem_keys = [
+                "srm", "target_ph", "tgt_ca", "tgt_mg", 
+                "tgt_na", "tgt_so4", "tgt_cl", "profile_name"
+            ]
+            
+            water_data = {k: v for k, v in full_data.items() if k not in chem_keys}
+            chem_data = {k: v for k, v in full_data.items() if k in chem_keys}
+            
+            # Assign to specific attributes on the Profile object
+            seq.current_profile.water_data = water_data
+            seq.current_profile.chemistry_data = chem_data
+            
+            # Save to disk
+            sm.save_profile(seq.current_profile)
+            print("[WaterScreen] Saved split data to Profile.")
+        else:
+            # Manual mode can keep it all in one session dict
+            sm.settings["manual_water_session"] = full_data
+            sm._save_settings()
+            print("[WaterScreen] Saved to Manual Session.")
+            
+        app.root.current = 'main'
+
+    def update_units(self, value):
+        self.is_metric = (value == "Metric")
+        self.calculate_all()
+
+    def _load_target_profiles(self):
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(app_dir, 'assets', 'target_water_profiles.json')
+        print(f"[WaterScreen] Loading profiles from: {path}")
+
+        try:
+            if os.path.exists(path):
+                with open(path, 'r') as f:
+                    self.loaded_profiles = json.load(f)
+                    names = [p['name'] for p in self.loaded_profiles]
+                    self.profile_names = names
+                    # FIX: Removed the automatic Clock.schedule here. 
+                    # We will handle selection in on_pre_enter to avoid overwriting saved data.
+                    print(f"[WaterScreen] Loaded {len(names)} profiles.")
+            else:
+                self.profile_names = ["Default"]
+        except Exception as e:
+            print(f"[WaterScreen] CRITICAL ERROR loading profiles: {e}")
+            self.profile_names = ["Default"]
+
+    def load_target_profile(self, name):
+        # --- FIX 1: Check for Ignore Flag ---
+        # If we are programmatically restoring the name, do not load values.
+        if getattr(self, '_ignore_spinner_load', False):
+            return
+
+        # --- FIX 2: Existing Asterisk Check ---
+        if " *" in name:
+            return
+            
+        clean_name = name
+        
+        found_profile = None
+        for p in self.loaded_profiles:
+            if p['name'] == clean_name:
+                found_profile = p
+                break
+        
+        if not found_profile:
+            return
+
+        # 2. Load the values (This is what was overwriting your saved salts)
+        self.tgt_ca = int(found_profile.get('ca', 0))
+        self.tgt_mg = int(found_profile.get('mg', 0))
+        self.tgt_na = int(found_profile.get('na', 0))
+        self.tgt_so4 = int(found_profile.get('so4', 0))
+        self.tgt_cl = int(found_profile.get('cl', 0))
+        
+        # 3. Store "Clean" state for comparison
+        self.last_loaded_profile_data = {
+            'ca': self.tgt_ca,
+            'mg': self.tgt_mg,
+            'na': self.tgt_na,
+            'so4': self.tgt_so4,
+            'cl': self.tgt_cl
+        }
+        self.current_profile_clean_name = clean_name
+
+        # 4. Reset UI Visuals
+        if self.ids.profile_spinner.text != clean_name:
+            self.ids.profile_spinner.text = clean_name
+            
+        self.profile_text_color = [1, 1, 1, 1] 
+        self.calculate_all()
+
+    def check_profile_match(self):
+        """Called during calculate_all to see if we drifted from the profile."""
+        if not self.last_loaded_profile_data or not self.current_profile_clean_name:
+            return
+
+        current_data = {
+            'ca': int(self.tgt_ca),
+            'mg': int(self.tgt_mg),
+            'na': int(self.tgt_na),
+            'so4': int(self.tgt_so4),
+            'cl': int(self.tgt_cl)
+        }
+
+        if current_data == self.last_loaded_profile_data:
+            # MATCH: Restore clean look
+            if self.ids.profile_spinner.text != self.current_profile_clean_name:
+                self.ids.profile_spinner.text = self.current_profile_clean_name
+                self.profile_text_color = [1, 1, 1, 1]
+        else:
+            # MISMATCH: Gray out and add asterisk
+            dirty_name = f"{self.current_profile_clean_name} *"
+            if self.ids.profile_spinner.text != dirty_name:
+                self.ids.profile_spinner.text = dirty_name
+                self.profile_text_color = [0.6, 0.6, 0.6, 1] # Gray
+
+    def calculate_all(self):
+        res_w = BrewMath.calculate_water(
+            self.grain_wt, self.grain_temp, self.mash_temp, 
+            self.ferm_vol, self.trub_vol, self.boil_time, 
+            self.boiloff, self.abs_rate, self.mash_method, 
+            self.thickness, self.is_metric
+        )
+        
+        u_vol = "L" if self.is_metric else "gal"
+        u_temp = "C" if self.is_metric else "F"
+
+        self.strike_vol = f"{res_w['strike_vol']:.2f} {u_vol}"
+        self.sparge_vol = f"{res_w['sparge_vol']:.2f} {u_vol}"
+        self.strike_temp = f"{res_w['strike_temp']:.0f} {u_temp}"
+        self.pre_boil_vol = f"{res_w['pre_boil_vol']:.2f} {u_vol}"
+        self.total_mash_vol = f"{res_w['total_mash_vol']:.2f} {u_vol}"
+        self.total_water = res_w['total_water']
+        
+        res_c = BrewMath.calculate_chemistry(
+            self.total_water, self.srm, self.target_ph, self.grain_wt,
+            self.tgt_ca, self.tgt_mg, self.tgt_na, self.tgt_so4, self.tgt_cl, 
+            self.is_metric
+        )
+        
+        self.res_gypsum = f"{res_c['gypsum']:.2f} g"
+        self.res_cacl2 = f"{res_c['cacl2']:.2f} g"
+        self.res_epsom = f"{res_c['epsom']:.2f} g"
+        self.res_salt = f"{res_c['salt']:.2f} g"
+        self.res_lime = f"{res_c['lime']:.2f} g"
+        self.res_acid = f"{res_c['acid']:.1f} ml"
+        self.res_acid_g = f"{res_c['acid_g']:.2f} g"
+        
+        # --- NEW: CHECK FOR MODIFICATIONS ---
+        self.check_profile_match()
+        
+        
 if __name__ == '__main__':
     KettleApp().run()
