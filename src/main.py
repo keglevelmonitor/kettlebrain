@@ -725,6 +725,8 @@ class MainScreen(Screen):
     temp_color = ListProperty([0.2, 0.8, 0.2, 1])
     manual_target_display = StringProperty("Target: -- F")
     manual_vol_display = StringProperty("Volume: --")
+    est_end_display = StringProperty("Est. End: --:-- --")
+    delay_target_dt = ObjectProperty(None) # Stores the calculated start time
     
     is_profile_loaded = BooleanProperty(False)
     
@@ -905,6 +907,85 @@ class MainScreen(Screen):
         else:
             self.display_status = "System Idle"
 
+    def _update_est_end(self):
+        """
+        Calculates estimated completion time by simulating the full profile:
+        Sum(Ramp Time + Hold Time) for all remaining steps.
+        """
+        seq = self.app.sequencer
+        status = seq.status
+
+        # 1. Validation: Must be Auto Mode with a profile
+        if not seq.current_profile or status == SequenceStatus.MANUAL:
+            self.est_end_display = "Est. End: --:-- --"
+            return
+
+        # 2. Determine Start Time & Temp
+        if status == SequenceStatus.DELAYED_WAIT and self.delay_target_dt:
+            start_time = self.delay_target_dt
+            # If delayed, assume we start heating from the current temp
+            # (or we could assume room temp, but current probe reading is safest)
+            sim_temp = seq.current_temp if seq.current_temp else 60.0
+        else:
+            start_time = datetime.now()
+            sim_temp = seq.current_temp if seq.current_temp else 60.0
+
+        total_minutes = 0.0
+        
+        steps = seq.current_profile.steps
+        current_idx = seq.current_step_index
+        
+        # 3. Determine where to start in the list
+        start_list_idx = 0
+        if status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
+            start_list_idx = current_idx if current_idx >= 0 else 0
+
+        # --- Helper for Ramp Math ---
+        def get_ramp_min(start_f, end_f, vol_gal, watts):
+            if end_f > start_f and hasattr(seq, 'calculate_ramp_minutes'):
+                # Use the backend physics engine
+                return seq.calculate_ramp_minutes(start_f, end_f, vol_gal, watts)
+            return 0.0
+        # ----------------------------
+
+        # 4. Loop through Steps
+        for i in range(start_list_idx, len(steps)):
+            step = steps[i]
+            
+            # Step Parameters
+            target = float(step.setpoint_f or 0.0)
+            vol = float(step.lauter_volume or 6.0) # Default to 6 Gal if unspecified
+            watts = getattr(step, 'power_watts', 1800)
+            dur = float(step.duration_min or 0.0)
+
+            # A. ACTIVE STEP LOGIC
+            if i == current_idx and status not in [SequenceStatus.DELAYED_WAIT, SequenceStatus.IDLE]:
+                # If we are already holding (temp reached), no ramp needed, just remaining timer.
+                if getattr(seq, 'temp_reached', False):
+                    if hasattr(seq, 'timer'):
+                         total_minutes += (seq.timer.remaining_time / 60.0)
+                else:
+                    # We are currently ramping.
+                    # Add ramp from CURRENT TEMP -> TARGET
+                    total_minutes += get_ramp_min(sim_temp, target, vol, watts)
+                    # Add full duration (timer hasn't started yet)
+                    total_minutes += dur
+            
+            # B. FUTURE STEP LOGIC
+            else:
+                # Ramp from PREV STEP TEMP -> THIS TARGET
+                total_minutes += get_ramp_min(sim_temp, target, vol, watts)
+                total_minutes += dur
+            
+            # Update simulation temp for the next iteration
+            # (Assume we finish this step at the target temp)
+            if target >= 60:
+                sim_temp = target
+        
+        # 5. Format Output
+        end_dt = start_time + timedelta(minutes=total_minutes)
+        self.est_end_display = f"Est. End: {end_dt.strftime('%I:%M %p')}"
+       
     def open_water_calculator(self):
         """Called by the WATER button."""
         app = App.get_running_app()
@@ -1401,6 +1482,9 @@ class MainScreen(Screen):
             
             if target_dt <= now:
                 target_dt += timedelta(days=1)
+            
+            # FIX: Store this for the Est. End calculation
+            self.delay_target_dt = target_dt
             
             # 2. Context (Auto vs Manual)
             is_auto = (self.app.sequencer.status != SequenceStatus.MANUAL)
@@ -2284,6 +2368,10 @@ class KettleApp(App):
             screen.delay_btn_text = "DELAY START"
             screen.delay_btn_color = [0.2, 0.2, 0.4, 1]
             
+        # FIX: Update Est. End Label
+        if hasattr(screen, '_update_est_end'):
+            screen._update_est_end()
+                  
         screen.last_status = status
     
     def refresh_all_screens(self):

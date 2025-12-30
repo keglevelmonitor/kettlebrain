@@ -280,25 +280,39 @@
 
                     # CARD 3: Timer & Heartbeat
                     Card:
+                        # Stack Vertically: (Timer+Heartbeat) on Top, (Est End) on Bottom
                         BoxLayout:
-                            orientation: 'horizontal'
-                            spacing: 5
+                            orientation: 'vertical'
+                            spacing: 0
+                            
+                            # TOP ROW: Timer (Left) + Heartbeat (Right)
                             BoxLayout:
-                                orientation: 'vertical'
-                                size_hint_x: 0.75
+                                orientation: 'horizontal'
+                                spacing: 5
+                                
                                 HeroLabel:
                                     text: root.display_timer
+                                    size_hint_x: 0.75
                                     halign: 'center'
                                     valign: 'middle'
-                            Widget:
-                                size_hint_x: 0.25
-                                size_hint_y: 1
-                                canvas:
-                                    Color:
-                                        rgba: root.heartbeat_color
-                                    Ellipse:
-                                        pos: self.center_x - dp(15), self.center_y - dp(15)
-                                        size: dp(30), dp(30)
+                                
+                                Widget:
+                                    size_hint_x: 0.25
+                                    size_hint_y: 1
+                                    canvas:
+                                        Color:
+                                            rgba: root.heartbeat_color
+                                        Ellipse:
+                                            pos: self.center_x - dp(15), self.center_y - dp(15)
+                                            size: dp(30), dp(30)
+
+                            # BOTTOM ROW: Estimated End Time
+                            Label:
+                                text: root.est_end_display
+                                font_size: '16sp' # Matches "Target" label size in Card 1
+                                color: 0.6, 0.6, 0.6, 1
+                                size_hint_y: 1 # Equal weight to Top Row creates 50/50 split matching Card 1
+                                valign: 'top'
 
             # SCREEN 2: Delay Setup (Stacked Sliders & Action Stack)
             Screen:
