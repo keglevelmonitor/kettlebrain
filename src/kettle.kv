@@ -247,13 +247,31 @@
 
                     # CARD 2: Status & Delay Button
                     Card:
+                        # 1. PROFILE NAME (Fixed Top Slot)
+                        Label:
+                            text: root.display_profile_name
+                            size_hint_y: 0.25
+                            text_size: self.width, None
+                            halign: 'center'
+                            valign: 'bottom' # Align bottom so it sits just above status
+                            color: 1, 1, 1, 1
+                            font_size: '14sp'
+                            bold: True
+
+                        # 2. STATUS / ALERT (Middle Slot)
                         Label:
                             text: root.display_status
+                            # No markup needed unless you want it for other things
+                            # Removed explicit size_hint_y so it fills remaining space automatically
+                            # (The Button is 0.6, Profile is 0.25, this gets the rest)
                             text_size: self.width, None
                             halign: 'center'
                             valign: 'center'
                             color: 1, 0.8, 0, 1
                             font_size: '16sp'
+                            line_height: 1.1
+
+                        # 3. BUTTON (Bottom Slot)
                         Button:
                             text: root.delay_btn_text
                             size_hint_y: 0.6
@@ -329,6 +347,7 @@
                         BoxLayout:
                             spacing: 10
                             Slider:
+                                id: s_delay_temp  # <--- NEW ID
                                 size_hint_x: 0.7
                                 min: 70
                                 max: 212
@@ -338,17 +357,19 @@
                                 cursor_size: dp(30), dp(30)
                             Label:
                                 size_hint_x: 0.3
-                                text: "Target: " + str(int(root.delay_temp)) + " F"
+                                # FIX: Use dynamic property
+                                text: root.delay_target_display
                                 font_size: '18sp'
                                 bold: True
                                 halign: 'left'
                                 valign: 'middle'
                                 text_size: self.size
 
-                        # ROW 3: VOLUME
+                       # ROW 3: VOLUME
                         BoxLayout:
                             spacing: 10
                             Slider:
+                                id: s_delay_vol   # <--- NEW ID
                                 size_hint_x: 0.7
                                 min: 2
                                 max: 9
@@ -358,7 +379,8 @@
                                 cursor_size: dp(30), dp(30)
                             Label:
                                 size_hint_x: 0.3
-                                text: "Volume: " + str(round(root.delay_vol, 2)) + " Gal"
+                                # FIX: Use dynamic property
+                                text: root.delay_vol_display
                                 font_size: '18sp'
                                 bold: True
                                 halign: 'left'
@@ -425,7 +447,8 @@
                         BoxLayout:
                             orientation: 'vertical'
                             Label:
-                                text: "Volume: " + str(round(vol_slider.value, 2)) + " Gal"
+                                # FIX: Use dynamic property
+                                text: root.manual_vol_display
                                 size_hint_y: 0.4
                                 color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
                             Slider:
@@ -1030,15 +1053,17 @@
                     color: (0.5, 0.5, 0.5, 1) if root.is_temp_locked else (1,1,1,1)
                 Slider:
                     id: s_temp
-                    min: 0
-                    max: 143
-                    # MAP DISPLAY: If temp is < 70, slider stays at 0. Else, subtract 69 (so 70 becomes 1).
-                    value: 0 if root.step_temp < 70 else (root.step_temp - 69)
+                    # Remove hardcoded min/max/step - Python controls this now
+                    
+                    # FIX 1: Direct Binding (No more +69/-69 math)
+                    value: root.step_temp
+                    on_value: if not self.disabled: root.step_temp = self.value
                     
                     disabled: root.is_temp_locked
                     
-                    # MAP INPUT: If slider is 0, temp is 0. Else, add 69 (so 1 becomes 70).
-                    on_value: if not self.disabled: root.step_temp = (self.value + 69) if self.value > 0 else 0
+                    # FIX 2: Add padding to prevent the dot from covering the "Target" label
+                    padding: dp(25) 
+                    cursor_size: dp(30), dp(30)
             
             # 2. DURATION
             BoxLayout:
@@ -1058,17 +1083,20 @@
             BoxLayout:
                 size_hint_y: 1
                 Label: 
-                    # UPDATED: "Volume" and 2 decimal places
-                    text: f"Volume: {root.step_vol:.2f} Gal"
+                    # FIX: Use dynamic property
+                    text: root.step_vol_display
                     size_hint_x: 0.25
                     color: 0.2, 0.6, 0.8, 1
                 Slider:
                     id: s_vol
-                    min: 2     # UPDATED
-                    max: 9     # UPDATED
-                    step: 0.25 # UPDATED
+                    # Remove hardcoded min/max/step - Python controls this now
+                    
+                    # FIX: Direct Binding
                     value: root.step_vol
                     on_value: root.step_vol = self.value
+                    
+                    padding: dp(25)
+                    cursor_size: dp(30), dp(30)
 
             # 4. POWER
             BoxLayout:
@@ -1333,6 +1361,7 @@
                             text: "Boil Temp: " + str(int(root.boil_temp)) + " F"
                             font_size: '18sp'
                     Slider:
+                        id: s_boil  # <--- NEW ID
                         min: 180
                         max: 212
                         step: 1
@@ -1652,6 +1681,7 @@
                     Label:
                         text: "Test Volume: " + str(round(root.cal_vol, 2)) + " Gal"
                     Slider:
+                        id: s_cal_vol  # <--- NEW ID
                         min: 2.0
                         max: 10.0
                         step: 0.25
@@ -1666,6 +1696,7 @@
                     Label:
                         text: "Start Temp: " + str(int(root.cal_start_temp)) + " F"
                     Slider:
+                        id: s_cal_start  # <--- NEW ID
                         min: 50
                         max: 150
                         step: 1
@@ -1680,6 +1711,7 @@
                     Label:
                         text: "End Temp: " + str(int(root.cal_end_temp)) + " F"
                     Slider:
+                        id: s_cal_end  # <--- NEW ID
                         min: 100
                         max: 212
                         step: 1
@@ -1808,7 +1840,7 @@
         TabbedPanel:
             id: tabs
             do_default_tab: False
-            tab_width: self.parent.width / 3
+            tab_width: (self.parent.width - dp(15)) / 3
             background_color: 0.1, 0.1, 0.1, 1
             
             # --- TAB 1: WATER ---
@@ -1840,10 +1872,11 @@
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
-                                text: "Grain"
+                                text: "Grain Weight"
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
+                                id: s_grain
                                 min: 2.0
                                 max: 15.0
                                 step: 0.5
@@ -1858,10 +1891,11 @@
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
-                                text: "Temp"
+                                text: "Grain Temp"
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
+                                id: s_grain_temp
                                 min: 50
                                 max: 80
                                 step: 1
@@ -1876,10 +1910,11 @@
                         BoxLayout:
                             size_hint_y: 1
                             Label: 
-                                text: "Mash"
+                                text: "Mash Temp"
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
+                                id: s_mash_temp
                                 min: 145
                                 max: 165
                                 step: 1
@@ -1920,9 +1955,10 @@
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
+                                id: s_ferm_vol
                                 min: 2.0
                                 max: 8.0
-                                step: 0.5
+                                step: 0.25          # <--- CHANGED from 0.5
                                 value: root.ferm_vol
                                 on_value: root.ferm_vol = self.value; root.calculate_all()
                                 size_hint_x: 0.5
@@ -1935,19 +1971,7 @@
                     BoxLayout:
                         orientation: 'vertical'
                         spacing: 5
-                        # 1. Units
-                        BoxLayout:
-                            size_hint_y: 1
-                            Label: 
-                                text: "Units"
-                                size_hint_x: 0.35
-                                font_size: '14sp'
-                            Spinner:
-                                text: "Metric" if root.is_metric else "US Std"
-                                values: ["US Std", "Metric"]
-                                on_text: root.update_units(self.text)
-                                size_hint_x: 0.65
-                                background_color: 0.2, 0.4, 0.6, 1
+
                         # 2. Absorption
                         BoxLayout:
                             size_hint_y: 1
@@ -1956,6 +1980,7 @@
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
+                                id: s_abs
                                 min: 0.20
                                 max: 1.20
                                 step: 0.05
@@ -1963,9 +1988,11 @@
                                 on_value: root.abs_rate = self.value; root.calculate_all()
                                 size_hint_x: 0.5
                             Label:
-                                text: f"{root.abs_rate:.2f}"
+                                # --- CHANGED: Append qt/lb or L/kg ---
+                                text: f"{root.abs_rate:.2f} {'L/kg' if root.is_metric else 'qt/lb'}"
                                 size_hint_x: 0.2
                                 font_size: '14sp'
+
                         # 3. Thickness
                         BoxLayout:
                             size_hint_y: 1
@@ -1974,6 +2001,7 @@
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
+                                id: s_thick
                                 min: 0.5
                                 max: 3.0
                                 step: 0.1
@@ -1982,10 +2010,12 @@
                                 on_value: root.thickness = self.value; root.calculate_all()
                                 size_hint_x: 0.5
                             Label:
-                                text: f"{root.thickness:.1f}"
+                                # --- CHANGED: Append qt/lb or L/kg ---
+                                text: f"{root.thickness:.1f} {'L/kg' if root.is_metric else 'qt/lb'}"
                                 color: (1,1,1,1) if root.mash_method == "Sparge" else (0.4,0.4,0.4,1)
                                 size_hint_x: 0.2
                                 font_size: '14sp'
+
                         # 4. Boil Off
                         BoxLayout:
                             size_hint_y: 1
@@ -1994,6 +2024,7 @@
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
+                                id: s_boiloff
                                 min: 0.5
                                 max: 3.5
                                 step: 0.1
@@ -2001,9 +2032,11 @@
                                 on_value: root.boiloff = self.value; root.calculate_all()
                                 size_hint_x: 0.5
                             Label:
-                                text: f"{root.boiloff:.1f}"
+                                # --- CHANGED: Append G or L ---
+                                text: f"{root.boiloff:.1f} {'L' if root.is_metric else 'G'}"
                                 size_hint_x: 0.2
                                 font_size: '14sp'
+
                         # 5. Trub Loss
                         BoxLayout:
                             size_hint_y: 1
@@ -2012,6 +2045,7 @@
                                 size_hint_x: 0.3
                                 font_size: '14sp'
                             Slider:
+                                id: s_trub
                                 min: 0.0
                                 max: 3.0
                                 step: 0.25
@@ -2019,7 +2053,8 @@
                                 on_value: root.trub_vol = self.value; root.calculate_all()
                                 size_hint_x: 0.5
                             Label:
-                                text: f"{root.trub_vol:.2f}"
+                                # --- CHANGED: Append G or L ---
+                                text: f"{root.trub_vol:.2f} {'L' if root.is_metric else 'G'}"
                                 size_hint_x: 0.2
                                 font_size: '14sp'
                         # FILLER

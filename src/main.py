@@ -231,6 +231,7 @@ class StepEditorScreen(Screen):
     step_temp = NumericProperty(150.0)
     step_dur = NumericProperty(60.0)
     step_vol = NumericProperty(0.0)
+    step_vol_display = StringProperty("Volume: --")
     
     # Power (Discrete Map)
     step_power_idx = NumericProperty(3)
@@ -260,7 +261,16 @@ class StepEditorScreen(Screen):
 
     def on_step_name(self, instance, value): self._check_dirty()
     def on_step_dur(self, instance, value): self._check_dirty()
-    def on_step_vol(self, instance, value): self._check_dirty()
+    
+    def on_step_vol(self, instance, value):
+        self._check_dirty()
+
+        # FIX: Update label dynamically
+        app = App.get_running_app()
+        if not app: return
+        u_vol = "L" if app.is_metric else "Gal"
+        self.step_vol_display = f"Volume: {value:.2f} {u_vol}"
+    
     def on_selected_type(self, instance, value): 
         self._handle_type_change(value)
         self._check_dirty()
@@ -270,37 +280,48 @@ class StepEditorScreen(Screen):
     # In src/main.py inside class StepEditorScreen(Screen):
 
     def _update_target_display(self):
-        """Formats the label to show (BOIL), (No Heat), or standard temp."""
+        """Formats the label to show (BOIL) or --."""
         app = App.get_running_app()
         if not app: return
-        val = int(self.step_temp)
         
-        # --- NEW LOGIC: Handle "No Heat" ---
-        if val < 60:
-            self.step_target_display = "Target: -- (No Heat)"
+        # self.step_temp is in User Units (C or F)
+        val = float(self.step_temp)
+        
+        # Check for -- (Low value threshold)
+        if val < 10: 
+            self.step_target_display = "Target: --"
             return
-        # -----------------------------------
-
-        sys_boil = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+            
+        # --- UNIT CONVERSION LOGIC ---
+        # 1. Convert User Value (C) back to F to compare against System Boil (stored in F)
+        val_f = app.to_backend_units(val, 'temp')
+        sys_boil_f = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
         
-        if val >= sys_boil:
-            self.step_target_display = f"Target: {val} F (BOIL)"
+        unit = "C" if app.is_metric else "F"
+        
+        # Compare F to F
+        if val_f >= (sys_boil_f - 1.0): # Small buffer for rounding
+            self.step_target_display = f"Target: {int(val)} {unit} (BOIL)"
         else:
-            self.step_target_display = f"Target: {val} F"
+            self.step_target_display = f"Target: {int(val)} {unit}"
 
     def _handle_type_change(self, value):
         app = App.get_running_app()
         if not app: return
         
         if value == "Boil":
-            sys_boil = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
-            self.step_temp = sys_boil
+            # Read System Boil (Imperial)
+            sys_boil_f = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+            # Convert to User Units (e.g., 100 C) before setting property
+            self.step_temp = app.to_user_units(sys_boil_f, 'temp')
             self.is_temp_locked = True
         elif value == "Chill":
-            self.step_temp = 70.0
+            # Default Chill Temp (70 F / ~21 C)
+            self.step_temp = app.to_user_units(70.0, 'temp')
             self.is_temp_locked = False
         else:
             self.is_temp_locked = False
+            
         self._update_target_display()
 
     def _get_current_state(self):
@@ -332,17 +353,41 @@ class StepEditorScreen(Screen):
         self.step_index = index
         self.step_name = step_obj.name 
         
+        app = App.get_running_app()
+
         try: self.selected_type = step_obj.step_type.value
         except: self.selected_type = "Step"
         
         try: self.selected_advance = step_obj.timeout_behavior.value
         except: self.selected_advance = TimeoutBehavior.AUTO_ADVANCE.value
 
-        self.step_temp = float(step_obj.setpoint_f or 0.0)
-        self.step_dur = float(step_obj.duration_min or 0.0)
+        # --- UNIT CONVERSION START ---
+        # 1. Temp: Read Imperial -> Configure Slider -> Set User Value
+        raw_temp_f = float(step_obj.setpoint_f or 0.0)
         
-        v = float(step_obj.lauter_volume or 0.0)
-        self.step_vol = v if v >= 2.0 else 6.0 
+        # Configure Slider Range first
+        if raw_temp_f < 60:
+             app.configure_slider(self.ids.s_temp, 70.0, 'temp') 
+             self.step_temp = 0 
+        else:
+             app.configure_slider(self.ids.s_temp, raw_temp_f, 'temp')
+
+        # 2. Volume
+        raw_vol_gal = float(step_obj.lauter_volume or 0.0)
+        if raw_vol_gal < 1.0: raw_vol_gal = 6.0
+        app.configure_slider(self.ids.s_vol, raw_vol_gal, 'vol')
+        # -----------------------------
+        
+        # HANDLE LOCKING: If Boil/Chill, update lock state but DON'T overwrite the temp
+        # we just loaded (unless it's wildly wrong).
+        if self.selected_type == "Boil":
+            self.is_temp_locked = True
+        elif self.selected_type == "Chill":
+            self.is_temp_locked = False
+        else:
+            self.is_temp_locked = False
+            
+        self.step_dur = float(step_obj.duration_min or 0.0)
         
         w = getattr(step_obj, 'power_watts', 1800)
         self.step_power_idx = self.watts_map.index(w) if w in self.watts_map else 3
@@ -371,11 +416,21 @@ class StepEditorScreen(Screen):
 
     def save_step(self):
         """Commits changes to memory (the object) and exits."""
+        app = App.get_running_app()
+        
         if self.step_obj_ref:
             self.step_obj_ref.name = self.step_name
-            self.step_obj_ref.setpoint_f = self.step_temp
+            
+            # --- UNIT CONVERSION START ---
+            # Convert UI Units -> Backend Units (F / Gal)
+            val_f = app.to_backend_units(self.step_temp, 'temp')
+            self.step_obj_ref.setpoint_f = val_f
+            
+            val_gal = app.to_backend_units(self.step_vol, 'vol')
+            self.step_obj_ref.lauter_volume = val_gal 
+            # -----------------------------
+            
             self.step_obj_ref.duration_min = self.step_dur
-            self.step_obj_ref.lauter_volume = self.step_vol 
             
             try: self.step_obj_ref.step_type = StepType(self.selected_type)
             except: pass 
@@ -392,7 +447,6 @@ class StepEditorScreen(Screen):
             self.step_obj_ref.additions = new_list
 
         # Refresh Main Editor List
-        app = App.get_running_app()
         app.root.get_screen('editor').refresh_steps()
         app.root.current = 'editor'
 
@@ -587,15 +641,24 @@ class ProfileEditorScreen(Screen):
         # 1. Update Dirty Status first
         self._check_dirty()
         
+        app = App.get_running_app()
+        unit = "C" if app.is_metric else "F"
+
         data = []
         if self.editing_profile:
             for i, step in enumerate(self.editing_profile.steps):
-                # ... (Existing Logic for Parent Row) ...
+                
+                # --- UNIT CONVERSION LOGIC ---
                 if hasattr(step, 'step_type') and step.step_type == StepType.BOIL:
                     type_str = "BOIL"
                 else:
-                    t = step.setpoint_f if step.setpoint_f else 0.0
-                    type_str = f"{int(t)}°F"
+                    raw_f = step.setpoint_f if step.setpoint_f else 0.0
+                    if raw_f < 60:
+                         type_str = "--"
+                    else:
+                         user_val = app.to_user_units(raw_f, 'temp')
+                         type_str = f"{int(user_val)}°{unit}"
+                # -----------------------------
 
                 d_str = f"{int(step.duration_min)}m" if step.duration_min else "0m"
                 desc = f"{type_str} / {d_str}"
@@ -608,7 +671,7 @@ class ProfileEditorScreen(Screen):
                 # Add PARENT Row
                 data.append({
                     'view_type': 'EditorStepItem',
-                    'step_index': i,        # Use 1-based indexing
+                    'step_index': i,
                     'display_index': str(i + 1),
                     'step_name': step.name,
                     'step_desc': desc,
@@ -657,9 +720,11 @@ class MainScreen(Screen):
     display_timer = StringProperty("00:00")
     display_elapsed = StringProperty("00:00")
     display_power_watts = StringProperty("1800")
+    display_profile_name = StringProperty("")
     action_button_text = StringProperty("START")
     temp_color = ListProperty([0.2, 0.8, 0.2, 1])
     manual_target_display = StringProperty("Target: -- F")
+    manual_vol_display = StringProperty("Volume: --")
     
     is_profile_loaded = BooleanProperty(False)
     
@@ -667,8 +732,6 @@ class MainScreen(Screen):
     mode_switch_target = StringProperty("") # 'auto' or 'manual'
     mode_confirm_msg = StringProperty("")
     mode_reset_btn_text = StringProperty("")
-    
-    
     
     # --- NEW DELAY PROPERTIES ---
     delay_hour = NumericProperty(6)
@@ -678,6 +741,8 @@ class MainScreen(Screen):
     delay_btn_text = StringProperty("DELAY START")
     delay_btn_color = ListProperty([0.2, 0.2, 0.4, 1])
     delay_minutes_total = NumericProperty(360) # Default 6:00 AM (6 * 60)
+    delay_target_display = StringProperty("Target: --")
+    delay_vol_display = StringProperty("Volume: --")
     
     # Visual properties
     controls_disabled = BooleanProperty(False)
@@ -707,6 +772,26 @@ class MainScreen(Screen):
         self.last_status = SequenceStatus.IDLE  # <--- NEW TRACKER
         self.watts_map = [800, 1000, 1400, 1800] 
         
+    def on_delay_temp(self, instance, value):
+        # 1. Get Units
+        u_temp = "C" if self.app.is_metric else "F"
+        
+        # 2. Check BOIL Threshold
+        # Convert Slider Value (User) -> Backend (F)
+        val_f = self.app.to_backend_units(value, 'temp')
+        sys_boil_f = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+        
+        # Compare F to F
+        # Use small buffer (1.0) for rounding differences
+        if val_f >= (sys_boil_f - 1.0):
+            self.delay_target_display = f"Target: {int(value)} {u_temp} (BOIL)"
+        else:
+            self.delay_target_display = f"Target: {int(value)} {u_temp}"
+
+    def on_delay_vol(self, instance, value):
+        u_vol = "L" if self.app.is_metric else "Gal"
+        self.delay_vol_display = f"Volume: {value:.2f} {u_vol}"
+    
     def on_enter(self):
         """Syncs UI with saved settings."""
         self._load_manual_settings()
@@ -714,42 +799,59 @@ class MainScreen(Screen):
     def _load_manual_settings(self):
         sm = self.app.settings_manager
         
+        # Load Imperial Defaults
         last_temp = sm.get("manual_mode_settings", "last_setpoint_f", 150.0)
-        last_timer = sm.get("manual_mode_settings", "last_timer_min", 60.0)
         last_vol = sm.get("manual_mode_settings", "last_volume_gal", 6.0)
+        
+        # FIX: Force an update of the text labels on load
+        self.on_slider_drag('temp', self.slider_temp_val)
+        self.on_slider_drag('vol', self.slider_vol_val)
+    
+    
+        # Time/Power don't need unit conversion
+        last_timer = sm.get("manual_mode_settings", "last_timer_min", 60.0)
         last_watts = sm.get("manual_mode_settings", "last_power_watts", 1800)
 
-        self.slider_temp_val = last_temp
+        # Configure Sliders (Sets min/max/step/value)
+        self.app.configure_slider(self.ids.temp_slider, last_temp, 'temp')
+        self.app.configure_slider(self.ids.vol_slider, last_vol, 'vol')
+        
         self.slider_time_val = last_timer
-        self.slider_vol_val = last_vol
         try:
             self.slider_power_val = self.watts_map.index(last_watts)
         except ValueError:
             self.slider_power_val = 3
         
         self.display_power_watts = str(last_watts)
-        
-        # NEW: Trigger label update so BOIL text appears on load if needed
-        self.on_slider_drag('temp', last_temp)
-        
         self._update_prediction()
         
     def on_slider_drag(self, slider_type, value):
         """Updates VISUALS (labels/prediction) immediately."""
+
+        # Unit Strings
+        u_temp = "C" if self.app.is_metric else "F"
+        u_vol = "L" if self.app.is_metric else "Gal"
+
         if slider_type == 'temp': 
-            val = int(value)
-            self.slider_temp_val = float(value)
-            
-            # NEW: Check System Boil Setting for Label
-            boil_temp = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
-            
-            if val >= boil_temp:
-                self.manual_target_display = f"Target: {val} F (BOIL)"
+            val = float(value)
+            self.slider_temp_val = val
+
+            # Label Logic
+            sys_boil = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+
+            # To compare, we must convert the Slider Value (User Units) -> Backend (F)
+            val_f = self.app.to_backend_units(val, 'temp')
+
+            if val_f >= sys_boil:
+                self.manual_target_display = f"Target: {int(val)} {u_temp} (BOIL)"
             else:
-                self.manual_target_display = f"Target: {val} F"
+                self.manual_target_display = f"Target: {int(val)} {u_temp}"
 
         elif slider_type == 'vol': 
             self.slider_vol_val = float(value)
+            # FIX: Update the volume label property
+            self.manual_vol_display = f"Volume: {value:.2f} {u_vol}"
+
         elif slider_type == 'time': 
             self.slider_time_val = float(value)
         elif slider_type == 'power': 
@@ -757,25 +859,26 @@ class MainScreen(Screen):
             idx = int(value)
             if 0 <= idx < len(self.watts_map):
                 self.display_power_watts = str(self.watts_map[idx])
-        
+
         self._update_prediction()
 
     def on_slider_release(self, slider_type, value):
-        """Saves to backend/disk on release."""
-        self.on_slider_drag(slider_type, value) # Sync
+        self.on_slider_drag(slider_type, value) 
         seq = self.app.sequencer
         
+        # Convert User Input -> Backend Units
         if slider_type == 'temp':
-            seq.set_manual_target(float(value))
+            val_f = self.app.to_backend_units(float(value), 'temp')
+            seq.set_manual_target(val_f)
         elif slider_type == 'vol':
-            seq.set_manual_volume(float(value))
+            val_gal = self.app.to_backend_units(float(value), 'vol')
+            seq.set_manual_volume(val_gal)
         elif slider_type == 'time':
             seq.set_manual_timer_duration(float(value))
         elif slider_type == 'power':
             idx = int(value)
             if 0 <= idx < len(self.watts_map):
-                w = self.watts_map[idx]
-                seq.set_manual_power(w)
+                seq.set_manual_power(self.watts_map[idx])
                 
         self._update_prediction()
 
@@ -1090,55 +1193,53 @@ class MainScreen(Screen):
 
         data = []
         
-        # We need to track which row index (0, 1, 2...) corresponds to the "active" item
         active_list_index = -1
         current_row_count = 0
         
-        # Check if we are searching for a specific alert child
         active_alert_name = None
         if seq.status == SequenceStatus.WAITING_FOR_USER and seq.current_alert_text:
             active_alert_name = seq.current_alert_text
 
+        # Unit String Helper
+        unit = "C" if self.app.is_metric else "F"
+
         for i, step in enumerate(seq.current_profile.steps):
-            # --- PARENT STEP LOGIC ---
             is_current_step = (i == current_idx)
             is_done = (i < current_idx)
             
-            # Default Colors
             bg = [0.2, 0.2, 0.2, 1]
             txt = [1, 1, 1, 1]
             
-            # Determine Status & Highlighting for Parent
             if is_current_step:
                 if active_alert_name: 
-                    bg = [0.2, 0.4, 0.6, 1] # Parent is active context
+                    bg = [0.2, 0.4, 0.6, 1]
                 else:
-                    bg = [0.2, 0.8, 0.2, 1] # Parent is THE active item
+                    bg = [0.2, 0.8, 0.2, 1] 
                     active_list_index = current_row_count 
             elif is_done:
                 txt = [0.5, 0.5, 0.5, 1]
 
-            # Text Data
-            # NEW: CHECK FOR BOIL TYPE
+            # --- UNIT CONVERSION LOGIC ---
             if step.step_type == StepType.BOIL:
                 sys_boil = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
-                t_str = f"{sys_boil:.0f}°F (BOIL)"
-            elif step.setpoint_f:
-                t_str = f"{step.setpoint_f:.0f}°F"
+                user_boil = self.app.to_user_units(sys_boil, 'boil_temp')
+                t_str = f"{user_boil:.0f}°{unit} (BOIL)"
+            elif step.setpoint_f and step.setpoint_f >= 60:
+                user_val = self.app.to_user_units(step.setpoint_f, 'temp')
+                t_str = f"{user_val:.0f}°{unit}"
             else:
                 t_str = "--"
+            # -----------------------------
 
             d_str = f"{step.duration_min} min" if step.duration_min > 0 else "--"
             r_str = getattr(step, 'predicted_ready_time', "--")
 
-            # Expansion Logic
             has_children = (len(step.additions) > 0)
             is_expanded = (i in self.expanded_indices)
             arrow_icon = ""
             if has_children:
                 arrow_icon = "v" if is_expanded else ">"
 
-            # Add Parent Row
             data.append({
                 'view_type': 'StepItem',
                 'step_index': str(i + 1),
@@ -1154,12 +1255,10 @@ class MainScreen(Screen):
             })
             current_row_count += 1
 
-            # --- CHILD ROW LOGIC ---
             if is_expanded and has_children:
                 sorted_adds = sorted(step.additions, key=lambda x: x.time_point_min, reverse=True)
                 
                 for add in sorted_adds:
-                    # Check if this child is the one alerting
                     is_active_child = False
                     if is_current_step and active_alert_name:
                         if add.name in active_alert_name or active_alert_name in add.name:
@@ -1183,7 +1282,6 @@ class MainScreen(Screen):
 
         self.ids.rv_steps.data = data
         
-        # 3. Trigger Auto-Scroll 
         if active_list_index != -1:
             self.scroll_to_active(active_list_index)
         
@@ -1244,10 +1342,14 @@ class MainScreen(Screen):
         # 1. Load Defaults
         now = datetime.now()
         
-        # Determine defaults (Next morning 6am or Current settings)
+        # Determine defaults
         if status == SequenceStatus.DELAYED_WAIT:
-            # If active, we theoretically should pull from sequencer, 
-            # but for now we rely on the properties being persistent.
+            # If active, use the current slider values (converted back to Imperial)
+            # so the slider configuration logic works consistently.
+            raw_temp = self.app.to_backend_units(self.delay_temp, 'temp')
+            raw_vol = self.app.to_backend_units(self.delay_vol, 'vol')
+            
+            # Keep existing time (don't reset to 6am if already running)
             pass 
         else:
             # Default target: 6:00 AM tomorrow
@@ -1258,14 +1360,22 @@ class MainScreen(Screen):
             # Convert target hour/min to total minutes for the slider
             self.delay_minutes_total = (next_target.hour * 60) + next_target.minute
             
-            # Load last manual settings for Temp/Vol
+            # Load last manual settings for Temp/Vol (Stored as Imperial)
             sm = self.app.settings_manager
-            self.delay_temp = sm.get("manual_mode_settings", "last_setpoint_f", 154.0)
-            self.delay_vol = sm.get("manual_mode_settings", "last_volume_gal", 8.0)
+            raw_temp = sm.get("manual_mode_settings", "last_setpoint_f", 154.0)
+            raw_vol = sm.get("manual_mode_settings", "last_volume_gal", 8.0)
 
         # 2. Slide the Hero Panel
         self.ids.hero_manager.transition.direction = 'left'
         self.ids.hero_manager.current = 'hero_delay'
+
+        # 3. Configure Sliders (raw_temp/raw_vol must be Imperial here)
+        self.app.configure_slider(self.ids.s_delay_temp, raw_temp, 'temp')
+        self.app.configure_slider(self.ids.s_delay_vol, raw_vol, 'vol')
+        
+        # 4. Trigger the labels manually to ensure they appear
+        self.on_delay_temp(None, self.delay_temp)
+        self.on_delay_vol(None, self.delay_vol)
 
     def close_delay_setup(self):
         """Cancel button in Delay Setup."""
@@ -1289,21 +1399,27 @@ class MainScreen(Screen):
             # 2. Context (Auto vs Manual)
             is_auto = (self.app.sequencer.status != SequenceStatus.MANUAL)
             
-            # 3. Call Sequencer
+            # --- UNIT CONVERSION START ---
+            # Convert User Inputs (C/L) -> Backend Units (F/Gal)
+            target_f = self.app.to_backend_units(self.delay_temp, 'temp')
+            target_gal = self.app.to_backend_units(self.delay_vol, 'vol')
+            # -----------------------------
+
+            # 3. Call Sequencer (Always expects Imperial)
             self.app.sequencer.start_delayed_mode(
-                self.delay_temp, 
-                self.delay_vol, 
+                target_f, 
+                target_gal, 
                 target_dt, 
                 from_auto_mode=is_auto
             )
             
             # 4. MIRROR SETTINGS TO MANUAL UI (Visual confirmation)
-            self.slider_temp_val = self.delay_temp
-            self.slider_vol_val = self.delay_vol
+            # Use configure_slider to handle unit ranges correctly
+            self.app.configure_slider(self.ids.temp_slider, target_f, 'temp')
+            self.app.configure_slider(self.ids.vol_slider, target_gal, 'vol')
             
-            # --- FIXED: Update Timer & Power Sliders too ---
-            self.slider_time_val = 30.0  # Match backend default (30 min)
-            self.slider_power_val = 3    # Match backend default (1800W - Index 3)
+            self.slider_time_val = 30.0
+            self.slider_power_val = 3
             
             # 5. Update UI & Slide Back
             self.update_status_display()
@@ -1416,8 +1532,9 @@ class HardwareSettingsScreen(Screen):
         sm = self.app.settings_manager
         hw = self.app.hw
         
-        # 1. LOAD BOIL TEMP
-        self.boil_temp = sm.get_system_setting("boil_temp_f", 212)
+        # 1. LOAD BOIL TEMP (With Conversion)
+        raw_boil = sm.get_system_setting("boil_temp_f", 212)
+        self.app.configure_slider(self.ids.s_boil, raw_boil, 'boil_temp')
 
         # 2. LOAD SENSORS
         raw_sensors = hw.scan_available_sensors()
@@ -1462,8 +1579,9 @@ class HardwareSettingsScreen(Screen):
         """Write values to SettingsManager."""
         sm = self.app.settings_manager
         
-        # Boil Temp
-        sm.set_system_setting("boil_temp_f", int(self.boil_temp))
+        # Boil Temp: Convert User Value -> Imperial for Backend
+        sys_val = self.app.to_backend_units(self.boil_temp, 'temp')
+        sm.set_system_setting("boil_temp_f", int(sys_val))
         
         # Sensor
         sm.set_system_setting("temp_sensor_id", self.ids.spinner_sensor.text)
@@ -1567,20 +1685,28 @@ class AppSettingsScreen(Screen):
     def save_changes(self):
         sm = self.app.settings_manager
         
-        # 1. Save Units
-        val_unit = self.UNIT_MAP.get(self.units_text, "imperial")
+        # 1. Update Global Prop
+        is_now_metric = (self.units_text == "Metric (°C / L)")
+        self.app.is_metric = is_now_metric
+        
+        # 2. Save Units
+        val_unit = "metric" if is_now_metric else "imperial"
         sm.set_system_setting("units", val_unit)
         
-        # 2. Save Booleans
+        # 3. Save Booleans
         sm.set_system_setting("auto_start_enabled", self.auto_start)
         sm.set_system_setting("auto_resume_enabled", self.auto_resume)
         sm.set_system_setting("force_numlock", self.force_numlock)
         sm.set_system_setting("enable_csv_logging", self.csv_logging)
         
-        # 3. Manage Auto-Start File (Ported logic)
+        # 4. Manage Auto-Start
         self._manage_autostart_file(self.auto_start)
         
         print("[AppSettings] Saved.")
+        
+        # 5. TRIGGER REFRESH
+        self.app.refresh_all_screens()
+        
         self.go_back()
 
     def _manage_autostart_file(self, enable):
@@ -1652,41 +1778,66 @@ class CalibrationSettingsScreen(Screen):
         self.app = App.get_running_app()
 
     def on_pre_enter(self):
-        """Refresh current calibration display."""
         sm = self.app.settings_manager
         
-        # Logic from settings_ui.py 
-        raw_f = sm.get_system_setting("heater_ref_rate_fpm", 1.2)
+        # Display current setting (Converted for display)
+        raw_fpm = sm.get_system_setting("heater_ref_rate_fpm", 1.2)
         
-        # Display current setting
-        self.current_factor_text = f"{raw_f:.2f} °F/min (Ref: 8 Gal)"
+        if self.app.is_metric:
+             # Convert F/min -> C/min (Delta conversion is just 5/9, no offset)
+             val_disp = raw_fpm * 5/9
+             unit = "C/min"
+             ref_vol = "30L" # Approx ref
+        else:
+             val_disp = raw_fpm
+             unit = "F/min"
+             ref_vol = "8 Gal"
+             
+        self.current_factor_text = f"{val_disp:.2f} {unit} (Ref: {ref_vol})"
+        
+        # Configure Sliders (Defaults are Imperial, let configure_slider handle it)
+        # Note: If we had stored last used cal values, we'd load them here. 
+        # For now we default to standard start points.
+        self.app.configure_slider(self.ids.s_cal_vol, 6.0, 'vol')
+        self.app.configure_slider(self.ids.s_cal_start, 70.0, 'temp')
+        self.app.configure_slider(self.ids.s_cal_end, 150.0, 'temp')
+        
         self.calc_result_text = "--"
         self.new_calculated_factor = None
         self.ids.btn_update.disabled = True
 
     def calculate_efficiency(self):
-        """Math logic ported from settings_ui.py ."""
         try:
-            vol = float(self.cal_vol)
-            start_t = float(self.cal_start_temp)
-            end_t = float(self.cal_end_temp)
+            # 1. Convert User Inputs -> Imperial (Backend Truth)
+            vol_gal = self.app.to_backend_units(self.cal_vol, 'vol')
+            start_f = self.app.to_backend_units(self.cal_start_temp, 'temp')
+            end_f = self.app.to_backend_units(self.cal_end_temp, 'temp')
             mins = float(self.cal_time)
 
             if mins <= 0: return
 
-            # Calculate Rate
-            delta_temp = end_t - start_t
+            # 2. Calculate Rate (Imperial)
+            delta_temp = end_f - start_f
             if delta_temp <= 0: return
             
             actual_rate_fpm = delta_temp / mins
             
-            # Normalize to Reference Volume (8.0 Gal)
-            # Formula: rate * (actual_vol / ref_vol)
+            # Normalize (Ref Volume is Gallons)
             ref_vol = self.app.settings_manager.get_system_setting("heater_ref_volume_gal", 8.0)
-            normalized_rate_fpm = actual_rate_fpm * (vol / ref_vol)
+            normalized_rate_fpm = actual_rate_fpm * (vol_gal / ref_vol)
             
+            # 3. Store result as Imperial (Backend Truth)
             self.new_calculated_factor = normalized_rate_fpm
-            self.calc_result_text = f"{normalized_rate_fpm:.2f} °F/min"
+            
+            # 4. Display result in User Units
+            if self.app.is_metric:
+                disp_val = normalized_rate_fpm * 5/9
+                unit = "C/min"
+            else:
+                disp_val = normalized_rate_fpm
+                unit = "F/min"
+                
+            self.calc_result_text = f"{disp_val:.2f} {unit}"
             self.ids.btn_update.disabled = False
             
         except Exception as e:
@@ -1860,6 +2011,7 @@ class UpdatesSettingsScreen(Screen):
 class KettleApp(App):
     
     fonts_loaded = BooleanProperty(False)
+    is_metric = BooleanProperty(False) # <--- NEW GLOBAL PROPERTY
     
     def build(self):
         self.title = "KettleBrain"
@@ -1868,6 +2020,13 @@ class KettleApp(App):
         root_dir = os.path.dirname(project_dir)
         
         self.settings_manager = SettingsManager(root_dir)
+        
+        # --- NEW: Initialize Metric State ---
+        # Default is Imperial (False)
+        sys_units = self.settings_manager.get_system_setting("units", "imperial")
+        self.is_metric = (sys_units == "metric")
+        # ------------------------------------
+        
         self.hw = HardwareInterface(self.settings_manager)
         
         pending_profile_id = StringProperty(None)
@@ -1915,56 +2074,6 @@ class KettleApp(App):
         Clock.schedule_interval(self.update_ui, 0.1)
         return sm
     
-    # ~ def build(self):
-        # ~ self.title = "KettleBrain"
-        # ~ src_dir = os.path.dirname(os.path.abspath(__file__))
-        # ~ project_dir = os.path.dirname(src_dir)
-        # ~ root_dir = os.path.dirname(project_dir)
-        
-        # ~ self.settings_manager = SettingsManager(root_dir)
-        # ~ self.hw = HardwareInterface(self.settings_manager)
-        
-        # ~ pending_profile_id = StringProperty(None)
-        
-        # ~ # Initialize relay control and sequencer
-        # ~ from relay_control import RelayControl
-        # ~ self.relay = RelayControl(self.settings_manager)
-        # ~ self.sequencer = SequenceManager(self.settings_manager, self.relay, self.hw)
-        # ~ self.sequencer.enter_manual_mode()
-        
-        # ~ # --- SCREEN MANAGER SETUP ---
-        # ~ sm = ScreenManager()
-        
-        # ~ self.main_screen = MainScreen(name='main')
-        # ~ self.profiles_screen = ProfilesScreen(name='profiles')
-        # ~ self.editor_screen = ProfileEditorScreen(name='editor')
-        # ~ self.step_editor_screen = StepEditorScreen(name='step_editor')
-        # ~ self.alerts_screen = StepAlertsScreen(name='step_alerts') # <--- ADD THIS
-        
-        # ~ # NEW SETTINGS SCREENS
-        # ~ self.sys_settings_screen = SystemSettingsScreen(name='sys_settings')
-        # ~ self.hw_settings_screen = HardwareSettingsScreen(name='settings_hw')
-        # ~ self.app_settings_screen = AppSettingsScreen(name='settings_app')
-        # ~ self.cal_settings_screen = CalibrationSettingsScreen(name='settings_cal')
-        # ~ self.updates_screen = UpdatesSettingsScreen(name='settings_updates')
-        
-                  
-        # ~ sm.add_widget(self.main_screen)
-        # ~ sm.add_widget(self.profiles_screen)
-        # ~ sm.add_widget(self.editor_screen)
-        # ~ sm.add_widget(self.step_editor_screen)
-        # ~ sm.add_widget(self.alerts_screen) # <--- ADD THIS
-        # ~ sm.add_widget(self.cal_settings_screen)
-        # ~ sm.add_widget(self.updates_screen)
-        
-        # ~ # Add the new settings screens
-        # ~ sm.add_widget(self.sys_settings_screen)
-        # ~ sm.add_widget(self.hw_settings_screen)
-        # ~ sm.add_widget(self.app_settings_screen)
-                
-        # ~ Clock.schedule_interval(self.update_ui, 0.1)
-        # ~ return sm
-        
     def update_ui(self, dt):
         """
         Main UI Loop (10Hz).
@@ -1981,12 +2090,11 @@ class KettleApp(App):
         screen.is_profile_loaded = (seq.current_profile is not None)
         
         # --- 1. TEMPERATURE COLORS ONLY ---
-        # (Target Text is now handled in Section 2 below)
-        current_temp = seq.current_temp if seq.current_temp else 0.0
-        tgt_check = seq.get_target_temp()
+        current_temp_f = seq.current_temp if seq.current_temp else 0.0
+        tgt_check_f = seq.get_target_temp()
         
-        if tgt_check:
-            diff = current_temp - tgt_check
+        if tgt_check_f:
+            diff = current_temp_f - tgt_check_f
             if abs(diff) < 1.0: 
                 screen.temp_color = [0.2, 0.8, 0.2, 1] # Green (Good)
             elif diff < 0: 
@@ -1996,49 +2104,50 @@ class KettleApp(App):
         else:
             screen.temp_color = [0.2, 0.8, 0.2, 1] 
             
+        # --- UNIT CONVERSION PREP ---
+        unit = "C" if self.is_metric else "F"
+        
         # --- 2. UPDATE LABELS (Temp, Target, Timer) ---
-        screen.display_temp = f"{current_temp:.1f} °F"
+        # LIVE TEMP (Convert F -> User Unit)
+        user_temp = self.to_user_units(current_temp_f, 'temp')
+        screen.display_temp = f"{user_temp:.1f} °{unit}"
+        
         screen.display_timer = seq.get_display_timer()
         screen.display_elapsed = seq.get_global_elapsed_time_str()
         
-        # Handle Target Text with BOIL logic
-        sys_boil = self.settings_manager.get_system_setting("boil_temp_f", 212.0)
+        # TARGET TEMP LOGIC
+        sys_boil_f = self.settings_manager.get_system_setting("boil_temp_f", 212.0)
+        
+        raw_target_f = 0.0
+        is_boil = False
 
-        # A. MANUAL MODE
+        # Determine Target (In Imperial) based on State
         if status == SequenceStatus.MANUAL:
             if getattr(seq, 'is_manual_running', False):
-                val = seq.target_temp
+                raw_target_f = seq.target_temp
             else:
-                val = screen.slider_temp_val
-            
-            # FIX: Use int() to match slider display exactly
-            if val >= sys_boil:
-                screen.display_target = f"{int(val)} (BOIL)"
-            else:
-                screen.display_target = f"{int(val)} °F"
+                # Slider is User Unit -> Convert back to F to check boil
+                raw_target_f = self.to_backend_units(screen.slider_temp_val, 'temp')
 
-        # B. DELAYED WAIT
         elif status == SequenceStatus.DELAYED_WAIT:
-            val = screen.delay_temp
-            if val >= sys_boil:
-                screen.display_target = f"{int(val)} (BOIL)"
-            else:
-                screen.display_target = f"{int(val)} °F"
+             raw_target_f = self.to_backend_units(screen.delay_temp, 'temp')
 
-        # C. AUTO MODE
         elif seq.current_profile and seq.current_step_index >= 0:
             step = seq.current_profile.steps[seq.current_step_index]
-            
             if step.step_type == StepType.BOIL:
-                # Always show BOIL for boil steps
-                screen.display_target = f"{int(sys_boil)} (BOIL)"
+                is_boil = True
             else:
-                val = step.setpoint_f if step.setpoint_f else 0.0
-                screen.display_target = f"{int(val)} °F"
+                raw_target_f = step.setpoint_f if step.setpoint_f else 0.0
         
-        # D. FALLBACK / IDLE
-        else:
+        # Display Logic
+        if is_boil or raw_target_f >= sys_boil_f:
+            user_boil = self.to_user_units(sys_boil_f, 'boil_temp')
+            screen.display_target = f"{int(user_boil)} (BOIL)"
+        elif raw_target_f < 60: 
             screen.display_target = "--"
+        else:
+            user_target = self.to_user_units(raw_target_f, 'temp')
+            screen.display_target = f"{int(user_target)} °{unit}"
 
         # --- 3. HEARTBEAT PULSE ---
         import time
@@ -2048,22 +2157,18 @@ class KettleApp(App):
         is_auto_active = (status == SequenceStatus.RUNNING or status == SequenceStatus.WAITING_FOR_USER)
 
         if is_manual_active or is_auto_active:
-            # RUNNING / ALERT: Pulse Green
             if int(now * 2) % 2 == 0: screen.heartbeat_color = [0, 1, 0, 1] 
             else: screen.heartbeat_color = [0, 0.3, 0, 1]
             
         elif status == SequenceStatus.PAUSED:
-            # PAUSED: Pulse Blue
             if int(now * 2) % 2 == 0: screen.heartbeat_color = [0.2, 0.4, 0.8, 1] 
             else: screen.heartbeat_color = [0.1, 0.2, 0.4, 1] 
             
         elif status == SequenceStatus.DELAYED_WAIT:
-            # SLEEPING: Slow Pulse Teal
             if int(now) % 2 == 0: screen.heartbeat_color = [0.2, 0.6, 0.8, 1]
             else: screen.heartbeat_color = [0.1, 0.3, 0.4, 1]
             
         else:
-            # IDLE: Grey
             screen.heartbeat_color = [0.2, 0.2, 0.2, 1]
             
         # --- 4. HEATER INDICATORS ---
@@ -2079,33 +2184,31 @@ class KettleApp(App):
         # --- 5. STATUS TEXT & PREDICTION ---
         sys_msg = seq.get_status_message()
         
-        # If Delay is active, override status text here
+        if seq.current_profile:
+            screen.display_profile_name = f"Profile: {seq.current_profile.name}"
+        else:
+            screen.display_profile_name = ""
+
         if status == SequenceStatus.DELAYED_WAIT:
-            if hasattr(seq, 'get_delayed_status_msg'):
+             if hasattr(seq, 'get_delayed_status_msg'):
                 msg = seq.get_delayed_status_msg()
                 screen.display_status = f"SLEEPING\n{msg}"
-            else:
+             else:
                 screen.display_status = "DELAY ACTIVE"
-        
         elif status == SequenceStatus.MANUAL:
             if "ALERT" in sys_msg:
                 screen.display_status = sys_msg
             else:
-                # Use prediction logic
                 if hasattr(screen, '_update_prediction'): 
                     screen._update_prediction()
         else:
             screen.display_status = sys_msg
 
         # --- 6. VIEW SWITCHING ---
-        # Allow browsing in IDLE, but snap to Manual/Auto if running/sleeping
-        
-        # A. HANDLE WAKE UP SNAP (The "Gotcha" Fix)
         if screen.last_status == SequenceStatus.DELAYED_WAIT and status == SequenceStatus.MANUAL:
             screen.ids.center_content.current = 'page_manual'
             if hasattr(screen, '_update_prediction'): screen._update_prediction()
 
-        # B. NORMAL SNAPPING
         elif status == SequenceStatus.MANUAL:
             if screen.ids.center_content.current != 'page_manual': 
                 screen.ids.center_content.current = 'page_manual'
@@ -2116,10 +2219,7 @@ class KettleApp(App):
                 screen.ids.center_content.current = 'page_auto'
 
         # --- 7. AUTO MODE LIST REFRESH ---
-        # Refresh on step change OR every 10 seconds to update timestamps
-        import time
         now = time.time()
-        
         current_id = seq.current_profile.id if seq.current_profile else None
         current_idx = seq.current_step_index
         
@@ -2166,22 +2266,46 @@ class KettleApp(App):
             screen.action_button_text = "START"
             screen.action_button_color = [0.2, 0.8, 0.4, 1]
 
-        # --- 9. DELAYED START SYNC (Automatic Unlock) ---
+        # --- 9. DELAYED START SYNC ---
         if status == SequenceStatus.DELAYED_WAIT:
-            # Lock UI
             screen.is_delay_active = True
             screen.controls_disabled = True
             screen.delay_btn_text = "DELAY ACTIVE"
             screen.delay_btn_color = [0.2, 0.6, 0.8, 1]
         else:
-            # Unlock UI
             screen.is_delay_active = False
             screen.controls_disabled = False
             screen.delay_btn_text = "DELAY START"
             screen.delay_btn_color = [0.2, 0.2, 0.4, 1]
             
-        # Track status for next frame
         screen.last_status = status
+    
+    def refresh_all_screens(self):
+        """
+        Called when Global Units change. Forces screens to re-configure their sliders/labels.
+        """
+        print(f"[App] Refreshing all screens. Metric={self.is_metric}")
+        
+        # 1. Main Screen (Manual Sliders)
+        if self.main_screen:
+            self.main_screen._load_manual_settings()
+            
+        # 2. Water Screen (Run its existing converter)
+        if self.water_screen:
+            self.water_screen.convert_values(self.is_metric)
+            
+        # 3. Hardware Settings (Re-run pre-enter)
+        if self.hw_settings_screen:
+            self.hw_settings_screen.on_pre_enter()
+            
+        # 4. Calibration Settings (Re-run pre-enter)
+        if self.cal_settings_screen:
+            self.cal_settings_screen.on_pre_enter()
+            
+        # 5. Profile Editor (Refresh List)
+        if self.editor_screen:
+            self.editor_screen.refresh_steps()
+    
     def open_profile_options(self, profile_id, profile_name):
         popup = ProfileOptionsPopup()
         popup.profile_id = profile_id
@@ -2329,6 +2453,86 @@ class KettleApp(App):
         if hasattr(self, 'hw'):
             # If HardwareInterface has a cleanup, call it
             pass
+            
+    # --- GLOBAL UNIT CONVERSION HELPERS ---
+    
+    def to_user_units(self, imperial_val, type_str):
+        if not self.is_metric:
+            return imperial_val
+            
+        # FIX: Added 'boil_temp' to the check so it converts 212F -> 100C
+        if type_str == 'temp' or type_str == 'boil_temp':
+            return (imperial_val - 32) * 5/9
+        elif type_str == 'vol':
+            return imperial_val * 3.78541
+        return imperial_val
+
+    def to_backend_units(self, user_val, type_str):
+        if not self.is_metric:
+            return user_val
+            
+        # FIX: Added 'boil_temp' to the check
+        if type_str == 'temp' or type_str == 'boil_temp':
+            return (user_val * 9/5) + 32
+        elif type_str == 'vol':
+            return user_val / 3.78541
+        return user_val
+
+    def configure_slider(self, slider_obj, imperial_val, type_str):
+        """
+        Central logic to snap a slider to the correct Min/Max/Step and Value
+        based on the current Global Units.
+        
+        type_str options: 'temp', 'boil_temp', 'vol'
+        """
+        if not slider_obj: return
+
+        if self.is_metric:
+            # --- METRIC CONFIG ---
+            converted_val = self.to_user_units(imperial_val, type_str)
+            
+            if type_str == 'temp':
+                # General Temp: 20C - 100C (approx 68F - 212F)
+                slider_obj.min = 20
+                slider_obj.max = 100
+                slider_obj.step = 1
+                
+            elif type_str == 'boil_temp':
+                # Boil Specific: 80C - 100C
+                slider_obj.min = 80
+                slider_obj.max = 100
+                slider_obj.step = 1
+                
+            elif type_str == 'vol':
+                # Volume: 8L - 35L (approx 2G - 9G)
+                slider_obj.min = 8.0
+                slider_obj.max = 35.0
+                slider_obj.step = 0.5
+                
+            # Snap value
+            slider_obj.value = round(converted_val / slider_obj.step) * slider_obj.step
+            
+        else:
+            # --- IMPERIAL CONFIG ---
+            if type_str == 'temp':
+                # General Temp: 70F - 212F
+                slider_obj.min = 70
+                slider_obj.max = 212
+                slider_obj.step = 1
+                
+            elif type_str == 'boil_temp':
+                # Boil Specific: 180F - 212F
+                slider_obj.min = 180
+                slider_obj.max = 212
+                slider_obj.step = 1
+                
+            elif type_str == 'vol':
+                # Volume: 2G - 9G
+                slider_obj.min = 2.0
+                slider_obj.max = 9.0
+                slider_obj.step = 0.25
+            
+            slider_obj.value = imperial_val
 
 class WaterScreen(Screen):
     # --- GLOBAL SETTINGS ---
@@ -2463,6 +2667,144 @@ class WaterScreen(Screen):
         self.ids.tabs.switch_to(self.ids.tab_results)
         self.calculate_all()
 
+        # --- NEW CODE STARTS HERE (APPEND TO END) ---
+        # 6. Global Unit Sync
+        # Check if the Global Setting has changed since we last saved this specific water session
+        app = App.get_running_app()
+        global_units = app.settings_manager.get_system_setting("units", "imperial")
+        
+        # Determine target state
+        should_be_metric = (global_units == "metric")
+        
+        # If the loaded session units (self.is_metric) don't match the System Global (global_units), convert them.
+        if self.is_metric != should_be_metric:
+            self.convert_values(should_be_metric)
+        # --------------------------------------------
+    
+    def _snap_and_set(self, slider_id, val, min_v, max_v, step_v):
+        """Helper to reconfigure slider and snap value."""
+        if slider_id not in self.ids: return val
+        
+        slider = self.ids[slider_id]
+        slider.min = min_v
+        slider.max = max_v
+        slider.step = step_v
+        
+        # Snap logic: Round to nearest step
+        snapped = round(val / step_v) * step_v
+        
+        # Clamp to bounds
+        snapped = max(min_v, min(max_v, snapped))
+        return snapped
+
+    def convert_values(self, to_metric):
+        """Converts inputs and reconfigures sliders for Metric/Imperial."""
+        if to_metric:
+            # --- IMPERIAL -> METRIC ---
+            
+            # 1. Grain: lb -> kg (Step 0.25 kg)
+            # Range: ~1kg to 7kg
+            self.grain_wt = self._snap_and_set('s_grain', self.grain_wt * 0.453592, 1.0, 8.0, 0.25)
+
+            # 2. Grain Temp: F -> C (Step 1 C)
+            # Range: 10C to 50C
+            self.grain_temp = self._snap_and_set('s_grain_temp', (self.grain_temp - 32) * 5/9, 10, 50, 1)
+
+            # 3. Mash Temp: F -> C (Step 1 C)
+            # Range: 60C to 80C
+            self.mash_temp = self._snap_and_set('s_mash_temp', (self.mash_temp - 32) * 5/9, 60, 80, 1)
+
+            # 4. Ferm Volume: Gal -> L (Step 0.5 L)
+            # Range: 8L to 30L
+            self.ferm_vol = self._snap_and_set('s_ferm_vol', self.ferm_vol * 3.78541, 8.0, 32.0, 0.5)
+
+            # 5. Boil Off: Gal -> L (Step 0.5 L)
+            self.boiloff = self._snap_and_set('s_boiloff', self.boiloff * 3.78541, 2.0, 15.0, 0.5)
+
+            # 6. Trub: Gal -> L (Step 0.25 L)
+            self.trub_vol = self._snap_and_set('s_trub', self.trub_vol * 3.78541, 0.0, 12.0, 0.25)
+
+            # 7. Absorption: qt/lb -> L/kg (Step 0.05 L/kg)
+            # Factor ~2.086 (0.2 qt/lb -> ~0.4 L/kg)
+            ratio = 2.08635
+            self.abs_rate = self._snap_and_set('s_abs', self.abs_rate * ratio, 0.4, 2.5, 0.05)
+
+            # 8. Thickness: qt/lb -> L/kg (Step 0.1 L/kg)
+            self.thickness = self._snap_and_set('s_thick', self.thickness * ratio, 1.0, 7.0, 0.1)
+            
+            self.is_metric = True
+            
+        else:
+            # --- METRIC -> IMPERIAL ---
+            
+            # 1. Grain: kg -> lb (Step 0.5 lb)
+            self.grain_wt = self._snap_and_set('s_grain', self.grain_wt / 0.453592, 2.0, 16.0, 0.5)
+
+            # 2. Grain Temp: C -> F (Step 1 F)
+            self.grain_temp = self._snap_and_set('s_grain_temp', (self.grain_temp * 9/5) + 32, 50, 120, 1)
+
+            # 3. Mash Temp: C -> F (Step 1 F)
+            self.mash_temp = self._snap_and_set('s_mash_temp', (self.mash_temp * 9/5) + 32, 140, 175, 1)
+
+            # 4. Ferm Volume: L -> Gal (Step 0.25 Gal)
+            self.ferm_vol = self._snap_and_set('s_ferm_vol', self.ferm_vol / 3.78541, 2.0, 9.0, 0.25)
+
+            # 5. Boil Off: L -> Gal (Step 0.1 Gal)
+            self.boiloff = self._snap_and_set('s_boiloff', self.boiloff / 3.78541, 0.5, 4.0, 0.1)
+
+            # 6. Trub: L -> Gal (Step 0.25 Gal)
+            self.trub_vol = self._snap_and_set('s_trub', self.trub_vol / 3.78541, 0.0, 3.0, 0.25)
+
+            # 7. Absorption: L/kg -> qt/lb (Step 0.05 qt/lb)
+            ratio = 2.08635
+            self.abs_rate = self._snap_and_set('s_abs', self.abs_rate / ratio, 0.20, 1.20, 0.05)
+
+            # 8. Thickness: L/kg -> qt/lb (Step 0.1 qt/lb)
+            self.thickness = self._snap_and_set('s_thick', self.thickness / ratio, 0.5, 3.5, 0.1)
+            
+            self.is_metric = False
+
+        # Recalculate outputs
+        self.calculate_all()
+        
+    # ~ def convert_values(self, to_metric):
+        # ~ """Converts inputs between US Std and Metric."""
+        # ~ if to_metric:
+            # ~ # IMPERIAL -> METRIC
+            # ~ self.grain_wt = self.grain_wt * 0.453592      # lb -> kg
+            # ~ self.grain_temp = (self.grain_temp - 32) * 5/9 # F -> C
+            # ~ self.mash_temp = (self.mash_temp - 32) * 5/9   # F -> C
+            
+            # ~ self.ferm_vol = self.ferm_vol * 3.78541       # Gal -> L
+            # ~ self.boiloff = self.boiloff * 3.78541         # Gal -> L
+            # ~ self.trub_vol = self.trub_vol * 3.78541       # Gal -> L
+            
+            # ~ # Ratios (qt/lb -> L/kg) | Factor: ~2.086
+            # ~ ratio_factor = 0.946353 / 0.453592 
+            # ~ self.abs_rate = self.abs_rate * ratio_factor
+            # ~ self.thickness = self.thickness * ratio_factor
+            
+            # ~ self.is_metric = True
+            
+        # ~ else:
+            # ~ # METRIC -> IMPERIAL
+            # ~ self.grain_wt = self.grain_wt / 0.453592
+            # ~ self.grain_temp = (self.grain_temp * 9/5) + 32
+            # ~ self.mash_temp = (self.mash_temp * 9/5) + 32
+            
+            # ~ self.ferm_vol = self.ferm_vol / 3.78541
+            # ~ self.boiloff = self.boiloff / 3.78541
+            # ~ self.trub_vol = self.trub_vol / 3.78541
+            
+            # ~ ratio_factor = 0.946353 / 0.453592
+            # ~ self.abs_rate = self.abs_rate / ratio_factor
+            # ~ self.thickness = self.thickness / ratio_factor
+            
+            # ~ self.is_metric = False
+
+        # ~ # Recalculate outputs with new values
+        # ~ self.calculate_all()
+    
     def _apply_dict_to_ui(self, data):
         self.mash_method = data.get("mash_method", "No Sparge (BIAB)")
         self.grain_wt = float(data.get("grain_wt", 10.0))
