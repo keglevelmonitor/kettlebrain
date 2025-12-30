@@ -48,13 +48,13 @@ DEFAULT_SETTINGS = {
         # Water Calc
         "mash_method": "No Sparge (BIAB)",
         "grain_wt": 10.0,
-        "grain_temp": 68.0,
+        "grain_temp": 65.0,
         "mash_temp": 152.0,
         "boil_time": 60.0,
-        "ferm_vol": 5.5,
+        "ferm_vol": 5.75,
         "trub_vol": 0.25,
-        "boiloff": 1.0,
-        "abs_rate": 0.5,
+        "boiloff": 1.2,
+        "abs_rate": 0.3,
         "thickness": 1.5,
         # Chemistry
         "srm": 5.0,
@@ -70,9 +70,9 @@ DEFAULT_SETTINGS = {
     
     # [Keep pid_settings and recovery_state as they were]
     "pid_settings": {
-        "kp": 50.0,
-        "ki": 0.1,
-        "kd": 2.0,
+        "kp": 100.0,
+        "ki": 0.01,
+        "kd": 80.0,
         "sample_time_s": 2.0
     },
     "recovery_state": None

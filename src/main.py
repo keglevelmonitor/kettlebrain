@@ -1231,7 +1231,13 @@ class MainScreen(Screen):
                 t_str = "--"
             # -----------------------------
 
-            d_str = f"{step.duration_min} min" if step.duration_min > 0 else "--"
+            # FIX: Format Duration as Integer
+            # This strips the long decimals (e.g., 0.352...) seen in your screenshot
+            if step.duration_min and step.duration_min > 0:
+                d_str = f"{int(step.duration_min)} min"
+            else:
+                d_str = "--"
+            
             r_str = getattr(step, 'predicted_ready_time', "--")
 
             has_children = (len(step.additions) > 0)
