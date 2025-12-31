@@ -446,7 +446,6 @@ class SequenceManager:
         # REVERSED ORDER: Heat starts first, then Ready time
         return f"Heat starts at: {self.delayed_start_time_str}\nReady at: {self.delayed_ready_time_str}"
 
-
     # --- MANUAL MODE METHODS ---
     
     # [Add setters for new manual controls]
@@ -1005,7 +1004,7 @@ class SequenceManager:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             mode = "UNKNOWN"
             status = self.status.value
-            
+
             # Determine Mode & Step Info
             step_info = "-"
             if self.status == SequenceStatus.DELAYED_WAIT:
@@ -1021,19 +1020,29 @@ class SequenceManager:
 
             # Temperatures
             curr_t = f"{self.current_temp:.2f}" if self.current_temp else "0.00"
-            
+
             # Determine Target Temp
             if self.status == SequenceStatus.DELAYED_WAIT:
                 tgt = getattr(self, 'delayed_target_temp', 0.0)
             else:
                 tgt = self.target_temp
-            tgt_t = f"{tgt:.2f}"
+            tgt_t = f"{tgt:.0f}"
 
-            # Determine Power (Watts) - CHANGED TO USE ACTUAL APPLIED POWER
+            # --- FIX: REAL HARDWARE POWER ---
+            # Checks the physical state of the relays at this exact moment.
             watts = 0
-            if self.is_heating:
-                watts = getattr(self, 'last_applied_power', 0)
-            
+            if self.relay and hasattr(self.relay, 'relay_states'):
+                states = self.relay.relay_states
+                
+                # Heater 1 = 1000W
+                val_1 = 1000 if states.get("Heater1", False) else 0
+                
+                # Heater 2 = 800W
+                val_2 = 800  if states.get("Heater2", False) else 0
+                
+                watts = val_1 + val_2
+            # --------------------------------
+
             # Determine Timer
             timer_str = self.get_display_timer()
 
@@ -1041,17 +1050,17 @@ class SequenceManager:
             data_dir = self.settings.data_dir
             log_file = os.path.join(data_dir, "kettlebrain-log.csv")
             file_exists = os.path.isfile(log_file)
-            
+
             with open(log_file, mode='a', newline='') as f:
                 writer = csv.writer(f)
-                
+
                 # Write Header if new file
                 if not file_exists:
                     writer.writerow(["Timestamp", "Mode", "Status", "Temp(F)", "Target(F)", "Power(W)", "Step", "Timer"])
-                
+
                 # Write Data
                 writer.writerow([timestamp, mode, status, curr_t, tgt_t, watts, step_info, timer_str])
-                
+
         except Exception as e:
             print(f"[Sequence] Log Error: {e}")
             
