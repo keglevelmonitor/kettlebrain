@@ -71,8 +71,8 @@ DEFAULT_SETTINGS = {
     # [Keep pid_settings and recovery_state as they were]
     "pid_settings": {
         "kp": 100.0,
-        "ki": 0.01,
-        "kd": 80.0,
+        "ki": 0.02,
+        "kd": 45.0,
         "sample_time_s": 2.0
     },
     "recovery_state": None
