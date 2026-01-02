@@ -29,7 +29,7 @@ Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
 # --- Rest of CONFIG ---
 Config.set('graphics', 'width', '800')
-Config.set('graphics', 'height', '410')
+Config.set('graphics', 'height', '418')
 Config.set('graphics', 'resizable', '0')
 Config.set('graphics', 'position', 'custom')
 Config.set('graphics', 'top', '50')
