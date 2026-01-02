@@ -34,7 +34,8 @@ DEFAULT_SETTINGS = {
         "enable_csv_logging": False,
         "heater_ref_volume_gal": 8.0,
         "heater_ref_rate_fpm": 1.3,
-        "last_profile_id": None  # <--- Ensure this exists
+        "last_profile_id": None,
+        "alert_repeat_freq": 15  # <--- NEW DEFAULT
     },
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
@@ -45,7 +46,6 @@ DEFAULT_SETTINGS = {
     },
     # --- COMBINED WATER DEFAULTS (The "House Defaults") ---
     "water_defaults": {
-        # Water Calc
         "mash_method": "No Sparge (BIAB)",
         "grain_wt": 10.0,
         "grain_temp": 65.0,
@@ -56,7 +56,6 @@ DEFAULT_SETTINGS = {
         "boiloff": 1.2,
         "abs_rate": 0.3,
         "thickness": 1.5,
-        # Chemistry
         "srm": 5.0,
         "target_ph": 5.4,
         "tgt_ca": 50,
@@ -65,10 +64,10 @@ DEFAULT_SETTINGS = {
         "tgt_so4": 75,
         "tgt_cl": 63
     },
-    # --- MANUAL SESSION (Resets to defaults on boot) ---
+    # --- MANUAL SESSION ---
     "manual_water_session": {}, 
     
-    # [Keep pid_settings and recovery_state as they were]
+    # --- PID SETTINGS ---
     "pid_settings": {
         "kp": 100.0,
         "ki": 0.02,

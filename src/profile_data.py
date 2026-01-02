@@ -7,8 +7,11 @@ from enum import Enum
 
 class StepType(Enum):
     STEP = "Step"
+    PREP_WATER = "Prep Water"
+    DOUGH_IN = "Dough-in"
     MASH = "Mash"
     MASH_OUT = "Mash-out"
+    SPARGE = "Sparge"
     BOIL = "Boil"
     CHILL = "Chill"
 

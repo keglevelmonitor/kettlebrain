@@ -500,11 +500,12 @@
                                 id: pwr_slider
                                 disabled: root.controls_disabled
                                 min: 0
-                                max: 3
+                                max: 4
                                 step: 1
                                 value: root.slider_power_val
                                 on_value: root.on_slider_drag('power', self.value)
-                                on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('power', self.value)
+                                # UPDATED: Captures release even if cursor drifted outside
+                                on_touch_up: if args[1].grab_current == self or self.collide_point(*args[1].pos): root.on_slider_release('power', self.value)
 
             # SCREEN: AUTO STEPS LIST
             Screen:
@@ -783,32 +784,41 @@
             font_size: '22sp'
             bold: True
             color: 0.2, 0.8, 1, 1
-            size_hint_y: 0.2
+            size_hint_y: 0.15
 
-        Button:
-            text: "LOAD PROFILE"
-            background_color: 0.2, 0.8, 0.2, 1
-            on_release: root.do_load()
+        GridLayout:
+            cols: 2
+            spacing: 20
+            
+            # --- ROW 1 ---
+            Button:
+                text: "EDIT PROFILE"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.do_edit()
 
-        Button:
-            text: "EDIT PROFILE"
-            background_color: 0.2, 0.4, 0.8, 1
-            on_release: root.do_edit()
+            Button:
+                text: "LOAD PROFILE"
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.do_load()
 
-        Button:
-            text: "COPY PROFILE"
-            background_color: 0.5, 0.5, 0.5, 1
-            on_release: root.do_copy()
+            # --- ROW 2 ---
+            Button:
+                text: "COPY PROFILE"
+                background_color: 0.5, 0.5, 0.5, 1
+                on_release: root.do_copy()
+            
+            Widget: # Spacer to keep Copy on the left
 
-        Button:
-            text: "DELETE PROFILE"
-            background_color: 0.8, 0.2, 0.2, 1
-            on_release: root.do_delete()
+            # --- ROW 3 ---
+            Button:
+                text: "DELETE PROFILE"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.do_delete()
 
-        Button:
-            text: "CANCEL / CLOSE"
-            size_hint_y: 0.4
-            on_release: root.dismiss()
+            Button:
+                text: "CANCEL / CLOSE"
+                background_color: 0.4, 0.4, 0.4, 1
+                on_release: root.dismiss()
 
 <ProfileListButton@Button>:
     profile_id: ''
@@ -1123,7 +1133,7 @@
                 Slider:
                     id: s_pwr
                     min: 0
-                    max: 3
+                    max: 4  # <--- CHANGED FROM 3 TO 4
                     step: 1
                     value: root.step_power_idx
                     on_value: root.step_power_idx = self.value
@@ -1375,7 +1385,7 @@
                             text: "Boil Temp: " + str(int(root.boil_temp)) + " F"
                             font_size: '18sp'
                     Slider:
-                        id: s_boil  # <--- NEW ID
+                        id: s_boil
                         min: 180
                         max: 212
                         step: 1
@@ -1415,7 +1425,7 @@
                         background_color: 0.2, 0.6, 0.2, 1
                         on_release: root.test_audio()
 
-                # --- VOLUME ---
+                # --- SYSTEM VOLUME ---
                 BoxLayout:
                     size_hint_y: None
                     height: '80dp'
@@ -1431,6 +1441,26 @@
                         on_value: root.system_volume = self.value
                         on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
 
+                # --- ALERT REPEAT FREQUENCY (UPDATED) ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: '90dp'  # Increased height for better touch area
+                    orientation: 'vertical'
+                    padding: [0, 10, 0, 10]
+                    BoxLayout:
+                        size_hint_y: 0.4
+                        Label:
+                            text: "Alert Repeat Freq: " + str(int(root.alert_repeat_freq)) + "s"
+                            font_size: '18sp'
+                    Slider:
+                        size_hint_y: 0.6
+                        min: 0
+                        max: 60
+                        step: 1  # CHANGED: 1s increments for smoother dragging
+                        cursor_size: (40, 40) # LARGER TOUCH TARGET
+                        value: root.alert_repeat_freq
+                        on_value: root.alert_repeat_freq = self.value
+
         # --- FOOTER ---
         BoxLayout:
             size_hint_y: 0.15
@@ -1443,8 +1473,7 @@
                 text: "SAVE CHANGES"
                 background_color: 0.2, 0.8, 0.2, 1
                 on_release: root.save_changes()
-
-# --- NEW APP SETTINGS SCREEN ---
+                
 # --- NEW APP SETTINGS SCREEN (Refactored Layout) ---
 <AppSettingsScreen>:
     BoxLayout:

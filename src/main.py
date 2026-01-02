@@ -234,8 +234,9 @@ class StepEditorScreen(Screen):
     step_vol_display = StringProperty("Volume: --")
     
     # Power (Discrete Map)
-    step_power_idx = NumericProperty(3)
-    watts_map = ListProperty([800, 1000, 1400, 1800])
+    # UPDATED: Default index 4 (1800W) and added 0 to map
+    step_power_idx = NumericProperty(4)
+    watts_map = ListProperty([0, 800, 1000, 1400, 1800])
     display_power = StringProperty("1800W")
     
     # Label Display Property
@@ -308,21 +309,133 @@ class StepEditorScreen(Screen):
     def _handle_type_change(self, value):
         app = App.get_running_app()
         if not app: return
+
+        # 1. PREVENT OVERWRITE ON LOAD
+        # If the selected type matches the saved object's type, we are likely 
+        # just loading the step. Do not overwrite saved data with defaults.
+        if self.step_obj_ref and hasattr(self.step_obj_ref, 'step_type'):
+            if value == self.step_obj_ref.step_type.value:
+                # Still check locking logic for the loaded type
+                if value == "Boil": 
+                    # Boil steps are now editable
+                    pass
+                return
+
+        # 2. DEFINE DEFAULTS (Imperial Units)
+        # Structure: Target(F), Time(m), Vol(Gal), Power(W), Advance, Additions
+        sys_boil = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
         
-        if value == "Boil":
-            # Read System Boil (Imperial)
-            sys_boil_f = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
-            # Convert to User Units (e.g., 100 C) before setting property
-            self.step_temp = app.to_user_units(sys_boil_f, 'temp')
-            self.is_temp_locked = True
-        elif value == "Chill":
-            # Default Chill Temp (70 F / ~21 C)
-            self.step_temp = app.to_user_units(70.0, 'temp')
-            self.is_temp_locked = False
-        else:
-            self.is_temp_locked = False
+        STEP_DEFAULTS = {
+            "Step": {
+                "temp": 70.0, "time": 0.0, "vol": 8.0, "watts": 1800, 
+                "adv": TimeoutBehavior.AUTO_ADVANCE.value,
+                "adds": []
+            },
+            "Prep Water": {
+                "temp": 70.0, "time": 0.0, "vol": 8.0, "watts": 0, 
+                "adv": TimeoutBehavior.AUTO_ADVANCE.value,
+                "adds": [
+                    {'name': "Add water per calculations", 'time': 0},
+                    {'name': "Add water salts per calculations", 'time': 0}
+                ]
+            },
+            "Dough-in": {
+                "temp": 156.0, "time": 0.0, "vol": 8.0, "watts": 1800, 
+                "adv": TimeoutBehavior.AUTO_ADVANCE.value,
+                "adds": [
+                    {'name': "Drop grain basket", 'time': 0},
+                    {'name': "Drop full grain bill", 'time': 0},
+                    {'name': "Mix well, no dough balls", 'time': 0},
+                    {'name': "Cover & turn on pump", 'time': 0}
+                ]
+            },
+            "Mash": {
+                "temp": 150.0, "time": 60.0, "vol": 8.75, "watts": 1800, 
+                "adv": TimeoutBehavior.AUTO_ADVANCE.value,
+                "adds": [
+                    {'name': "Mix grains", 'time': 45},
+                    {'name': "Mix grains", 'time': 30},
+                    {'name': "Mix grains", 'time': 15},
+                    {'name': "Mix grains", 'time': 0},
+                    {'name': "Turn off pump", 'time': 0},
+                    {'name': "Record SG", 'time': 0}
+                ]
+            },
+            "Mash-out": {
+                "temp": 170.0, "time": 10.0, "vol": 8.75, "watts": 1800, 
+                "adv": TimeoutBehavior.AUTO_ADVANCE.value,
+                "adds": [
+                    {'name': "Remove cover", 'time': 10},
+                    {'name': "Lift & drain grains", 'time': 0},
+                    {'name': "Add make-up water if necessary", 'time': 0}
+                ]
+            },
+            "Sparge": {
+                "temp": 200.0, "time": 0.0, "vol": 4.25, "watts": 1800, 
+                "adv": TimeoutBehavior.AUTO_ADVANCE.value,
+                "adds": [
+                    {'name': "Remove grain basket", 'time': 0}
+                ]
+            },
+            "Boil": {
+                "temp": sys_boil, "time": 60.0, "vol": 6.75, "watts": 1800, 
+                "adv": TimeoutBehavior.AUTO_ADVANCE.value,
+                "adds": [
+                    {'name': "Bittering hops", 'time': 60},
+                    {'name': "Flavor hops", 'time': 30},
+                    {'name': "Irish moss", 'time': 10},
+                    {'name': "Sanitize chiller", 'time': 9},
+                    {'name': "Aroma hops", 'time': 5},
+                    {'name': "Flameout hops", 'time': 0}
+                ]
+            },
+            "Chill": {
+                "temp": 70.0, "time": 15.0, "vol": 5.75, "watts": 0, 
+                "adv": TimeoutBehavior.AUTO_ADVANCE.value,
+                "adds": [
+                    {'name': "Drop chiller", 'time': 15},
+                    {'name': "Record OG", 'time': 0}
+                ]
+            }
+        }
+
+        # 3. APPLY DEFAULTS
+        if value in STEP_DEFAULTS:
+            data = STEP_DEFAULTS[value]
             
-        self._update_target_display()
+            # Apply Name
+            self.step_name = value
+            
+            # Apply Temp (Convert Imperial -> User Unit)
+            self.step_temp = app.to_user_units(data["temp"], 'temp')
+            self.is_temp_locked = False # Always unlock
+            
+            # Apply Time
+            self.step_dur = float(data["time"])
+            
+            # Apply Volume (Convert Imperial -> User Unit)
+            # Reconfigure slider first to ensure range validity
+            app.configure_slider(self.ids.s_vol, data["vol"], 'vol')
+            self.step_vol = app.to_user_units(data["vol"], 'vol')
+            
+            # Apply Power (Map Watts -> Index)
+            w = data["watts"]
+            if w in self.watts_map:
+                self.step_power_idx = self.watts_map.index(w)
+            else:
+                self.step_power_idx = 0 # Default to 0 if unknown
+                
+            # Apply Advance
+            self.selected_advance = data["adv"]
+            
+            # Apply Additions
+            # Sort by time desc (Standard for UI)
+            sorted_adds = sorted(data["adds"], key=lambda x: x['time'], reverse=True)
+            self.current_additions = sorted_adds
+            
+            # Trigger Updates
+            self._update_target_display()
+            self._check_dirty()
 
     def _get_current_state(self):
         """Returns a snapshot dictionary of the current UI values."""
@@ -378,19 +491,14 @@ class StepEditorScreen(Screen):
         app.configure_slider(self.ids.s_vol, raw_vol_gal, 'vol')
         # -----------------------------
         
-        # HANDLE LOCKING: If Boil/Chill, update lock state but DON'T overwrite the temp
-        # we just loaded (unless it's wildly wrong).
-        if self.selected_type == "Boil":
-            self.is_temp_locked = True
-        elif self.selected_type == "Chill":
-            self.is_temp_locked = False
-        else:
-            self.is_temp_locked = False
+        # HANDLE LOCKING: All steps are editable now.
+        self.is_temp_locked = False
             
         self.step_dur = float(step_obj.duration_min or 0.0)
         
         w = getattr(step_obj, 'power_watts', 1800)
-        self.step_power_idx = self.watts_map.index(w) if w in self.watts_map else 3
+        # UPDATED: Default to index 4 (1800W)
+        self.step_power_idx = self.watts_map.index(w) if w in self.watts_map else 4
 
         # Load Alerts
         temp_list = []
@@ -764,7 +872,8 @@ class MainScreen(Screen):
     slider_temp_val = NumericProperty(150.0)
     slider_vol_val = NumericProperty(6.0)
     slider_time_val = NumericProperty(60.0)
-    slider_power_val = NumericProperty(3) # Index 0-3
+    # UPDATED: Default to index 4
+    slider_power_val = NumericProperty(4) # Index 0-4
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -772,7 +881,10 @@ class MainScreen(Screen):
         self.last_profile_id = None
         self.last_step_index = -1
         self.last_status = SequenceStatus.IDLE  # <--- NEW TRACKER
-        self.watts_map = [800, 1000, 1400, 1800] 
+        # UPDATED: Added 0 to map
+        self.watts_map = [0, 800, 1000, 1400, 1800]
+        # Track if we have set defaults for delay this session
+        self.has_initialized_delay = False
         
     def on_delay_temp(self, instance, value):
         # 1. Get Units
@@ -809,7 +921,6 @@ class MainScreen(Screen):
         self.on_slider_drag('temp', self.slider_temp_val)
         self.on_slider_drag('vol', self.slider_vol_val)
     
-    
         # Time/Power don't need unit conversion
         last_timer = sm.get("manual_mode_settings", "last_timer_min", 60.0)
         last_watts = sm.get("manual_mode_settings", "last_power_watts", 1800)
@@ -822,7 +933,8 @@ class MainScreen(Screen):
         try:
             self.slider_power_val = self.watts_map.index(last_watts)
         except ValueError:
-            self.slider_power_val = 3
+            # UPDATED: Default to index 4 (1800W)
+            self.slider_power_val = 4
         
         self.display_power_watts = str(last_watts)
         self._update_prediction()
@@ -1142,6 +1254,21 @@ class MainScreen(Screen):
 
         # --- MANUAL MODE LOGIC ---
         if current_screen == 'page_manual' or status == SequenceStatus.MANUAL:
+            
+            # --- SAFETY SYNC: Ensure Backend matches Visual Sliders ---
+            # 1. Sync Power
+            p_idx = int(self.slider_power_val)
+            if 0 <= p_idx < len(self.watts_map):
+                seq.set_manual_power(self.watts_map[p_idx])
+                
+            # 2. Sync Temp
+            val_f = self.app.to_backend_units(self.slider_temp_val, 'temp')
+            seq.set_manual_target(val_f)
+            
+            # 3. Sync Timer
+            seq.set_manual_timer_duration(self.slider_time_val)
+            # ---------------------------------------------------------
+
             if status != SequenceStatus.MANUAL:
                 seq.enter_manual_mode()
                 seq.start_manual()
@@ -1426,31 +1553,42 @@ class MainScreen(Screen):
         """Called when DELAY START (or ACTIVE) is clicked."""
         status = self.app.sequencer.status
         
-        # 1. Load Defaults
-        now = datetime.now()
+        # 1. Determine Values (Time, Temp, Vol)
         
-        # Determine defaults
+        # Case A: Delay is currently running/waiting. 
+        # We MUST show what is actually set in the system.
         if status == SequenceStatus.DELAYED_WAIT:
-            # If active, use the current slider values (converted back to Imperial)
-            # so the slider configuration logic works consistently.
+            # Convert UI Slider Values (which track the system) back to Backend for configure_slider
             raw_temp = self.app.to_backend_units(self.delay_temp, 'temp')
             raw_vol = self.app.to_backend_units(self.delay_vol, 'vol')
+            # Keep existing time (don't reset to 6am)
             
-            # Keep existing time (don't reset to 6am if already running)
-            pass 
-        else:
+        # Case B: First time opening in this session. Load Defaults.
+        elif not self.has_initialized_delay:
+            now = datetime.now()
             # Default target: 6:00 AM tomorrow
             next_target = now.replace(hour=6, minute=0, second=0, microsecond=0)
             if next_target <= now:
                 next_target += timedelta(days=1)
             
-            # Convert target hour/min to total minutes for the slider
+            # Set the time property
             self.delay_minutes_total = (next_target.hour * 60) + next_target.minute
             
-            # Load last manual settings for Temp/Vol (Stored as Imperial)
+            # Load Manual defaults (Imperial)
             sm = self.app.settings_manager
             raw_temp = sm.get("manual_mode_settings", "last_setpoint_f", 154.0)
             raw_vol = sm.get("manual_mode_settings", "last_volume_gal", 8.0)
+            
+            # Mark as initialized so we don't overwrite next time
+            self.has_initialized_delay = True
+
+        # Case C: Not active, but we have opened it before. 
+        # Use whatever is currently stored in the Kivy Properties (Persistence).
+        else:
+            # Convert the current UI values back to Imperial for configure_slider
+            raw_temp = self.app.to_backend_units(self.delay_temp, 'temp')
+            raw_vol = self.app.to_backend_units(self.delay_vol, 'vol')
+            # Time is already in self.delay_minutes_total, no need to touch it.
 
         # 2. Slide the Hero Panel
         self.ids.hero_manager.transition.direction = 'left'
@@ -1604,6 +1742,7 @@ class HardwareSettingsScreen(Screen):
     # Properties bound to UI widgets
     boil_temp = NumericProperty(212)
     system_volume = NumericProperty(80)
+    alert_repeat_freq = NumericProperty(15)  # <--- NEW PROPERTY
     
     # Selection lists for Spinners
     sensor_list = ListProperty(["unassigned"])
@@ -1636,7 +1775,6 @@ class HardwareSettingsScreen(Screen):
         self.ids.spinner_sensor.text = current_sensor
 
         # 3. LOAD AUDIO DEVICES
-        # hw.scan_audio_devices() returns list of (friendly, dev_str)
         raw_audio = hw.scan_audio_devices()
         self.audio_list = []
         self.audio_map = {}
@@ -1653,7 +1791,6 @@ class HardwareSettingsScreen(Screen):
         self.ids.spinner_audio.text = current_friendly_text
 
         # 4. LOAD SOUNDS
-        # Use static list from legacy code 
         self.sound_list = [
             "alert.wav", "alt1_ding.wav", "alt2_buzzer.wav", 
             "alt2_ding.wav", "bell_ding.wav", "doorbell.wav", 
@@ -1664,6 +1801,9 @@ class HardwareSettingsScreen(Screen):
 
         # 5. LOAD VOLUME (Mock or generic default as we can't easily read amixer)
         self.system_volume = 80 
+        
+        # 6. LOAD ALERT REPEAT FREQUENCY
+        self.alert_repeat_freq = sm.get_system_setting("alert_repeat_freq", 15)
 
     def save_changes(self):
         """Write values to SettingsManager."""
@@ -1684,8 +1824,13 @@ class HardwareSettingsScreen(Screen):
         # Sound File
         sm.set_system_setting("alert_sound_file", self.ids.spinner_sound.text)
         
+        # Alert Frequency
+        sm.set_system_setting("alert_repeat_freq", int(self.alert_repeat_freq))
+        
         print("[HardwareSettings] Saved.")
         self.go_back()
+
+    # --- RESTORED METHODS BELOW ---
 
     def test_audio(self):
         """Play the selected sound on the selected device."""
@@ -1694,7 +1839,6 @@ class HardwareSettingsScreen(Screen):
         selected_friendly = self.ids.spinner_audio.text
         dev_str = self.audio_map.get(selected_friendly, "default")
         
-        # Logic adapted from settings_ui.py 
         base_dir = os.path.dirname(os.path.abspath(__file__))
         sound_path = os.path.join(base_dir, "assets", selected_sound)
         
@@ -1707,7 +1851,6 @@ class HardwareSettingsScreen(Screen):
 
     def set_volume_live(self, value):
         """Called on_touch_up of slider to set amixer volume."""
-        # Logic adapted from settings_ui.py 
         try:
             vol_int = int(value)
             selected_friendly = self.ids.spinner_audio.text
