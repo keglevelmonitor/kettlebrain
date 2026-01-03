@@ -12,7 +12,8 @@ class StepType(Enum):
     MASH = "Mash"
     MASH_OUT = "Mash-out"
     SPARGE = "Sparge"
-    BOIL = "Boil"
+    BOIL_START = "Boil Start"
+    BOIL = "Boil Off"
     CHILL = "Chill"
 
 class TimeoutBehavior(Enum):
@@ -118,10 +119,70 @@ class BrewProfile:
 
     @classmethod
     def from_dict(cls, data):
-        profile = cls(
+        # 1. Reconstruct Steps
+        steps = []
+        for s_data in data.get("steps", []):
+            try:
+                # Determine Step Type
+                st_str = s_data.get("step_type", "Step")
+                # Handle potential Enum string mismatch or missing enum
+                try:
+                    st_enum = StepType(st_str)
+                except ValueError:
+                    st_enum = StepType.STEP
+                
+                # Determine Timeout Behavior
+                tb_str = s_data.get("timeout_behavior", "Manual Advance")
+                try:
+                    tb_enum = TimeoutBehavior(tb_str)
+                except ValueError:
+                    tb_enum = TimeoutBehavior.MANUAL_ADVANCE
+                
+                step = BrewStep(
+                    id=s_data.get("id"),
+                    name=s_data.get("name", "New Step"),
+                    step_type=st_enum,
+                    duration_min=s_data.get("duration_min", 0),
+                    target_temp=s_data.get("target_temp", 0),
+                    target_vol=s_data.get("target_vol", 0),
+                    timeout_behavior=tb_enum,
+                    sg_reading=s_data.get("sg_reading"),
+                    sg_temp_f=s_data.get("sg_temp_f"),
+                    sg_temp_correction=s_data.get("sg_temp_correction", False),
+                    sg_corrected_value=s_data.get("sg_corrected_value"),
+                    lauter_temp_f=s_data.get("lauter_temp_f"),
+                    lauter_volume=s_data.get("lauter_volume")
+                )
+                
+                # Rehydrate Additions
+                raw_additions = s_data.get("additions", [])
+                for add_data in raw_additions:
+                    if isinstance(add_data, dict):
+                        new_add = BrewAddition(
+                            id=add_data.get("id"),
+                            name=add_data.get("name", "Alert"),
+                            time_point_min=add_data.get("time_point_min", 0),
+                            triggered=False
+                        )
+                        step.additions.append(new_add)
+                
+                steps.append(step)
+            except Exception as e:
+                print(f"[ProfileData] Error inflating step: {e}")
+
+        # 2. Rehydrate Water Data (Ensure defaults exist)
+        w_data = data.get("water_data", {})
+        # Ensure 'tun_capacity' is preserved if present
+        if "tun_capacity" not in w_data:
+            w_data["tun_capacity"] = 10.0 # Default if missing
+            
+        # 3. Rehydrate Chemistry Data
+        c_data = data.get("chemistry_data", {})
+
+        return cls(
             id=data.get("id"),
-            name=data.get("name", "Unknown Profile"),
-            water_data=data.get("water_data", {}),
-            chemistry_data=data.get("chemistry_data", {})
+            name=data.get("name", "New Profile"),
+            steps=steps,
+            water_data=w_data,
+            chemistry_data=c_data
         )
-        return profile

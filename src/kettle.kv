@@ -2014,6 +2014,26 @@
                     BoxLayout:
                         orientation: 'vertical'
                         spacing: 5
+                        
+                        # 1. Mash Tun Capacity (NEW)
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Tun Cap"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_tun_cap
+                                min: 5.0
+                                max: 20.0
+                                step: 0.25
+                                value: root.tun_capacity
+                                on_value: root.tun_capacity = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{root.tun_capacity} {'L' if root.is_metric else 'G'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
 
                         # 2. Absorption
                         BoxLayout:
@@ -2031,7 +2051,6 @@
                                 on_value: root.abs_rate = self.value; root.calculate_all()
                                 size_hint_x: 0.5
                             Label:
-                                # --- CHANGED: Append qt/lb or L/kg ---
                                 text: f"{root.abs_rate:.2f} {'L/kg' if root.is_metric else 'qt/lb'}"
                                 size_hint_x: 0.2
                                 font_size: '14sp'
@@ -2053,7 +2072,6 @@
                                 on_value: root.thickness = self.value; root.calculate_all()
                                 size_hint_x: 0.5
                             Label:
-                                # --- CHANGED: Append qt/lb or L/kg ---
                                 text: f"{root.thickness:.1f} {'L/kg' if root.is_metric else 'qt/lb'}"
                                 color: (1,1,1,1) if root.mash_method == "Sparge" else (0.4,0.4,0.4,1)
                                 size_hint_x: 0.2
@@ -2075,7 +2093,6 @@
                                 on_value: root.boiloff = self.value; root.calculate_all()
                                 size_hint_x: 0.5
                             Label:
-                                # --- CHANGED: Append G or L ---
                                 text: f"{root.boiloff:.1f} {'L' if root.is_metric else 'G'}"
                                 size_hint_x: 0.2
                                 font_size: '14sp'
@@ -2096,7 +2113,6 @@
                                 on_value: root.trub_vol = self.value; root.calculate_all()
                                 size_hint_x: 0.5
                             Label:
-                                # --- CHANGED: Append G or L ---
                                 text: f"{root.trub_vol:.2f} {'L' if root.is_metric else 'G'}"
                                 size_hint_x: 0.2
                                 font_size: '14sp'
@@ -2344,25 +2360,40 @@
                                 size_hint_y: None
                                 height: self.minimum_height
                                 
+                                # Row 1
                                 ResultRow:
                                     title: "Strike"
                                     value: root.strike_vol
+                                ResultRow:
+                                    title: "Set Aside"
+                                    value: root.res_set_aside
+                                    value_color: (1, 0.4, 0.4, 1) if root.res_set_aside != "0.00 gal" and root.res_set_aside != "0.00 L" else (1,1,1,1)
+
+                                # Row 2
+                                ResultRow:
+                                    title: "Sparge"
+                                    value: root.sparge_vol
+                                ResultRow:
+                                    title: "Dough-in"
+                                    value: root.res_dough_in
+                                    value_color: (0.2, 0.8, 0.2, 1)
+
+                                # Row 3
+                                ResultRow:
+                                    title: "Total"
+                                    value: root.res_total_disp
+                                ResultRow:
+                                    title: "Mash"
+                                    value: root.res_mash
+
+                                # Row 4
                                 ResultRow:
                                     title: "Temp"
                                     value: root.strike_temp
                                     value_color: (1, 0.6, 0.2, 1)
                                 ResultRow:
-                                    title: "Sparge"
-                                    value: root.sparge_vol
-                                Widget:
-                                    size_hint_y: None
-                                    height: '30dp'
-                                ResultRow:
                                     title: "Pre-Boil"
                                     value: root.pre_boil_vol
-                                Widget:
-                                    size_hint_y: None
-                                    height: '30dp'
 
                             Widget: 
 
@@ -2491,13 +2522,47 @@
                                     font_size: '18sp'
                                     color: 1, 0.2, 0.2, 1
 
-        # --- FOOTER BUTTON ---
-        Button:
-            text: "BACK TO DASHBOARD"
+        # --- FOOTER ---
+        BoxLayout:
             size_hint_y: None
             height: '60dp'
-            background_color: 0.8, 0.2, 0.2, 1
-            on_release: root.save_and_exit()
+            orientation: 'horizontal'
+            spacing: 10
+            
+            # CASE 1: MANUAL CONTEXT (Just Exit)
+            Button:
+                text: "BACK TO DASHBOARD"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.save_and_exit()
+                # Hide this button if we are in AUTO context
+                opacity: 1 if root.context != "AUTO" else 0
+                disabled: True if root.context == "AUTO" else False
+                size_hint_x: 1 if root.context != "AUTO" else 0
+                width: 0 if root.context == "AUTO" else self.width
+
+            # CASE 2: AUTO CONTEXT (Cancel / Save)
+            
+            # Cancel Button
+            Button:
+                text: "CANCEL / EXIT"
+                background_color: 0.6, 0.6, 0.6, 1
+                on_release: root.save_and_exit() # Just exit, don't populate
+                # Show only if AUTO
+                opacity: 1 if root.context == "AUTO" else 0
+                disabled: True if root.context != "AUTO" else False
+                size_hint_x: 0.4 if root.context == "AUTO" else 0
+                width: 0 if root.context != "AUTO" else self.width
+
+            # Save Button
+            Button:
+                text: "SAVE RESULTS TO PROFILE"
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.save_results_to_profile()
+                # Show only if AUTO
+                opacity: 1 if root.context == "AUTO" else 0
+                disabled: True if root.context != "AUTO" else False
+                size_hint_x: 0.6 if root.context == "AUTO" else 0
+                width: 0 if root.context != "AUTO" else self.width
             
 # --- HELPER WIDGET FOR WATER RESULTS ---
 <ResultRow@BoxLayout>:

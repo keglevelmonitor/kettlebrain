@@ -377,7 +377,12 @@ class StepEditorScreen(Screen):
                     {'name': "Remove grain basket", 'time': 0}
                 ]
             },
-            "Boil": {
+            "Boil Start": {
+                "temp": sys_boil, "time": 0.0, "vol": 6.75, "watts": 1800, 
+                "adv": TimeoutBehavior.MANUAL_ADVANCE.value,
+                "adds": []
+            },
+            "Boil Off": {
                 "temp": sys_boil, "time": 60.0, "vol": 6.75, "watts": 1800, 
                 "adv": TimeoutBehavior.AUTO_ADVANCE.value,
                 "adds": [
@@ -2777,6 +2782,7 @@ class WaterScreen(Screen):
     mash_method = StringProperty("No Sparge (BIAB)")
     
     # --- INPUTS: WATER ---
+    tun_capacity = NumericProperty(10.0) # <--- NEW INPUT
     grain_wt = NumericProperty(10.0)
     boil_time = NumericProperty(60.0)
     grain_temp = NumericProperty(68.0)
@@ -2786,7 +2792,7 @@ class WaterScreen(Screen):
     trub_vol = NumericProperty(0.25)
     ferm_vol = NumericProperty(5.5)
     thickness = NumericProperty(1.5)
-    
+        
     # --- INPUTS: CHEMISTRY ---
     srm = NumericProperty(5.0)
     target_ph = NumericProperty(5.4)
@@ -2812,6 +2818,13 @@ class WaterScreen(Screen):
     total_mash_vol = StringProperty("--")
     total_water = NumericProperty(0.0) 
     
+    # --- NEW RESULT PROPERTIES ---
+    res_total_disp = StringProperty("--")
+    res_set_aside = StringProperty("--")
+    res_dough_in = StringProperty("--")
+    res_mash = StringProperty("--")
+    # -----------------------------
+    
     res_gypsum = StringProperty("0.0 g")
     res_cacl2 = StringProperty("0.0 g")
     res_epsom = StringProperty("0.0 g")
@@ -2819,6 +2832,13 @@ class WaterScreen(Screen):
     res_lime = StringProperty("0.0 g")
     res_acid = StringProperty("0.0 ml")
     res_acid_g = StringProperty("0.0 g")
+    
+    # --- RAW RESULTS FOR AUTO-POPULATION (System Units or Display Units? Display Units) ---
+    raw_total_water = NumericProperty(0.0)
+    raw_dough_in_vol = NumericProperty(0.0)
+    raw_mash_vol = NumericProperty(0.0)
+    raw_pre_boil_vol = NumericProperty(0.0)
+    raw_strike_temp = NumericProperty(0.0)
     
     # --- CONTEXT TRACKING ---
     context = StringProperty("MANUAL") # "MANUAL" or "AUTO"
@@ -2939,6 +2959,9 @@ class WaterScreen(Screen):
         if to_metric:
             # --- IMPERIAL -> METRIC ---
             
+            # 0. Tun Capacity: Gal -> L (Step 1.0 L)
+            self.tun_capacity = self._snap_and_set('s_tun_cap', self.tun_capacity * 3.78541, 19.0, 76.0, 1.0)
+
             # 1. Grain: lb -> kg (Step 0.25 kg)
             # Range: ~1kg to 7kg
             self.grain_wt = self._snap_and_set('s_grain', self.grain_wt * 0.453592, 1.0, 8.0, 0.25)
@@ -2974,6 +2997,9 @@ class WaterScreen(Screen):
         else:
             # --- METRIC -> IMPERIAL ---
             
+            # 0. Tun Capacity: L -> Gal (Step 0.25 Gal)
+            self.tun_capacity = self._snap_and_set('s_tun_cap', self.tun_capacity / 3.78541, 5.0, 20.0, 0.25)
+
             # 1. Grain: kg -> lb (Step 0.5 lb)
             self.grain_wt = self._snap_and_set('s_grain', self.grain_wt / 0.453592, 2.0, 16.0, 0.5)
 
@@ -3003,47 +3029,10 @@ class WaterScreen(Screen):
 
         # Recalculate outputs
         self.calculate_all()
-        
-    # ~ def convert_values(self, to_metric):
-        # ~ """Converts inputs between US Std and Metric."""
-        # ~ if to_metric:
-            # ~ # IMPERIAL -> METRIC
-            # ~ self.grain_wt = self.grain_wt * 0.453592      # lb -> kg
-            # ~ self.grain_temp = (self.grain_temp - 32) * 5/9 # F -> C
-            # ~ self.mash_temp = (self.mash_temp - 32) * 5/9   # F -> C
-            
-            # ~ self.ferm_vol = self.ferm_vol * 3.78541       # Gal -> L
-            # ~ self.boiloff = self.boiloff * 3.78541         # Gal -> L
-            # ~ self.trub_vol = self.trub_vol * 3.78541       # Gal -> L
-            
-            # ~ # Ratios (qt/lb -> L/kg) | Factor: ~2.086
-            # ~ ratio_factor = 0.946353 / 0.453592 
-            # ~ self.abs_rate = self.abs_rate * ratio_factor
-            # ~ self.thickness = self.thickness * ratio_factor
-            
-            # ~ self.is_metric = True
-            
-        # ~ else:
-            # ~ # METRIC -> IMPERIAL
-            # ~ self.grain_wt = self.grain_wt / 0.453592
-            # ~ self.grain_temp = (self.grain_temp * 9/5) + 32
-            # ~ self.mash_temp = (self.mash_temp * 9/5) + 32
-            
-            # ~ self.ferm_vol = self.ferm_vol / 3.78541
-            # ~ self.boiloff = self.boiloff / 3.78541
-            # ~ self.trub_vol = self.trub_vol / 3.78541
-            
-            # ~ ratio_factor = 0.946353 / 0.453592
-            # ~ self.abs_rate = self.abs_rate / ratio_factor
-            # ~ self.thickness = self.thickness / ratio_factor
-            
-            # ~ self.is_metric = False
-
-        # ~ # Recalculate outputs with new values
-        # ~ self.calculate_all()
     
     def _apply_dict_to_ui(self, data):
         self.mash_method = data.get("mash_method", "No Sparge (BIAB)")
+        self.tun_capacity = float(data.get("tun_capacity", 10.0)) # <--- LOAD
         self.grain_wt = float(data.get("grain_wt", 10.0))
         self.grain_temp = float(data.get("grain_temp", 68.0))
         self.mash_temp = float(data.get("mash_temp", 152.0))
@@ -3065,6 +3054,7 @@ class WaterScreen(Screen):
     def _scrape_ui_to_dict(self):
         return {
             "mash_method": self.mash_method,
+            "tun_capacity": self.tun_capacity, # <--- SAVE
             "grain_wt": self.grain_wt,
             "grain_temp": self.grain_temp,
             "mash_temp": self.mash_temp,
@@ -3231,6 +3221,46 @@ class WaterScreen(Screen):
         self.total_mash_vol = f"{res_w['total_mash_vol']:.2f} {u_vol}"
         self.total_water = res_w['total_water']
         
+        # --- NEW RESULTS LOGIC ---
+        total_mash_f = res_w['total_mash_vol']
+        total_water_f = res_w['total_water']
+        strike_f = res_w['strike_vol']
+        sparge_f = res_w['sparge_vol']
+        pre_boil_f = res_w['pre_boil_vol']
+        strike_temp_f = res_w['strike_temp']
+        
+        # 1. Set Aside
+        if total_mash_f > self.tun_capacity:
+            set_aside_f = total_mash_f - self.tun_capacity
+        else:
+            set_aside_f = 0.0
+            
+        # 2. Dough-in
+        if sparge_f > 0:
+            dough_in_f = strike_f
+        else:
+            dough_in_f = total_water_f - set_aside_f
+            
+        # 3. Mash
+        if sparge_f > 0:
+            mash_f = total_mash_f
+        else:
+            mash_f = total_mash_f - set_aside_f
+            
+        # 4. Strings
+        self.res_total_disp = f"{total_water_f:.2f} {u_vol}"
+        self.res_set_aside = f"{set_aside_f:.2f} {u_vol}"
+        self.res_dough_in = f"{dough_in_f:.2f} {u_vol}"
+        self.res_mash = f"{mash_f:.2f} {u_vol}"
+        
+        # 5. STORE RAW VALUES (For Profile Population)
+        self.raw_total_water = total_water_f
+        self.raw_dough_in_vol = dough_in_f
+        self.raw_mash_vol = mash_f
+        self.raw_pre_boil_vol = pre_boil_f
+        self.raw_strike_temp = strike_temp_f
+        # -------------------------
+        
         res_c = BrewMath.calculate_chemistry(
             self.total_water, self.srm, self.target_ph, self.grain_wt,
             self.tgt_ca, self.tgt_mg, self.tgt_na, self.tgt_so4, self.tgt_cl, 
@@ -3245,8 +3275,86 @@ class WaterScreen(Screen):
         self.res_acid = f"{res_c['acid']:.1f} ml"
         self.res_acid_g = f"{res_c['acid_g']:.2f} g"
         
-        # --- NEW: CHECK FOR MODIFICATIONS ---
         self.check_profile_match()
+        
+    def save_results_to_profile(self):
+        """
+        Populates the current profile steps with calculated water/temp values.
+        Handles unit conversion (Metric -> Imperial) before saving.
+        """
+        # FIX: Get reference to the running App instance explicitly
+        app = App.get_running_app()
+        
+        if not app.sequencer.current_profile:
+            print("[WaterScreen] No current profile to update.")
+            self.save_and_exit()
+            return
+
+        # Helper: Convert to System Units (Gallons/Fahrenheit)
+        def to_sys_vol(val):
+            return val / 3.78541 if self.is_metric else val
+
+        def to_sys_temp(val):
+            return (val * 9/5) + 32 if self.is_metric else val
+            
+        # 1. Prepare converted values
+        val_total = to_sys_vol(self.raw_total_water)
+        val_dough_in = to_sys_vol(self.raw_dough_in_vol)
+        val_mash = to_sys_vol(self.raw_mash_vol)
+        val_pre_boil = to_sys_vol(self.raw_pre_boil_vol)
+        val_chill = to_sys_vol(self.ferm_vol + self.trub_vol) # Using Inputs
+        
+        temp_strike = to_sys_temp(self.raw_strike_temp)
+        temp_mash = to_sys_temp(self.mash_temp) # Using Input
+        
+        # 2. Iterate and Update
+        steps_updated = 0
+        for step in app.sequencer.current_profile.steps:
+            st = step.step_type
+            
+            # -- MAPPING LOGIC (Updated to use correct BrewStep attributes) --
+            if st == StepType.PREP_WATER:
+                step.lauter_volume = val_total
+                steps_updated += 1
+                
+            elif st == StepType.DOUGH_IN:
+                step.lauter_volume = val_dough_in
+                step.setpoint_f = temp_strike
+                steps_updated += 1
+                
+            elif st == StepType.MASH:
+                step.lauter_volume = val_mash
+                step.setpoint_f = temp_mash
+                steps_updated += 1
+                
+            elif st == StepType.MASH_OUT:
+                step.lauter_volume = val_pre_boil
+                steps_updated += 1
+                
+            elif st == StepType.SPARGE:
+                step.lauter_volume = val_pre_boil
+                steps_updated += 1
+                
+            elif st == StepType.BOIL_START:
+                step.lauter_volume = val_pre_boil
+                steps_updated += 1
+                
+            elif st == StepType.BOIL: # Boil Off
+                step.lauter_volume = val_pre_boil
+                steps_updated += 1
+                
+            elif st == StepType.CHILL:
+                step.lauter_volume = val_chill
+                steps_updated += 1
+
+        print(f"[WaterScreen] Updated {steps_updated} steps with new water results.")
+        
+        # 3. Save to Disk
+        # FIX: Correct method is save_profile(profile_object)
+        app.sequencer.settings.save_profile(app.sequencer.current_profile)
+        
+        # 4. Exit
+        self.save_and_exit()
         
         
 if __name__ == '__main__':

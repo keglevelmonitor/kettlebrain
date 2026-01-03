@@ -35,7 +35,7 @@ DEFAULT_SETTINGS = {
         "heater_ref_volume_gal": 8.0,
         "heater_ref_rate_fpm": 1.3,
         "last_profile_id": None,
-        "alert_repeat_freq": 15  # <--- NEW DEFAULT
+        "alert_repeat_freq": 15
     },
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
@@ -47,6 +47,7 @@ DEFAULT_SETTINGS = {
     # --- COMBINED WATER DEFAULTS (The "House Defaults") ---
     "water_defaults": {
         "mash_method": "No Sparge (BIAB)",
+        "tun_capacity": 10.0,  # <--- NEW DEFAULT
         "grain_wt": 10.0,
         "grain_temp": 65.0,
         "mash_temp": 152.0,
