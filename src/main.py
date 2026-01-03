@@ -551,7 +551,10 @@ class StepEditorScreen(Screen):
             self.step_obj_ref.lauter_volume = val_gal 
             # -----------------------------
             
-            self.step_obj_ref.duration_min = self.step_dur
+            # FIX: Force duration to Integer to prevent Timer vs List mismatch
+            # Sliders can return 1.233 min, which shows as "1 min" in list but "01:14" on timer.
+            # Rounding ensures 1.8 becomes 2.0, and 1.2 becomes 1.0.
+            self.step_obj_ref.duration_min = float(round(self.step_dur))
             
             try: self.step_obj_ref.step_type = StepType(self.selected_type)
             except: pass 

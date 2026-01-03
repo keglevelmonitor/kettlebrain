@@ -206,19 +206,28 @@ class SequenceManager:
         self.step_elapsed_time = 0.0
         self.temp_reached = False 
         
-        # --- CAPTURE INITIAL TEMP (For "Already at Target" Rule) ---
+        # --- NEW: DEBOUNCE TIMER ---
+        self.trigger_start_time = 0.0
+        # ---------------------------
+        
+        # --- CAPTURE INITIAL TEMP ---
         self.initial_step_temp = self.current_temp if self.current_temp is not None else 0.0
-        # -----------------------------------------------------------
 
         if self.global_start_time is None:
             self.global_start_time = time.monotonic()
         
+        # --- CENTRALIZED TARGET LOGIC ---
+        # 1. Prefer explicit Setpoint
+        # 2. Fallback to Lauter Temp (for Mash/Sparge steps)
+        # 3. Default to 0.0 (Off)
         if step.setpoint_f is not None:
-            self.target_temp = step.setpoint_f
+            self.target_temp = float(step.setpoint_f)
         elif step.lauter_temp_f is not None:
-            self.target_temp = step.lauter_temp_f
+            self.target_temp = float(step.lauter_temp_f)
         else:
             self.target_temp = 0.0
+            
+        print(f"[Sequence] Target calculated as: {self.target_temp} F")
             
         if hasattr(step, 'additions'):
             for add in step.additions:
@@ -232,6 +241,9 @@ class SequenceManager:
         if target_temp <= start_temp: return 0.0
         if vol_gal <= 0.1: return 0.0 # Avoid div/0
         
+        # --- FIX: Sanitize watts (Treat None as 1800W to match control logic) ---
+        safe_watts = float(watts) if watts is not None else 1800.0
+        
         # 1. Get Calibration Constants (Reference: 1800W @ 8.0 Gal)
         ref_rate_fpm = self.settings.get_system_setting("heater_ref_rate_fpm", 1.2)
         ref_vol = self.settings.get_system_setting("heater_ref_volume_gal", 8.0)
@@ -242,7 +254,7 @@ class SequenceManager:
         
         # 3. Adjust for Power
         # Rate decreases if power is lower than 1800W
-        power_factor = float(watts) / 1800.0
+        power_factor = safe_watts / 1800.0
         
         # 4. Calculate Real Rate
         real_rate_fpm = ref_rate_fpm * vol_factor * power_factor
@@ -689,11 +701,13 @@ class SequenceManager:
             
             # --- MAIN SEQUENCE LOGIC ---
             elif self.status == SequenceStatus.RUNNING:
-                self._process_time_logic()
                 if self.current_profile:
                      # Get current step
                      step = self.current_profile.steps[self.current_step_index]
+                     
+                     # FIX: Ensure logic runs in correct order
                      self._manage_temperature(step)
+                     self._process_time_logic(step)
             
             # --- MANUAL MODE LOGIC ---
             elif self.status == SequenceStatus.MANUAL:
@@ -704,6 +718,7 @@ class SequenceManager:
                 self.relay.set_relays(False, False, False)
 
     def _process_time_logic(self, step):
+        # 1. Strict Check: If Temp Not Reached, NO TIME PASSES.
         if not self.temp_reached:
             self.step_elapsed_time = 0
             return 
@@ -730,6 +745,7 @@ class SequenceManager:
             for add in step.additions:
                 if not add.triggered:
                     should_trigger = False
+                    # Trigger if within 0.005 min (0.3 sec)
                     if remaining_min <= (add.time_point_min + 0.005):
                         should_trigger = True
                     if duration_val <= 0.0:
@@ -749,6 +765,7 @@ class SequenceManager:
 
         if self.step_elapsed_time >= duration_sec:
             if hasattr(step, 'additions'):
+                # Ensure all additions have fired before completing step
                 if any(not a.triggered for a in step.additions):
                     return 
 
@@ -1055,9 +1072,8 @@ class SequenceManager:
         print(f"[Sequence] Restored Step {self.current_step_index + 1}. Temp Reached: {self.temp_reached}, Elapsed: {saved_elapsed:.1f}s")
 
     def _manage_temperature(self, step):
-        # 1. Determine Target Temperature
-        # STANDARD: Respect the user setting from the profile
-        target = step.setpoint_f if step.setpoint_f is not None else 0.0
+        # 1. Use the Target determined in _init_step
+        target = self.target_temp
 
         # Safety Clamp
         if target > 215: target = 215
@@ -1076,14 +1092,25 @@ class SequenceManager:
             
             # Check if we crossed the threshold
             if self.current_temp >= trigger_threshold:
-                self.temp_reached = True
-                self.step_start_time = time.monotonic()
+                # --- DEBOUNCE LOGIC (Hold for 5 seconds) ---
+                now = time.monotonic()
+                if self.trigger_start_time == 0.0:
+                    self.trigger_start_time = now  # Start counting
                 
-                # Alert sound if we started cold
-                start_t = getattr(self, 'initial_step_temp', 0.0)
-                if start_t < (target - 0.5):
-                    self._play_alert_sound()
-                self._save_recovery_snapshot()
+                # Check if 5 seconds have passed
+                elif (now - self.trigger_start_time) >= 5.0:
+                    self.temp_reached = True
+                    self.step_start_time = time.monotonic()
+                    self.trigger_start_time = 0.0 # Reset
+                    
+                    # Alert sound if we started cold
+                    start_t = getattr(self, 'initial_step_temp', 0.0)
+                    if start_t < (target - 0.5):
+                        self._play_alert_sound()
+                    self._save_recovery_snapshot()
+            else:
+                # Reset if temp drops below target before confirmed
+                self.trigger_start_time = 0.0
 
         # 3. Heater Power Logic
         watts_to_apply = 0
