@@ -104,29 +104,35 @@
         text: root.arrow_text
         disabled: root.arrow_disabled
         size_hint_x: 0.1
-        background_color: 0, 0, 0, 0 # Transparent background
-        color: (1, 1, 1, 1) if not self.disabled else (0, 0, 0, 0) # Hide text if disabled
+        background_normal: ''
+        background_color: 0, 0, 0, 0
+        color: root.text_color
         font_size: '24sp'
         bold: True
-        # Call the toggle function in MainScreen
         on_release: app.root.get_screen('main').toggle_step_expansion(root.internal_index)
 
-    # Index
+    # Index (Reduced)
     Label:
         text: root.step_index
-        size_hint_x: 0.08
+        size_hint_x: 0.05
         font_size: '20sp'
         bold: True
         color: root.text_color
 
-    # Name
+    # Name (Reduced)
     Label:
         text: root.step_name
-        size_hint_x: 0.32
+        size_hint_x: 0.25
         halign: 'left'
         text_size: self.size
         font_size: '20sp'
         valign: 'center'
+        color: root.text_color
+
+    # Volume
+    Label:
+        text: root.step_volume
+        size_hint_x: 0.15
         color: root.text_color
 
     # Target
@@ -144,7 +150,7 @@
     # Ready At
     Label:
         text: root.step_ready
-        size_hint_x: 0.2
+        size_hint_x: 0.15
         color: root.text_color
         bold: True
         
@@ -522,28 +528,49 @@
                             Rectangle:
                                 pos: self.pos
                                 size: self.size
+                        
+                        # SPACER for Arrow (0.1)
+                        Label:
+                            text: ""
+                            size_hint_x: 0.1
+
+                        # Index (Reduced)
                         Label:
                             text: "#"
-                            size_hint_x: 0.1
+                            size_hint_x: 0.05
                             bold: True
+
+                        # Name (Reduced)
                         Label:
                             text: "Step Name"
-                            size_hint_x: 0.35 # Match StepItem
+                            size_hint_x: 0.25
                             halign: 'left'
                             text_size: self.size
                             padding_x: 10
                             bold: True
+                            
+                        # Volume
+                        Label:
+                            text: "Volume"
+                            size_hint_x: 0.15
+                            bold: True
+
+                        # Target
                         Label:
                             text: "Target"
-                            size_hint_x: 0.15 # Match StepItem
+                            size_hint_x: 0.15
                             bold: True
+
+                        # Duration
                         Label:
                             text: "Duration"
-                            size_hint_x: 0.2 # Match StepItem
+                            size_hint_x: 0.15
                             bold: True
+
+                        # Ready At
                         Label:
                             text: "Ready At"
-                            size_hint_x: 0.2 # Match StepItem
+                            size_hint_x: 0.15
                             bold: True
                     
                     RecycleView:

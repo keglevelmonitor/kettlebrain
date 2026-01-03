@@ -124,6 +124,7 @@ signal.signal(signal.SIGINT, handle_signal)
 class StepItem(BoxLayout):
     step_index = StringProperty("")
     step_name = StringProperty("")
+    step_volume = StringProperty("") # <--- NEW PROPERTY
     step_target = StringProperty("")
     step_duration = StringProperty("")
     step_ready = StringProperty("")  # <--- NEW PROPERTY
@@ -1436,6 +1437,7 @@ class MainScreen(Screen):
 
         # Unit String Helper
         unit = "C" if self.app.is_metric else "F"
+        u_vol = "L" if self.app.is_metric else "Gal" # <--- UNIT HELPER
 
         for i, step in enumerate(seq.current_profile.steps):
             is_current_step = (i == current_idx)
@@ -1453,7 +1455,7 @@ class MainScreen(Screen):
             elif is_done:
                 txt = [0.5, 0.5, 0.5, 1]
 
-            # --- UNIT CONVERSION LOGIC ---
+            # --- TARGET TEMP LOGIC ---
             if step.step_type == StepType.BOIL:
                 sys_boil = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
                 user_boil = self.app.to_user_units(sys_boil, 'boil_temp')
@@ -1463,10 +1465,16 @@ class MainScreen(Screen):
                 t_str = f"{user_val:.0f}°{unit}"
             else:
                 t_str = "--"
-            # -----------------------------
 
-            # FIX: Format Duration as Integer
-            # This strips the long decimals (e.g., 0.352...) seen in your screenshot
+            # --- NEW: VOLUME LOGIC ---
+            if step.lauter_volume and step.lauter_volume > 0:
+                user_vol = self.app.to_user_units(step.lauter_volume, 'vol')
+                v_str = f"{user_vol:.2f} {u_vol}"
+            else:
+                v_str = "--"
+            # -------------------------
+
+            # DURATION
             if step.duration_min and step.duration_min > 0:
                 d_str = f"{int(step.duration_min)} min"
             else:
@@ -1485,6 +1493,7 @@ class MainScreen(Screen):
                 'step_index': str(i + 1),
                 'internal_index': i,
                 'step_name': step.name,
+                'step_volume': v_str,   # <--- PASS DATA
                 'step_target': t_str,
                 'step_duration': d_str,
                 'step_ready': r_str,
