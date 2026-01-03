@@ -288,8 +288,12 @@ class StepEditorScreen(Screen):
         # self.step_temp is in User Units (C or F)
         val = float(self.step_temp)
         
-        # Check for -- (Low value threshold)
-        if val < 10: 
+        # --- NULL CHECK (Step 1) ---
+        # If value is at (or below) the "Null" threshold
+        # Imperial: < 70 (i.e. 69), Metric: < 20 (i.e. 19)
+        threshold = 20 if app.is_metric else 70
+        
+        if val < threshold: 
             self.step_target_display = "Target: --"
             return
             
@@ -332,7 +336,7 @@ class StepEditorScreen(Screen):
                 "adds": []
             },
             "Prep Water": {
-                "temp": 70.0, "time": 0.0, "vol": 8.0, "watts": 0, 
+                "temp": 0.0, "time": 0.0, "vol": 8.0, "watts": 0, 
                 "adv": TimeoutBehavior.AUTO_ADVANCE.value,
                 "adds": [
                     {'name': "Add water per calculations", 'time': 0},
@@ -483,12 +487,11 @@ class StepEditorScreen(Screen):
         # 1. Temp: Read Imperial -> Configure Slider -> Set User Value
         raw_temp_f = float(step_obj.setpoint_f or 0.0)
         
-        # Configure Slider Range first
-        if raw_temp_f < 60:
-             app.configure_slider(self.ids.s_temp, 70.0, 'temp') 
-             self.step_temp = 0 
-        else:
-             app.configure_slider(self.ids.s_temp, raw_temp_f, 'temp')
+        # Configure Slider (Handles Null mapping to 69/19 internally now)
+        app.configure_slider(self.ids.s_temp, raw_temp_f, 'temp')
+        
+        # Read the value back from the slider to ensure self.step_temp matches UI
+        self.step_temp = self.ids.s_temp.value
 
         # 2. Volume
         raw_vol_gal = float(step_obj.lauter_volume or 0.0)
@@ -502,7 +505,6 @@ class StepEditorScreen(Screen):
         self.step_dur = float(step_obj.duration_min or 0.0)
         
         w = getattr(step_obj, 'power_watts', 1800)
-        # UPDATED: Default to index 4 (1800W)
         self.step_power_idx = self.watts_map.index(w) if w in self.watts_map else 4
 
         # Load Alerts
@@ -535,9 +537,14 @@ class StepEditorScreen(Screen):
             self.step_obj_ref.name = self.step_name
             
             # --- UNIT CONVERSION START ---
-            # Convert UI Units -> Backend Units (F / Gal)
-            val_f = app.to_backend_units(self.step_temp, 'temp')
-            self.step_obj_ref.setpoint_f = val_f
+            # Threshold check: < 70 (Imp) or < 20 (Met) means OFF (0.0)
+            threshold = 20 if app.is_metric else 70
+            
+            if self.step_temp < threshold:
+                self.step_obj_ref.setpoint_f = 0.0
+            else:
+                val_f = app.to_backend_units(self.step_temp, 'temp')
+                self.step_obj_ref.setpoint_f = val_f
             
             val_gal = app.to_backend_units(self.step_vol, 'vol')
             self.step_obj_ref.lauter_volume = val_gal 
@@ -895,13 +902,17 @@ class MainScreen(Screen):
         # 1. Get Units
         u_temp = "C" if self.app.is_metric else "F"
         
+        # --- NULL CHECK (New Logic) ---
+        threshold = 20 if self.app.is_metric else 70
+        
+        if value < threshold:
+            self.delay_target_display = "Target: --"
+            return
+
         # 2. Check BOIL Threshold
-        # Convert Slider Value (User) -> Backend (F)
         val_f = self.app.to_backend_units(value, 'temp')
         sys_boil_f = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
         
-        # Compare F to F
-        # Use small buffer (1.0) for rounding differences
         if val_f >= (sys_boil_f - 1.0):
             self.delay_target_display = f"Target: {int(value)} {u_temp} (BOIL)"
         else:
@@ -955,20 +966,23 @@ class MainScreen(Screen):
             val = float(value)
             self.slider_temp_val = val
 
-            # Label Logic
-            sys_boil = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
-
-            # To compare, we must convert the Slider Value (User Units) -> Backend (F)
-            val_f = self.app.to_backend_units(val, 'temp')
-
-            if val_f >= sys_boil:
-                self.manual_target_display = f"Target: {int(val)} {u_temp} (BOIL)"
+            # --- NULL CHECK (New Logic) ---
+            threshold = 20 if self.app.is_metric else 70
+            
+            if val < threshold:
+                self.manual_target_display = "Target: --"
             else:
-                self.manual_target_display = f"Target: {int(val)} {u_temp}"
+                # Normal Logic
+                sys_boil = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+                val_f = self.app.to_backend_units(val, 'temp')
+
+                if val_f >= sys_boil:
+                    self.manual_target_display = f"Target: {int(val)} {u_temp} (BOIL)"
+                else:
+                    self.manual_target_display = f"Target: {int(val)} {u_temp}"
 
         elif slider_type == 'vol': 
             self.slider_vol_val = float(value)
-            # FIX: Update the volume label property
             self.manual_vol_display = f"Volume: {value:.2f} {u_vol}"
 
         elif slider_type == 'time': 
@@ -987,8 +1001,15 @@ class MainScreen(Screen):
         
         # Convert User Input -> Backend Units
         if slider_type == 'temp':
-            val_f = self.app.to_backend_units(float(value), 'temp')
-            seq.set_manual_target(val_f)
+            # --- NULL CHECK ---
+            threshold = 20 if self.app.is_metric else 70
+            
+            if float(value) < threshold:
+                seq.set_manual_target(0.0) # Send OFF
+            else:
+                val_f = self.app.to_backend_units(float(value), 'temp')
+                seq.set_manual_target(val_f)
+                
         elif slider_type == 'vol':
             val_gal = self.app.to_backend_units(float(value), 'vol')
             seq.set_manual_volume(val_gal)
@@ -1626,15 +1647,20 @@ class MainScreen(Screen):
             if target_dt <= now:
                 target_dt += timedelta(days=1)
             
-            # FIX: Store this for the Est. End calculation
             self.delay_target_dt = target_dt
             
             # 2. Context (Auto vs Manual)
             is_auto = (self.app.sequencer.status != SequenceStatus.MANUAL)
             
             # --- UNIT CONVERSION START ---
-            # Convert User Inputs (C/L) -> Backend Units (F/Gal)
-            target_f = self.app.to_backend_units(self.delay_temp, 'temp')
+            threshold = 20 if self.app.is_metric else 70
+            
+            # Check Null Threshold for Temp
+            if self.delay_temp < threshold:
+                target_f = 0.0
+            else:
+                target_f = self.app.to_backend_units(self.delay_temp, 'temp')
+                
             target_gal = self.app.to_backend_units(self.delay_vol, 'vol')
             # -----------------------------
 
@@ -1648,6 +1674,7 @@ class MainScreen(Screen):
             
             # 4. MIRROR SETTINGS TO MANUAL UI (Visual confirmation)
             # Use configure_slider to handle unit ranges correctly
+            # Note: configure_slider handles the < 15.0 null mapping internally
             self.app.configure_slider(self.ids.temp_slider, target_f, 'temp')
             self.app.configure_slider(self.ids.vol_slider, target_gal, 'vol')
             
@@ -2734,47 +2761,51 @@ class KettleApp(App):
             converted_val = self.to_user_units(imperial_val, type_str)
             
             if type_str == 'temp':
-                # General Temp: 20C - 100C (approx 68F - 212F)
-                slider_obj.min = 20
+                # General Temp: 19C (Null) -> 20C (Start) -> 100C
+                slider_obj.min = 19
                 slider_obj.max = 100
                 slider_obj.step = 1
                 
             elif type_str == 'boil_temp':
-                # Boil Specific: 80C - 100C
                 slider_obj.min = 80
                 slider_obj.max = 100
                 slider_obj.step = 1
                 
             elif type_str == 'vol':
-                # Volume: 8L - 35L (approx 2G - 9G)
                 slider_obj.min = 8.0
                 slider_obj.max = 35.0
                 slider_obj.step = 0.5
-                
-            # Snap value
-            slider_obj.value = round(converted_val / slider_obj.step) * slider_obj.step
+            
+            # Handle Null Case (0.0 input) mapping to Min
+            if type_str == 'temp' and imperial_val < 15.0:
+                 slider_obj.value = slider_obj.min
+            else:
+                 # Snap value
+                 slider_obj.value = round(converted_val / slider_obj.step) * slider_obj.step
             
         else:
             # --- IMPERIAL CONFIG ---
             if type_str == 'temp':
-                # General Temp: 70F - 212F
-                slider_obj.min = 70
+                # General Temp: 69F (Null) -> 70F (Start) -> 212F
+                slider_obj.min = 69
                 slider_obj.max = 212
                 slider_obj.step = 1
                 
             elif type_str == 'boil_temp':
-                # Boil Specific: 180F - 212F
                 slider_obj.min = 180
                 slider_obj.max = 212
                 slider_obj.step = 1
                 
             elif type_str == 'vol':
-                # Volume: 2G - 9G
                 slider_obj.min = 2.0
                 slider_obj.max = 9.0
                 slider_obj.step = 0.25
             
-            slider_obj.value = imperial_val
+            # Handle Null Case mapping to Min
+            if type_str == 'temp' and imperial_val < 15.0:
+                slider_obj.value = slider_obj.min
+            else:
+                slider_obj.value = imperial_val
 
 class WaterScreen(Screen):
     # --- GLOBAL SETTINGS ---
