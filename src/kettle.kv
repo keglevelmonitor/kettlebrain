@@ -1375,118 +1375,126 @@
             text: "Hardware Configuration"
             font_size: '24sp'
             bold: True
-            size_hint_y: 0.1
+            size_hint_y: 0.15
             color: 0.2, 0.8, 1, 1
 
-        ScrollView:
-            GridLayout:
-                cols: 1
-                size_hint_y: None
-                height: self.minimum_height
-                spacing: 20
-                padding: 10
+        # --- NEW 2-COLUMN GRID LAYOUT ---
+        GridLayout:
+            cols: 2
+            spacing: 20
+            padding: 10
+            size_hint_y: 0.7
 
-                # --- SENSOR SECTION ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    Label:
-                        text: "Temp Sensor:"
-                        size_hint_x: 0.4
-                        halign: 'right'
-                        valign: 'middle'
-                    Spinner:
-                        id: spinner_sensor
-                        text: "Select..."
-                        values: root.sensor_list
-                        size_hint_x: 0.6
-                        background_color: 0.2, 0.2, 0.2, 1
+            # --- ROW 1 LEFT: TEMP SENSOR ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Temp Sensor:"
+                    size_hint_x: 0.4
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Spinner:
+                    id: spinner_sensor
+                    text: "Select..."
+                    values: root.sensor_list
+                    size_hint_x: 0.6
+                    background_color: 0.2, 0.2, 0.2, 1
 
-                # --- BOIL TEMP SECTION ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '80dp'
-                    orientation: 'vertical'
-                    BoxLayout:
-                        Label:
-                            text: "Boil Temp: " + str(int(root.boil_temp)) + " F"
-                            font_size: '18sp'
-                    Slider:
-                        id: s_boil
-                        min: 180
-                        max: 212
-                        step: 1
-                        value: root.boil_temp
-                        on_value: root.boil_temp = self.value
+            # --- ROW 1 RIGHT: BOIL TEMP ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Boil Temp:\n" + str(int(root.boil_temp)) + " F"
+                    size_hint_x: 0.4
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Slider:
+                    id: s_boil
+                    min: 180
+                    max: 212
+                    step: 1
+                    value: root.boil_temp
+                    on_value: root.boil_temp = self.value
+                    size_hint_x: 0.6
+                    cursor_size: dp(30), dp(30)
 
-                # --- AUDIO DEVICE ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    Label:
-                        text: "Audio Output:"
-                        size_hint_x: 0.4
-                    Spinner:
-                        id: spinner_audio
-                        text: "Select..."
-                        values: root.audio_list
-                        size_hint_x: 0.6
-                        background_color: 0.2, 0.2, 0.2, 1
+            # --- ROW 2 LEFT: AUDIO OUTPUT ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Audio Out:"
+                    size_hint_x: 0.4
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Spinner:
+                    id: spinner_audio
+                    text: "Select..."
+                    values: root.audio_list
+                    size_hint_x: 0.6
+                    background_color: 0.2, 0.2, 0.2, 1
 
-                # --- ALERT SOUND ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    Label:
-                        text: "Alert Sound:"
-                        size_hint_x: 0.3
-                    Spinner:
-                        id: spinner_sound
-                        text: "Select..."
-                        values: root.sound_list
-                        size_hint_x: 0.5
-                        background_color: 0.2, 0.2, 0.2, 1
-                    Button:
-                        text: "TEST"
-                        size_hint_x: 0.2
-                        background_color: 0.2, 0.6, 0.2, 1
-                        on_release: root.test_audio()
+            # --- ROW 2 RIGHT: ALERT SOUND ---
+            BoxLayout:
+                orientation: 'horizontal'
+                spacing: 5
+                Label:
+                    text: "Sound:"
+                    size_hint_x: 0.25
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Spinner:
+                    id: spinner_sound
+                    text: "Select..."
+                    values: root.sound_list
+                    size_hint_x: 0.5
+                    background_color: 0.2, 0.2, 0.2, 1
+                Button:
+                    text: "TEST"
+                    size_hint_x: 0.25
+                    font_size: '12sp'
+                    background_color: 0.2, 0.6, 0.2, 1
+                    on_release: root.test_audio()
 
-                # --- SYSTEM VOLUME ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '80dp'
-                    orientation: 'vertical'
-                    BoxLayout:
-                        Label:
-                            text: "System Volume: " + str(int(root.system_volume)) + "%"
-                    Slider:
-                        min: 0
-                        max: 100
-                        step: 5
-                        value: root.system_volume
-                        on_value: root.system_volume = self.value
-                        on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
+            # --- ROW 3 LEFT: SYSTEM VOLUME ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Sys Vol:\n" + str(int(root.system_volume)) + "%"
+                    size_hint_x: 0.4
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Slider:
+                    min: 0
+                    max: 100
+                    step: 5
+                    value: root.system_volume
+                    on_value: root.system_volume = self.value
+                    on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
+                    size_hint_x: 0.6
+                    cursor_size: dp(30), dp(30)
 
-                # --- ALERT REPEAT FREQUENCY (UPDATED) ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '90dp'  # Increased height for better touch area
-                    orientation: 'vertical'
-                    padding: [0, 10, 0, 10]
-                    BoxLayout:
-                        size_hint_y: 0.4
-                        Label:
-                            text: "Alert Repeat Freq: " + str(int(root.alert_repeat_freq)) + "s"
-                            font_size: '18sp'
-                    Slider:
-                        size_hint_y: 0.6
-                        min: 0
-                        max: 60
-                        step: 1  # CHANGED: 1s increments for smoother dragging
-                        cursor_size: (40, 40) # LARGER TOUCH TARGET
-                        value: root.alert_repeat_freq
-                        on_value: root.alert_repeat_freq = self.value
+            # --- ROW 3 RIGHT: ALERT REPEAT ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Alert Repeat:\n" + str(int(root.alert_repeat_freq)) + "s"
+                    size_hint_x: 0.4
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Slider:
+                    min: 0
+                    max: 60
+                    step: 1
+                    value: root.alert_repeat_freq
+                    on_value: root.alert_repeat_freq = self.value
+                    size_hint_x: 0.6
+                    cursor_size: dp(30), dp(30)
 
         # --- FOOTER ---
         BoxLayout:
@@ -1518,187 +1526,105 @@
             text: "App Preferences"
             font_size: '24sp'
             bold: True
-            size_hint_y: 0.1
+            size_hint_y: 0.15
             color: 0.2, 0.8, 1, 1
 
-        ScrollView:
-            GridLayout:
-                cols: 1
-                size_hint_y: None
-                height: self.minimum_height
-                spacing: 20
-                padding: 10
+        # --- 2-COLUMN SETTINGS GRID ---
+        GridLayout:
+            cols: 2
+            spacing: 30
+            padding: 10
+            size_hint_y: 0.7
 
-                # --- UNITS ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    
-                    # 1. Label Column (50% Width)
-                    Label:
-                        text: "Display Units:"
-                        size_hint_x: 0.5
-                        halign: 'left'
-                        text_size: self.size
-                        valign: 'middle'
-                        padding_x: 20
+            # --- ROW 1 LEFT: DISPLAY UNITS ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Display Units:"
+                    size_hint_x: 0.6
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Spinner:
+                    id: spinner_units
+                    # CORRECTED: Use existing property 'units_text'
+                    text: root.units_text
+                    # CORRECTED: Hardcode values since list property doesn't exist
+                    values: ["Imperial (°F / Gal)", "Metric (°C / L)"]
+                    size_hint_x: 0.4
+                    background_color: 0.2, 0.2, 0.2, 1
+                    # CORRECTED: Bind directly to property, no method call needed
+                    on_text: root.units_text = self.text
 
-                    # 2. Control (Fixed Width, near center)
-                    Spinner:
-                        text: root.units_text
-                        values: ["Imperial (°F / Gal)", "Metric (°C / L)"]
-                        size_hint_x: None
-                        width: '200dp'
-                        background_color: 0.2, 0.2, 0.2, 1
-                        on_text: root.units_text = self.text
-                        
-                    # 3. Spacer (Takes remaining space on right)
-                    Widget:
-                        size_hint_x: 0.5
+            # --- ROW 1 RIGHT: FORCE NUMLOCK ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Force NumLock:"
+                    size_hint_x: 0.6
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Switch:
+                    # CORRECTED: Bind directly to existing property
+                    active: root.force_numlock
+                    size_hint_x: 0.4
+                    on_active: root.force_numlock = self.active
 
-                # --- AUTO START ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    
-                    # 1. Text Column (50% Width)
-                    BoxLayout:
-                        orientation: 'vertical'
-                        size_hint_x: 0.5
-                        Label:
-                            text: "Auto-Start on Boot"
-                            halign: 'left'
-                            text_size: self.size
-                            valign: 'middle'
-                            bold: True
-                            padding_x: 20
-                        Label:
-                            text: "Launch KettleBrain when Pi boots up"
-                            color: 0.6, 0.6, 0.6, 1
-                            font_size: '14sp'
-                            halign: 'left'
-                            text_size: self.size
-                            padding_x: 20
-                    
-                    # 2. Control
-                    Switch:
-                        active: root.auto_start
-                        on_active: root.auto_start = self.active
-                        size_hint_x: None
-                        width: '80dp'
-                        
-                    # 3. Spacer
-                    Widget:
-                        size_hint_x: 0.5
+            # --- ROW 2 LEFT: AUTO-START ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Auto-Start on Boot:"
+                    size_hint_x: 0.6
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Switch:
+                    active: root.auto_start
+                    size_hint_x: 0.4
+                    on_active: root.auto_start = self.active
 
-                # --- AUTO RESUME ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    opacity: 1 if root.auto_start else 0.5
-                    
-                    # 1. Text Column (50% Width)
-                    BoxLayout:
-                        orientation: 'vertical'
-                        size_hint_x: 0.5
-                        Label:
-                            text: "Auto-Resume Logic"
-                            halign: 'left'
-                            text_size: self.size
-                            valign: 'middle'
-                            bold: True
-                            padding_x: 20
-                        Label:
-                            text: "Recover state after power loss"
-                            color: 0.6, 0.6, 0.6, 1
-                            font_size: '14sp'
-                            halign: 'left'
-                            text_size: self.size
-                            padding_x: 20
-                    
-                    # 2. Control
-                    Switch:
-                        active: root.auto_resume
-                        disabled: not root.auto_start
-                        on_active: root.auto_resume = self.active
-                        size_hint_x: None
-                        width: '80dp'
-                        
-                    # 3. Spacer
-                    Widget:
-                        size_hint_x: 0.5
+            # --- ROW 2 RIGHT: AUTO-RESUME (DISABLED) ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Auto-Resume Logic:"
+                    color: 0.5, 0.5, 0.5, 1  # Dimmed text
+                    size_hint_x: 0.6
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Switch:
+                    active: root.auto_resume
+                    disabled: True
+                    size_hint_x: 0.4
+                    on_active: root.auto_resume = self.active
 
-                # --- FORCE NUMLOCK ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    
-                    # 1. Text Column
-                    Label:
-                        text: "Force NumLock ON"
-                        halign: 'left'
-                        text_size: self.size
-                        valign: 'middle'
-                        padding_x: 20
-                        size_hint_x: 0.5
-                    
-                    # 2. Control
-                    Switch:
-                        active: root.force_numlock
-                        on_active: root.force_numlock = self.active
-                        size_hint_x: None
-                        width: '80dp'
-                        
-                    # 3. Spacer
-                    Widget:
-                        size_hint_x: 0.5
+            # --- ROW 3 LEFT: CSV LOGGING (RESTORED) ---
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "CSV Data Logging:"
+                    size_hint_x: 0.6
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Switch:
+                    active: root.csv_logging
+                    size_hint_x: 0.4
+                    on_active: root.csv_logging = self.active
 
-                # --- CSV LOGGING ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    
-                    # 1. Text Column
-                    BoxLayout:
-                        orientation: 'vertical'
-                        size_hint_x: 0.5
-                        Label:
-                            text: "CSV Data Logging"
-                            halign: 'left'
-                            text_size: self.size
-                            valign: 'middle'
-                            bold: True
-                            padding_x: 20
-                        Label:
-                            text: "Save Temp/Power logs to file"
-                            color: 0.6, 0.6, 0.6, 1
-                            font_size: '14sp'
-                            halign: 'left'
-                            text_size: self.size
-                            padding_x: 20
-                    
-                    # 2. Control
-                    Switch:
-                        active: root.csv_logging
-                        on_active: root.csv_logging = self.active
-                        size_hint_x: None
-                        width: '80dp'
-                        
-                    # 3. Spacer
-                    Widget:
-                        size_hint_x: 0.5
+            # --- ROW 3 RIGHT: SPACER (To keep grid balanced) ---
+            Label:
+                text: ""
 
         # --- FOOTER ---
         BoxLayout:
             size_hint_y: 0.15
-            spacing: 20
             Button:
-                text: "CANCEL"
-                background_color: 0.8, 0.2, 0.2, 1
-                on_release: root.go_back()
-            Button:
-                text: "SAVE PREFERENCES"
-                background_color: 0.2, 0.8, 0.2, 1
+                text: "BACK / SAVE"
+                background_color: 0.2, 0.4, 0.8, 1
                 on_release: root.save_changes()
                 
 <CalibrationSettingsScreen>:
@@ -1713,9 +1639,9 @@
                 pos: self.pos
                 size: self.size
 
-        # Header with Current Value
+        # --- HEADER ---
         BoxLayout:
-            size_hint_y: 0.15
+            size_hint_y: 0.12
             orientation: 'vertical'
             Label:
                 text: "Heater Calibration"
@@ -1724,104 +1650,109 @@
                 color: 0.2, 0.8, 1, 1
             Label:
                 text: "Current Factor: " + root.current_factor_text
-                font_size: '18sp'
+                font_size: '16sp'
                 color: 0.6, 0.6, 0.6, 1
 
-        ScrollView:
-            GridLayout:
-                cols: 1
-                size_hint_y: None
-                height: self.minimum_height
-                spacing: 20
-                padding: 10
+        # --- ROW 1: SPLIT (Test Volume | Time Elapsed) ---
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: 0.2
+            spacing: 20
 
+            # LEFT: Volume
+            BoxLayout:
+                orientation: 'horizontal'
                 Label:
-                    text: "Input results from a test boil to calculate system efficiency."
-                    size_hint_y: None
-                    height: '30dp'
-                    font_size: '14sp'
+                    text: "Test Vol:\n" + str(round(root.cal_vol, 2)) + (" L" if app.is_metric else " Gal")
+                    size_hint_x: 0.4
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Slider:
+                    id: s_cal_vol
+                    min: 2.0
+                    max: 10.0
+                    step: 0.25
+                    value: root.cal_vol
+                    on_value: root.cal_vol = self.value
+                    size_hint_x: 0.6
+                    cursor_size: dp(30), dp(30)
 
-                # --- INPUT SLIDERS ---
-                
-                # Volume
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    orientation: 'vertical'
-                    Label:
-                        text: "Test Volume: " + str(round(root.cal_vol, 2)) + " Gal"
-                    Slider:
-                        id: s_cal_vol  # <--- NEW ID
-                        min: 2.0
-                        max: 10.0
-                        step: 0.25
-                        value: root.cal_vol
-                        on_value: root.cal_vol = self.value
+            # RIGHT: Time
+            BoxLayout:
+                orientation: 'horizontal'
+                Label:
+                    text: "Time:\n" + str(int(root.cal_time)) + " min"
+                    size_hint_x: 0.4
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: '16sp'
+                Slider:
+                    id: s_cal_time  # <--- NEW ID for logic
+                    min: 1
+                    max: 90
+                    step: 1
+                    value: root.cal_time
+                    on_value: root.cal_time = self.value
+                    size_hint_x: 0.6
+                    cursor_size: dp(30), dp(30)
 
-                # Start Temp
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    orientation: 'vertical'
-                    Label:
-                        text: "Start Temp: " + str(int(root.cal_start_temp)) + " F"
-                    Slider:
-                        id: s_cal_start  # <--- NEW ID
-                        min: 50
-                        max: 150
-                        step: 1
-                        value: root.cal_start_temp
-                        on_value: root.cal_start_temp = self.value
+        # --- ROW 2: START TEMP (Full Width) ---
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: 0.2
+            Label:
+                text: "Start Temp:\n" + str(int(root.cal_start_temp)) + (" C" if app.is_metric else " F")
+                size_hint_x: 0.25
+                halign: 'right'
+                valign: 'middle'
+                font_size: '18sp'
+            Slider:
+                id: s_cal_start
+                # Ranges handled in main.py
+                value: root.cal_start_temp
+                on_value: root.cal_start_temp = self.value
+                size_hint_x: 0.75
+                cursor_size: dp(30), dp(30)
 
-                # End Temp
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    orientation: 'vertical'
-                    Label:
-                        text: "End Temp: " + str(int(root.cal_end_temp)) + " F"
-                    Slider:
-                        id: s_cal_end  # <--- NEW ID
-                        min: 100
-                        max: 212
-                        step: 1
-                        value: root.cal_end_temp
-                        on_value: root.cal_end_temp = self.value
+        # --- ROW 3: END TEMP (Full Width) ---
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: 0.2
+            Label:
+                text: "End Temp:\n" + str(int(root.cal_end_temp)) + (" C" if app.is_metric else " F")
+                size_hint_x: 0.25
+                halign: 'right'
+                valign: 'middle'
+                font_size: '18sp'
+            Slider:
+                id: s_cal_end
+                # Ranges handled in main.py
+                value: root.cal_end_temp
+                on_value: root.cal_end_temp = self.value
+                size_hint_x: 0.75
+                cursor_size: dp(30), dp(30)
 
-                # Time Taken
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    orientation: 'vertical'
-                    Label:
-                        text: "Time Elapsed: " + str(int(root.cal_time)) + " min"
-                    Slider:
-                        min: 1
-                        max: 90
-                        step: 1
-                        value: root.cal_time
-                        on_value: root.cal_time = self.value
-
-                # --- ACTIONS ---
-                BoxLayout:
-                    size_hint_y: None
-                    height: '60dp'
-                    spacing: 20
-                    Button:
-                        text: "CALCULATE"
-                        background_color: 0.2, 0.4, 0.8, 1
-                        on_release: root.calculate_efficiency()
-                    Label:
-                        text: "Result: " + root.calc_result_text
-                        bold: True
-                        color: 1, 0.8, 0, 1
-
-        # --- FOOTER ---
+        # --- ACTION ROW: CALCULATE ---
         BoxLayout:
             size_hint_y: 0.15
             spacing: 20
             Button:
-                text: "RESTORE DEFAULT"
+                text: "CALCULATE"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.calculate_efficiency()
+            Label:
+                text: "Result: " + root.calc_result_text
+                bold: True
+                color: 1, 0.8, 0, 1
+                font_size: '18sp'
+
+        # --- FOOTER ---
+        BoxLayout:
+            size_hint_y: 0.13
+            spacing: 20
+            Button:
+                text: "DEFAULTS"
                 background_color: 0.4, 0.4, 0.4, 1
                 on_release: root.restore_defaults()
             Button:
@@ -1830,7 +1761,7 @@
                 on_release: root.go_back()
             Button:
                 id: btn_update
-                text: "UPDATE SETTINGS"
+                text: "UPDATE"
                 disabled: True
                 background_color: 0.2, 0.8, 0.2, 1
                 on_release: root.save_calibration()

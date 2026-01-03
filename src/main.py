@@ -2072,13 +2072,60 @@ class CalibrationSettingsScreen(Screen):
              
         self.current_factor_text = f"{val_disp:.2f} {unit} (Ref: {ref_vol})"
         
-        # Configure Sliders (Defaults are Imperial, let configure_slider handle it)
-        # Note: If we had stored last used cal values, we'd load them here. 
-        # For now we default to standard start points.
+        # 1. Volume Slider (Standard config is fine)
+        # Default: 6.0 Gal (Imp) or 23 L (Met)
+        default_vol = 23.0 if self.app.is_metric else 6.0
         self.app.configure_slider(self.ids.s_cal_vol, 6.0, 'vol')
-        self.app.configure_slider(self.ids.s_cal_start, 70.0, 'temp')
-        self.app.configure_slider(self.ids.s_cal_end, 150.0, 'temp')
+        self.cal_vol = self.ids.s_cal_vol.value # Sync
+
+        # 2. Start Temp Slider (CUSTOM RANGE: 50-100 F)
+        s_start = self.ids.s_cal_start
+        if self.app.is_metric:
+            # 50F = 10C, 100F = 38C
+            s_start.min = 10
+            s_start.max = 38
+            s_start.step = 1
+            default_val = 21 # ~70F
+        else:
+            s_start.min = 50
+            s_start.max = 100
+            s_start.step = 1
+            default_val = 70
+
+        # Snap current property to new bounds
+        if self.cal_start_temp < s_start.min or self.cal_start_temp > s_start.max:
+            self.cal_start_temp = default_val
+        s_start.value = self.cal_start_temp
+
+        # 3. End Temp Slider (CUSTOM RANGE: 100-200 F)
+        s_end = self.ids.s_cal_end
+        if self.app.is_metric:
+            # 100F = 38C, 200F = 93C
+            s_end.min = 38
+            s_end.max = 93
+            s_end.step = 1
+            default_val = 65 # ~150F
+        else:
+            s_end.min = 100
+            s_end.max = 200
+            s_end.step = 1
+            default_val = 150
+
+        # Snap current property to new bounds
+        if self.cal_end_temp < s_end.min or self.cal_end_temp > s_end.max:
+            self.cal_end_temp = default_val
+        s_end.value = self.cal_end_temp
         
+        # 4. Time Slider (Manual setup, 1-90 mins)
+        s_time = self.ids.s_cal_time
+        s_time.min = 1
+        s_time.max = 90
+        s_time.step = 1
+        # Keep existing value if valid
+        if self.cal_time < 1 or self.cal_time > 90:
+            self.cal_time = 45
+        s_time.value = self.cal_time
+
         self.calc_result_text = "--"
         self.new_calculated_factor = None
         self.ids.btn_update.disabled = True
