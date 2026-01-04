@@ -70,9 +70,9 @@ DEFAULT_SETTINGS = {
     
     # --- PID SETTINGS ---
     "pid_settings": {
-        "kp": 100.0,
-        "ki": 0.02,
-        "kd": 45.0,
+        "kp": 50.0,
+        "ki": 0.01,
+        "kd": 10.0,
         "sample_time_s": 2.0
     },
     "recovery_state": None
