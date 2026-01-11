@@ -761,11 +761,21 @@
                 orientation: 'vertical'
                 spacing: 5
 
-        Button:
-            text: "BACK TO DASHBOARD"
+        # --- UPDATED FOOTER ---
+        BoxLayout:
+            orientation: 'horizontal'
             size_hint_y: 0.15
-            background_color: 0.8, 0.2, 0.2, 1
-            on_release: root.go_back()
+            spacing: 20
+            
+            Button:
+                text: "BACK TO DASHBOARD"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.go_back()
+
+            Button:
+                text: "+ ADD NEW PROFILE"
+                background_color: 0.2, 0.6, 0.2, 1
+                on_release: app.create_new_profile()
 
 # --- NEW SETTINGS SCREEN ---
 <SystemSettingsScreen>:

@@ -1322,11 +1322,20 @@ class MainScreen(Screen):
                 if hasattr(seq, 'resume_sequence'): seq.resume_sequence()
 
     def on_stop_request(self):
+        seq = self.app.sequencer
+        
+        # 1. Ignore if Manual Mode is Inactive (Standby)
+        if seq.status == SequenceStatus.MANUAL and not getattr(seq, 'is_manual_running', False):
+            return
+
+        # 2. Ignore if Auto Mode is Inactive (Idle)
+        if seq.status == SequenceStatus.IDLE:
+            return
+
+        # 3. Proceed with Hard Stop
         self.app.sequencer.emergency_cut_power()
         self.ids.bottom_nav.transition.direction = 'up'
         self.ids.bottom_nav.current = 'nav_confirm'
-
-    # In src/main.py
 
     def on_confirm_reset(self):
         """
@@ -1375,9 +1384,20 @@ class MainScreen(Screen):
         self.on_stop_request()
 
     def on_recover_pause(self):
+        """
+        Called by 'PAUSE SESSION' in the Confirm Slider.
+        Reverts a Hard Stop to a Soft Pause (Heat On, Timer Frozen).
+        """
+        seq = self.app.sequencer
+        
+        if seq.status == SequenceStatus.MANUAL:
+            seq.pause_manual()
+        else:
+            seq.pause_sequence()
+
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
-
+        
     def open_profiles(self):
         self.manager.current = 'profiles'
         self.manager.get_screen('profiles').refresh_list()
@@ -2413,12 +2433,19 @@ class KettleApp(App):
         
         screen.is_profile_loaded = (seq.current_profile is not None)
         
+        # --- UNIT CONVERSION PREP ---
+        unit = "C" if self.is_metric else "F"
+        
         # --- 1. TEMPERATURE COLORS ONLY ---
-        current_temp_f = seq.current_temp if seq.current_temp else 0.0
+        # Capture raw temp
+        raw_temp = seq.current_temp
+        
+        # Safe float for calculations (Use 0.0 if None to prevent crash)
+        safe_temp_f = raw_temp if raw_temp is not None else 0.0
         tgt_check_f = seq.get_target_temp()
         
         if tgt_check_f:
-            diff = current_temp_f - tgt_check_f
+            diff = safe_temp_f - tgt_check_f
             if abs(diff) < 1.0: 
                 screen.temp_color = [0.2, 0.8, 0.2, 1] # Green (Good)
             elif diff < 0: 
@@ -2428,13 +2455,15 @@ class KettleApp(App):
         else:
             screen.temp_color = [0.2, 0.8, 0.2, 1] 
             
-        # --- UNIT CONVERSION PREP ---
-        unit = "C" if self.is_metric else "F"
         
         # --- 2. UPDATE LABELS (Temp, Target, Timer) ---
-        # LIVE TEMP (Convert F -> User Unit)
-        user_temp = self.to_user_units(current_temp_f, 'temp')
-        screen.display_temp = f"{user_temp:.1f} °{unit}"
+        # LIVE TEMP
+        # FIX: Check for None explicitly to show "-.-"
+        if raw_temp is None:
+            screen.display_temp = f"-.- °{unit}"
+        else:
+            user_temp = self.to_user_units(safe_temp_f, 'temp')
+            screen.display_temp = f"{user_temp:.1f} °{unit}"
         
         screen.display_timer = seq.get_display_timer()
         screen.display_elapsed = seq.get_global_elapsed_time_str()
@@ -2450,7 +2479,7 @@ class KettleApp(App):
             if getattr(seq, 'is_manual_running', False):
                 raw_target_f = seq.target_temp
             else:
-                # Slider is User Unit -> Convert back to F to check boil
+                # Slider is User Unit -> Convert back to F
                 raw_target_f = self.to_backend_units(screen.slider_temp_val, 'temp')
 
         elif status == SequenceStatus.DELAYED_WAIT:
@@ -2602,7 +2631,7 @@ class KettleApp(App):
             screen.delay_btn_text = "DELAY START"
             screen.delay_btn_color = [0.2, 0.2, 0.4, 1]
             
-        # FIX: Update Est. End Label
+        # Update Est. End Label
         if hasattr(screen, '_update_est_end'):
             screen._update_est_end()
                   
@@ -2704,6 +2733,21 @@ class KettleApp(App):
         self.root.current = 'profiles'
         self.profiles_screen.refresh_list()
 
+    def create_new_profile(self):
+        """Creates a blank profile and immediately opens the editor."""
+        new_id = str(uuid.uuid4())
+        new_profile = BrewProfile(id=new_id, name="New Profile")
+        
+        # Save to disk
+        self.settings_manager.save_profile(new_profile)
+        
+        # Refresh the list screen so it's there when we return
+        if self.root:
+            self.root.get_screen('profiles').refresh_list()
+        
+        # Immediate transition to Editor
+        self.launch_profile_editor(new_id)
+    
     # DOUBLE VISION ---------------------------------------------------
     def move_step_up(self, index):
         """Swaps the selected step with the one above it."""
