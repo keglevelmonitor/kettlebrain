@@ -619,9 +619,17 @@ class SequenceManager:
             delta = now - self.last_tick_time
             self.last_tick_time = now
             
+            # Retrieve System Boil Temp for Latch Logic
+            sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
+            
+            # Determine effective trigger threshold (Clamp to Boil Temp)
+            # If target (212) > Boil (205), we trigger at 205
+            trigger_threshold = min(self.manual_target_temp, sys_boil)
+
             # A. Wait for Temp (Latch)
             if not self.temp_reached:
-                if current_temp >= (self.manual_target_temp - 0.5):
+                # Use the clamped threshold - 0.5 buffer
+                if current_temp >= (trigger_threshold - 0.5):
                     self.temp_reached = True
                     # Timer technically starts NOW
                     self.log_message(f"Target Reached ({current_temp:.1f}F). Timer Started.")
@@ -1296,7 +1304,8 @@ class SequenceManager:
              return self._fmt_time(val)
 
         # 3. Auto Mode (Running/Paused/Waiting)
-        if self.current_profile and self.current_step_index >= 0:
+        # Added bounds check: ensure index is within the list size
+        if self.current_profile and self.current_step_index >= 0 and self.current_step_index < len(self.current_profile.steps):
             step = self.current_profile.steps[self.current_step_index]
             
             # Calculate duration in seconds

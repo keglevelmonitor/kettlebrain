@@ -306,7 +306,8 @@ class StepEditorScreen(Screen):
         unit = "C" if app.is_metric else "F"
         
         # Compare F to F
-        if val_f >= (sys_boil_f - 1.0): # Small buffer for rounding
+        # [cite_start]UPDATED: Removed 1.0 buffer to match strict Manual Mode logic [cite: 1]
+        if val_f >= sys_boil_f:
             self.step_target_display = f"Target: {int(val)} {unit} (BOIL)"
         else:
             self.step_target_display = f"Target: {int(val)} {unit}"
@@ -1460,7 +1461,13 @@ class MainScreen(Screen):
 
         # Unit String Helper
         unit = "C" if self.app.is_metric else "F"
-        u_vol = "L" if self.app.is_metric else "Gal" # <--- UNIT HELPER
+        u_vol = "L" if self.app.is_metric else "Gal"
+
+        # Retrieve System Boil Temp (Strict Float)
+        try:
+            sys_boil_f = float(self.app.settings_manager.get_system_setting("boil_temp_f", 212.0))
+        except (ValueError, TypeError):
+            sys_boil_f = 212.0
 
         for i, step in enumerate(seq.current_profile.steps):
             is_current_step = (i == current_idx)
@@ -1478,24 +1485,36 @@ class MainScreen(Screen):
             elif is_done:
                 txt = [0.5, 0.5, 0.5, 1]
 
-            # --- TARGET TEMP LOGIC ---
-            if step.step_type == StepType.BOIL:
-                sys_boil = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
-                user_boil = self.app.to_user_units(sys_boil, 'boil_temp')
+            # --- TARGET TEMP LOGIC (STRICT) ---
+            raw_f = float(step.setpoint_f) if step.setpoint_f is not None else 0.0
+            
+            is_boil_type = (step.step_type == StepType.BOIL)
+            # STRICT CHECK: No buffer. 208.0 >= 209.0 is False.
+            is_high_temp = (raw_f >= sys_boil_f)
+
+            if is_boil_type:
+                # Type is BOIL: Always show System Boil Setting
+                user_boil = self.app.to_user_units(sys_boil_f, 'boil_temp')
                 t_str = f"{user_boil:.0f}°{unit} (BOIL)"
-            elif step.setpoint_f and step.setpoint_f >= 60:
-                user_val = self.app.to_user_units(step.setpoint_f, 'temp')
+                
+            elif is_high_temp:
+                # Type is Normal, but Target >= Boil: Show TARGET + (BOIL)
+                user_val = self.app.to_user_units(raw_f, 'temp')
+                t_str = f"{user_val:.0f}°{unit} (BOIL)"
+                
+            elif raw_f >= 60:
+                # Normal Step
+                user_val = self.app.to_user_units(raw_f, 'temp')
                 t_str = f"{user_val:.0f}°{unit}"
             else:
                 t_str = "--"
 
-            # --- NEW: VOLUME LOGIC ---
+            # VOLUME
             if step.lauter_volume and step.lauter_volume > 0:
                 user_vol = self.app.to_user_units(step.lauter_volume, 'vol')
                 v_str = f"{user_vol:.2f} {u_vol}"
             else:
                 v_str = "--"
-            # -------------------------
 
             # DURATION
             if step.duration_min and step.duration_min > 0:
@@ -1516,7 +1535,7 @@ class MainScreen(Screen):
                 'step_index': str(i + 1),
                 'internal_index': i,
                 'step_name': step.name,
-                'step_volume': v_str,   # <--- PASS DATA
+                'step_volume': v_str,
                 'step_target': t_str,
                 'step_duration': d_str,
                 'step_ready': r_str,
@@ -1529,7 +1548,6 @@ class MainScreen(Screen):
 
             if is_expanded and has_children:
                 sorted_adds = sorted(step.additions, key=lambda x: x.time_point_min, reverse=True)
-                
                 for add in sorted_adds:
                     is_active_child = False
                     if is_current_step and active_alert_name:
@@ -2437,10 +2455,7 @@ class KettleApp(App):
         unit = "C" if self.is_metric else "F"
         
         # --- 1. TEMPERATURE COLORS ONLY ---
-        # Capture raw temp
         raw_temp = seq.current_temp
-        
-        # Safe float for calculations (Use 0.0 if None to prevent crash)
         safe_temp_f = raw_temp if raw_temp is not None else 0.0
         tgt_check_f = seq.get_target_temp()
         
@@ -2455,10 +2470,7 @@ class KettleApp(App):
         else:
             screen.temp_color = [0.2, 0.8, 0.2, 1] 
             
-        
         # --- 2. UPDATE LABELS (Temp, Target, Timer) ---
-        # LIVE TEMP
-        # FIX: Check for None explicitly to show "-.-"
         if raw_temp is None:
             screen.display_temp = f"-.- °{unit}"
         else:
@@ -2469,33 +2481,41 @@ class KettleApp(App):
         screen.display_elapsed = seq.get_global_elapsed_time_str()
         
         # TARGET TEMP LOGIC
-        sys_boil_f = self.settings_manager.get_system_setting("boil_temp_f", 212.0)
-        
+        try:
+            sys_boil_f = float(self.settings_manager.get_system_setting("boil_temp_f", 212.0))
+        except:
+            sys_boil_f = 212.0
+            
         raw_target_f = 0.0
-        is_boil = False
+        is_boil_type = False
 
-        # Determine Target (In Imperial) based on State
+        # Determine Target based on State
         if status == SequenceStatus.MANUAL:
             if getattr(seq, 'is_manual_running', False):
                 raw_target_f = seq.target_temp
             else:
-                # Slider is User Unit -> Convert back to F
                 raw_target_f = self.to_backend_units(screen.slider_temp_val, 'temp')
 
         elif status == SequenceStatus.DELAYED_WAIT:
              raw_target_f = self.to_backend_units(screen.delay_temp, 'temp')
 
-        elif seq.current_profile and seq.current_step_index >= 0:
+        # AUTO MODE: Check Step
+        elif seq.current_profile and seq.current_step_index >= 0 and seq.current_step_index < len(seq.current_profile.steps):
             step = seq.current_profile.steps[seq.current_step_index]
             if step.step_type == StepType.BOIL:
-                is_boil = True
+                is_boil_type = True
             else:
-                raw_target_f = step.setpoint_f if step.setpoint_f else 0.0
+                raw_target_f = float(step.setpoint_f) if step.setpoint_f is not None else 0.0
         
-        # Display Logic
-        if is_boil or raw_target_f >= sys_boil_f:
+        # Display Logic (Strict Inequality)
+        is_high_temp = (raw_target_f >= sys_boil_f)
+        
+        if is_boil_type:
             user_boil = self.to_user_units(sys_boil_f, 'boil_temp')
             screen.display_target = f"{int(user_boil)} (BOIL)"
+        elif is_high_temp:
+            user_val = self.to_user_units(raw_target_f, 'temp')
+            screen.display_target = f"{int(user_val)} (BOIL)"
         elif raw_target_f < 60: 
             screen.display_target = "--"
         else:
