@@ -32,7 +32,7 @@ class SequenceManager:
         pid_cfg = self.settings.get_section("pid_settings") 
         self.pid = PIDController(
             kp=pid_cfg.get("kp", 50.0),   # Increased from 50.0 to tighten steady-state deadband
-            ki=pid_cfg.get("ki", 0.01),   # Reduced from 0.05 to eliminate integral overshoot
+            ki=pid_cfg.get("ki", 0.02),   # Reduced from 0.05 to eliminate integral overshoot
             kd=pid_cfg.get("kd", 10.0),   # Increased from 2.0 to provide braking on ramp-up
             output_limits=(0, 100)
         )
