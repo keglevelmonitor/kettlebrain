@@ -853,6 +853,13 @@ class MainScreen(Screen):
     est_end_display = StringProperty("Est. End: --:-- --")
     delay_target_dt = ObjectProperty(None) # Stores the calculated start time
     
+    # --- NEW: kWh / COST PROPERTIES ---
+    kwh_display_text = StringProperty("kWh: 0.000 $ 0.00")
+    cost_per_kwh = NumericProperty(0.120)
+    cost_slider_value = NumericProperty(0.120)
+    
+    delay_target_dt = ObjectProperty(None) # Stores the calculated start time
+    
     is_profile_loaded = BooleanProperty(False)
     
     # Properties for Mode Switch Logic
@@ -930,7 +937,49 @@ class MainScreen(Screen):
     def on_enter(self):
         """Syncs UI with saved settings."""
         self._load_manual_settings()
+        
+        # --- NEW: Load Cost Setting ---
+        sm = self.app.settings_manager
+        self.cost_per_kwh = float(sm.get_system_setting("cost_per_kwh", 0.120))
 
+    def open_cost_setup(self):
+        """Slide to the Cost configuration hero screen."""
+        # Sync slider with current active setting
+        self.cost_slider_value = self.cost_per_kwh
+        # Uncheck the reset box
+        self.ids.chk_reset_cost.active = False
+        
+        self.ids.hero_manager.transition.direction = 'left'
+        self.ids.hero_manager.current = 'hero_cost'
+        
+    def adjust_cost_slider(self, delta):
+        """Fine tune buttons for the cost slider."""
+        new_val = self.cost_slider_value + delta
+        if new_val < 0.0: new_val = 0.0
+        if new_val > 1.0: new_val = 1.0
+        self.cost_slider_value = new_val
+    
+    def save_cost_setup(self):
+        """Commit changes to cost settings."""
+        # 1. Update Runtime Property
+        self.cost_per_kwh = self.cost_slider_value
+        
+        # 2. Persist to Settings
+        self.app.settings_manager.set_system_setting("cost_per_kwh", self.cost_per_kwh)
+        
+        # 3. Handle Reset Request
+        if self.ids.chk_reset_cost.active:
+            self.app.sequencer.reset_energy_counter()
+            
+        # 4. Return
+        self.ids.hero_manager.transition.direction = 'right'
+        self.ids.hero_manager.current = 'hero_standard'
+    
+    def cancel_cost_setup(self):
+        """Discard changes."""
+        self.ids.hero_manager.transition.direction = 'right'
+        self.ids.hero_manager.current = 'hero_standard'
+    
     def _load_manual_settings(self):
         sm = self.app.settings_manager
         
@@ -2450,6 +2499,19 @@ class KettleApp(App):
         status = seq.status
         
         screen.is_profile_loaded = (seq.current_profile is not None)
+
+        # --- NEW: kWh Calculation & Display ---
+        # 1. Get raw watt-seconds
+        ws = getattr(seq, 'total_watt_seconds', 0.0)
+        
+        # 2. Convert to kWh (1 kWh = 3,600,000 Joules/Watt-seconds)
+        kwh = ws / 3600000.0
+        
+        # 3. Calculate Cost
+        cost = kwh * screen.cost_per_kwh
+        
+        # 4. Update String
+        screen.kwh_display_text = f"kWh: {kwh:.3f} $ {cost:.2f}"
         
         # --- UNIT CONVERSION PREP ---
         unit = "C" if self.is_metric else "F"

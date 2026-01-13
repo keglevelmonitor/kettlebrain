@@ -31,13 +31,13 @@ class SequenceManager:
         # CORRECTED: Use get_section() to retrieve the full dict
         pid_cfg = self.settings.get_section("pid_settings") 
         self.pid = PIDController(
-            kp=pid_cfg.get("kp", 50.0),   # Increased from 50.0 to tighten steady-state deadband
-            ki=pid_cfg.get("ki", 0.02),   # Reduced from 0.05 to eliminate integral overshoot
-            kd=pid_cfg.get("kd", 10.0),   # Increased from 2.0 to provide braking on ramp-up
+            kp=pid_cfg.get("kp", 50.0),   
+            ki=pid_cfg.get("ki", 0.02),   
+            kd=pid_cfg.get("kd", 10.0),   
             output_limits=(0, 100)
         )
         self.last_pid_update = 0.0
-        self.last_applied_power = 0  # <--- Tracks actual output for logs
+        self.last_applied_power = 0 
 
         # Track if Delayed Start was launched from Auto (IDLE) or Manual context
         self.delayed_is_auto = True
@@ -58,18 +58,28 @@ class SequenceManager:
         
         # --- ALERTS ---
         self.last_alert_time = 0.0
-        self.last_alert_nag_time = 0.0 # <--- NEW: Track last alert timestamp
+        self.last_alert_nag_time = 0.0 
 
         # --- RECOVERY HEARTBEAT ---
         self.last_recovery_save = 0.0
         self.RECOVERY_SAVE_INTERVAL = 30.0 
         
-        self.last_log_write = 0.0  # <--- CSV Log Timer
+        self.last_log_write = 0.0  
+        
+        # --- NEW: ENERGY INTEGRATION ---
+        self.total_watt_seconds = 0.0
+        self.last_integration_time = time.monotonic()
         
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._control_loop, daemon=True)
         self._thread.start()
 
+    
+    def reset_energy_counter(self):
+        """Resets the accumulated kWh counter."""
+        self.total_watt_seconds = 0.0
+        self.last_integration_time = time.monotonic()
+        self.log_message("Energy Counter Reset")
     
     def log_message(self, msg):
         print(f"[SequenceManager] {msg}")
@@ -126,6 +136,9 @@ class SequenceManager:
         self.override_hard_stop = False
         
         if self.status == SequenceStatus.IDLE:
+            # --- NEW: Reset Energy Counter on Auto Start ---
+            self.reset_energy_counter()
+            
             self.current_step_index = 0
             self.global_start_time = None
             self.global_paused_time = 0.0
@@ -717,6 +730,22 @@ class SequenceManager:
                 # FIX: On crash/error, set to None (not 0.0)
                 self.current_temp = None
 
+            # --- NEW: ENERGY INTEGRATION START ---
+            now_mono = time.monotonic()
+            dt = now_mono - self.last_integration_time
+            self.last_integration_time = now_mono
+            
+            # Calculate instantaneous watts based on ACTUAL relay state
+            current_watts = 0
+            if self.relay and hasattr(self.relay, 'relay_states'):
+                states = self.relay.relay_states
+                if states.get("Heater1", False): current_watts += 1000
+                if states.get("Heater2", False): current_watts += 800
+            
+            if current_watts > 0 and dt > 0:
+                self.total_watt_seconds += (current_watts * dt)
+            # --- NEW: ENERGY INTEGRATION END ---
+
             # Safety: If sensor fails, kill power
             if self.current_temp is None:
                 self.relay.set_relays(False, False, False)
@@ -729,7 +758,7 @@ class SequenceManager:
                  continue
 
             # --- CSV LOGGING ---
-            now_mono = time.monotonic()
+            # now_mono already defined above
             if now_mono - self.last_log_write > 30.0:
                 self._log_csv()
                 self.last_log_write = now_mono
@@ -775,6 +804,9 @@ class SequenceManager:
                 if hasattr(self, 'delayed_start_epoch'):
                     if now >= self.delayed_start_epoch:
                          print("[SequenceManager] Delayed Start Triggered!")
+                         
+                         # --- NEW: Reset Energy Counter Here ---
+                         self.reset_energy_counter()
                          
                          # FIX: Context Awareness (Auto vs Manual)
                          if getattr(self, 'delayed_is_auto', True):

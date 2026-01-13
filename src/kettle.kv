@@ -209,19 +209,22 @@
                 BoxLayout:
                     spacing: 5
                     
-                    # CARD 1: Temp & Heaters
+                    # CARD 1: Temp & Heaters (UPDATED LAYOUT)
                     Card:
                         BoxLayout:
                             orientation: 'horizontal'
                             spacing: 10
-                            # Heaters
+                            
+                            # Heaters (Left Column - Compressed)
                             BoxLayout:
                                 orientation: 'vertical'
                                 size_hint_x: 0.25
                                 spacing: 2
+                                padding: [0, 5, 0, 5] # Add padding to center them vertically
+                                
                                 Label:
                                     text: "1000W"
-                                    font_size: '14sp'
+                                    font_size: '12sp' # Slightly smaller
                                     bold: True
                                     canvas.before:
                                         Color:
@@ -231,7 +234,7 @@
                                             size: self.size
                                 Label:
                                     text: "800W"
-                                    font_size: '14sp'
+                                    font_size: '12sp' # Slightly smaller
                                     bold: True
                                     canvas.before:
                                         Color:
@@ -239,17 +242,42 @@
                                         Rectangle:
                                             pos: self.pos
                                             size: self.size
-                            # Temp
+                                            
+                            # Temp & Cost (Right Column)
                             BoxLayout:
                                 orientation: 'vertical'
                                 size_hint_x: 0.75
+                                
+                                # 1. Current Temp (Top - Largest)
                                 HeroLabel:
                                     text: root.display_temp
                                     color: root.temp_color
+                                    size_hint_y: 0.5
+                                    
+                                # 2. Target (Middle)
                                 Label:
                                     text: "Target: " + root.display_target
                                     font_size: '16sp'
                                     color: 0.6, 0.6, 0.6, 1
+                                    size_hint_y: 0.25
+                                    
+                                # 3. NEW: kWh / Cost Button (Bottom)
+                                Button:
+                                    text: root.kwh_display_text
+                                    size_hint_y: 0.25
+                                    background_normal: ''
+                                    background_color: 0, 0, 0, 0 # Transparent bg to just show text? Or styled?
+                                    # Let's style it like Delay Start but smaller
+                                    canvas.before:
+                                        Color:
+                                            rgba: 0.2, 0.2, 0.4, 1
+                                        Rectangle:
+                                            pos: self.pos
+                                            size: self.size
+                                    font_size: '14sp'
+                                    bold: True
+                                    color: 0.8, 0.8, 1, 1
+                                    on_release: root.open_cost_setup()
 
                     # CARD 2: Status & Delay Button
                     Card:
@@ -437,6 +465,98 @@
                             background_color: (0.8, 0.2, 0.2, 1) if root.is_delay_active else (0.2, 0.2, 0.2, 1)
                             disabled: not root.is_delay_active
                             on_release: root.deactivate_delay()
+                            
+            # SCREEN 3: Cost Setup (NEW)
+            Screen:
+                name: 'hero_cost'
+                BoxLayout:
+                    orientation: 'horizontal'
+                    spacing: 5
+                    padding: 5
+                    canvas.before:
+                        Color:
+                            rgba: 0.1, 0.15, 0.2, 1
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+
+                    # --- LEFT COLUMN: SETTINGS (75%) ---
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_x: 0.75
+                        spacing: 5
+                        
+                        # Row 1: Header
+                        Label:
+                            text: "Electricity Cost Configuration"
+                            font_size: '16sp'
+                            color: 0.7, 0.7, 1, 1
+                            size_hint_y: 0.3
+                            halign: 'left'
+                            text_size: self.size
+
+                        # Row 2: Slider & Buttons
+                        BoxLayout:
+                            size_hint_y: 0.4
+                            spacing: 10
+                            
+                            Button:
+                                text: "-"
+                                size_hint_x: 0.15
+                                background_color: 0.3, 0.3, 0.3, 1
+                                on_release: root.adjust_cost_slider(-0.001)
+                                
+                            Slider:
+                                id: s_cost
+                                min: 0.0
+                                max: 1.0
+                                step: 0.001
+                                value: root.cost_slider_value
+                                on_value: root.cost_slider_value = self.value
+                                size_hint_x: 0.7
+                                cursor_size: dp(25), dp(25)
+                                
+                            Button:
+                                text: "+"
+                                size_hint_x: 0.15
+                                background_color: 0.3, 0.3, 0.3, 1
+                                on_release: root.adjust_cost_slider(0.001)
+
+                        # Row 3: Value Display & Reset Check
+                        BoxLayout:
+                            size_hint_y: 0.3
+                            spacing: 20
+                            Label:
+                                text: f"${root.cost_slider_value:.3f} / kWh"
+                                font_size: '18sp'
+                                bold: True
+                                size_hint_x: 0.5
+                                
+                            BoxLayout:
+                                size_hint_x: 0.5
+                                Label:
+                                    text: "Reset Now"
+                                    font_size: '14sp'
+                                CheckBox:
+                                    id: chk_reset_cost
+                                    color: 1, 1, 1, 1
+
+                    # --- RIGHT COLUMN: ACTIONS (25%) ---
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_x: 0.25
+                        spacing: 5
+                        padding: 5
+                        
+                        Button:
+                            text: "SAVE"
+                            background_color: 0.2, 0.8, 0.2, 1
+                            on_release: root.save_cost_setup()
+                            
+                        Button:
+                            text: "CANCEL"
+                            background_color: 0.5, 0.5, 0.5, 1
+                            on_release: root.cancel_cost_setup()
 
         # --- MIDDLE CONTENT ---
         ScreenManager:

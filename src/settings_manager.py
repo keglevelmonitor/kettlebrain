@@ -35,7 +35,8 @@ DEFAULT_SETTINGS = {
         "heater_ref_volume_gal": 8.0,
         "heater_ref_rate_fpm": 1.3,
         "last_profile_id": None,
-        "alert_repeat_freq": 15
+        "alert_repeat_freq": 15,
+        "cost_per_kwh": 0.120  # <--- NEW DEFAULT
     },
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
