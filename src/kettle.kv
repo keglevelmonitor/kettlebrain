@@ -220,29 +220,45 @@
                                 orientation: 'vertical'
                                 size_hint_x: 0.25
                                 spacing: 2
-                                padding: [0, 5, 0, 5] # Add padding to center them vertically
+                                padding: [0, 5, 0, 5]
                                 
+                                # RELAY 1 INDICATOR
                                 Label:
-                                    text: "1000W"
-                                    font_size: '12sp' # Slightly smaller
+                                    text: root.heater_1_text
+                                    font_size: '11sp'
                                     bold: True
                                     canvas.before:
                                         Color:
+                                            # Always RED (0.8, 0, 0, 1) when active
                                             rgba: (0.8, 0, 0, 1) if root.heater_1_active else (0.1, 0.1, 0.1, 1)
                                         Rectangle:
                                             pos: self.pos
                                             size: self.size
+
+                                # RELAY 2 INDICATOR
                                 Label:
-                                    text: "800W"
-                                    font_size: '12sp' # Slightly smaller
+                                    text: root.heater_2_text
+                                    font_size: '11sp'
                                     bold: True
                                     canvas.before:
                                         Color:
-                                            rgba: (1, 0.5, 0, 1) if root.heater_2_active else (0.1, 0.1, 0.1, 1)
+                                            rgba: (0.8, 0, 0, 1) if root.heater_2_active else (0.1, 0.1, 0.1, 1)
                                         Rectangle:
                                             pos: self.pos
                                             size: self.size
-                                            
+
+                                # RELAY 3 INDICATOR
+                                Label:
+                                    text: root.heater_3_text
+                                    font_size: '11sp'
+                                    bold: True
+                                    canvas.before:
+                                        Color:
+                                            rgba: (0.8, 0, 0, 1) if root.heater_3_active else (0.1, 0.1, 0.1, 1)
+                                        Rectangle:
+                                            pos: self.pos
+                                            size: self.size
+
                             # Temp & Cost (Right Column)
                             BoxLayout:
                                 orientation: 'vertical'
@@ -261,13 +277,12 @@
                                     color: 0.6, 0.6, 0.6, 1
                                     size_hint_y: 0.25
                                     
-                                # 3. NEW: kWh / Cost Button (Bottom)
+                                # 3. kWh / Cost Button (Bottom)
                                 Button:
                                     text: root.kwh_display_text
                                     size_hint_y: 0.25
                                     background_normal: ''
-                                    background_color: 0, 0, 0, 0 # Transparent bg to just show text? Or styled?
-                                    # Let's style it like Delay Start but smaller
+                                    background_color: 0, 0, 0, 0
                                     canvas.before:
                                         Color:
                                             rgba: 0.2, 0.2, 0.4, 1
@@ -897,35 +912,640 @@
                 background_color: 0.2, 0.6, 0.2, 1
                 on_release: app.create_new_profile()
 
-# --- NEW SETTINGS SCREEN ---
-<SystemSettingsScreen>:
+# --- NEW SETTINGS MASTER CONTAINER ---
+<SettingsMasterScreen>:
+    name: 'sys_settings'
     BoxLayout:
         orientation: 'vertical'
-        padding: 50
-        spacing: 20
+        padding: 5
+        spacing: 5
         canvas.before:
             Color:
-                rgba: 0.08, 0.08, 0.08, 1
+                rgba: 0.1, 0.1, 0.1, 1
             Rectangle:
                 pos: self.pos
                 size: self.size
 
-        Label:
-            text: "System Settings"
-            font_size: '30sp'
-            bold: True
-            color: 0.5, 0.5, 0.5, 1
+        # --- 1. TOP TABS ---
+        BoxLayout:
+            size_hint_y: None
+            height: '60dp'
+            spacing: 2
+            
+            # TABS: Font size ~18sp + Bold
+            ToggleButton:
+                text: "GENERAL"
+                group: 'settings_tabs'
+                state: 'down'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                halign: 'center'
+                valign: 'middle'
+                text_size: self.size
+                on_release: root.select_tab('settings_app')
+            ToggleButton:
+                text: "HARDWARE"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '16sp'
+                bold: True
+                on_release: root.select_tab('settings_hw')
+            ToggleButton:
+                text: "HEATERS"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                on_release: root.select_tab('settings_heaters')
+            ToggleButton:
+                text: "CALIBRATION"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '16sp'
+                bold: True
+                halign: 'center'
+                valign: 'middle'
+                text_size: self.size
+                on_release: root.select_tab('settings_cal')
+            ToggleButton:
+                text: "PID"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                on_release: root.select_tab('settings_pid')
+            ToggleButton:
+                text: "UPDATES"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                on_release: root.select_tab('settings_updates')
+            ToggleButton:
+                text: "ABOUT"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                on_release: root.select_tab('settings_about')
 
-        Label:
-            text: "Coming Soon:\nCalibration, Wi-Fi, Updates"
-            halign: 'center'
-            font_size: '20sp'
+        # --- 2. CONTENT AREA ---
+        ScreenManager:
+            id: content_manager
+            
+            # Existing Screens
+            AppSettingsScreen:
+                id: view_app
+                name: 'settings_app'
+            HardwareSettingsScreen:
+                id: view_hw
+                name: 'settings_hw'
+            CalibrationSettingsScreen:
+                id: view_cal
+                name: 'settings_cal'
+            UpdatesSettingsScreen:
+                id: view_updates
+                name: 'settings_updates'
+                
+            # New Screens
+            HeaterSettingsScreen:
+                id: view_heaters
+                name: 'settings_heaters'
+            PIDSettingsScreen:
+                id: view_pid
+                name: 'settings_pid'
+            AboutScreen:
+                id: view_about
+                name: 'settings_about'
 
-        Button:
-            text: "BACK"
+        # --- 3. FOOTER BUTTONS ---
+        BoxLayout:
+            size_hint_y: None
+            height: '60dp'
+            spacing: 10
+            padding: [0, 5, 0, 0]
+
+            # BTN 1: EXIT
+            Button:
+                text: "EXIT"
+                font_size: '18sp'
+                bold: True
+                background_color: 0.5, 0.5, 0.5, 1
+                on_release: root.exit_settings()
+
+            # BTN 2: HELP
+            Button:
+                text: "HELP"
+                font_size: '18sp'
+                bold: True
+                background_color: 0.3, 0.3, 0.3, 1
+                on_release: root.show_help()
+
+            # BTN 3: DYNAMIC (Blank or Check)
+            Button:
+                text: root.btn_3_text
+                font_size: '18sp'
+                bold: True
+                disabled: not root.btn_3_visible
+                opacity: 1 if root.btn_3_visible else 0
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.on_btn_3()
+
+            # BTN 4: DYNAMIC (Reset or Install)
+            # LOGIC UPDATED: Disabled if on Updates tab AND install not ready
+            Button:
+                text: root.btn_4_text
+                font_size: '18sp'
+                bold: True
+                
+                disabled: 
+                    (not root.btn_4_visible) or \
+                    (root.current_tab == 'settings_updates' and not root.ids.view_updates.install_enabled)
+                
+                opacity: 1 if root.btn_4_visible else 0
+                
+                # Gray if disabled, Gold if Install, Orange if Reset
+                background_color: 
+                    (0.3, 0.3, 0.3, 1) if self.disabled else \
+                    ((0.8, 0.6, 0.2, 1) if root.btn_4_text == "INSTALL" else (0.8, 0.4, 0.2, 1))
+                
+                on_release: root.on_btn_4()
+
+            # BTN 5: DYNAMIC (Save or Restart)
+            Button:
+                text: root.btn_5_text
+                font_size: '18sp'
+                bold: True
+                disabled: not root.btn_5_visible
+                opacity: 1 if root.btn_5_visible else 0
+                background_color: (1, 0.6, 0, 1) if root.btn_5_text == "RESTART APP" else (0.2, 0.8, 0.2, 1)
+                on_release: root.on_btn_5()
+
+<AppSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+        # ROW 1: DISPLAY UNITS
+        BoxLayout:
+            Label:
+                text: "Display Units:"
+                size_hint_x: 0.6
+                halign: 'right'
+            Spinner:
+                text: root.units_text
+                values: ["Imperial (°F / Gal)", "Metric (°C / L)"]
+                size_hint_x: 0.4
+                on_text: root.units_text = self.text
+
+        # ROW 2: FORCE NUMLOCK
+        BoxLayout:
+            Label:
+                text: "Force NumLock:"
+                size_hint_x: 0.6
+                halign: 'right'
+            Switch:
+                active: root.force_numlock
+                size_hint_x: 0.4
+                on_active: root.force_numlock = self.active
+
+        # ROW 3: AUTO START
+        BoxLayout:
+            Label:
+                text: "Auto-Start on Boot:"
+                size_hint_x: 0.6
+                halign: 'right'
+            Switch:
+                active: root.auto_start
+                size_hint_x: 0.4
+                on_active: root.auto_start = self.active
+
+        # ROW 4: AUTO RESUME (RESTORED)
+        BoxLayout:
+            Label:
+                text: "Auto-Resume:"
+                size_hint_x: 0.6
+                halign: 'right'
+                color: (1, 1, 1, 1) if root.auto_start else (0.5, 0.5, 0.5, 1)
+            Switch:
+                active: root.auto_resume
+                size_hint_x: 0.4
+                disabled: not root.auto_start
+                on_active: root.auto_resume = self.active
+
+        # ROW 5: LOGGING
+        BoxLayout:
+            Label:
+                text: "CSV Data Logging:"
+                size_hint_x: 0.6
+                halign: 'right'
+            Switch:
+                active: root.csv_logging
+                size_hint_x: 0.4
+                on_active: root.csv_logging = self.active
+        
+        Widget: # Filler
+
+<HardwareSettingsScreen>:
+    GridLayout:
+        cols: 2
+        spacing: 20
+        padding: 20
+        
+        # 1. Temp Sensor
+        Label:
+            text: "Temp Sensor:"
+            halign: 'right'
+        Spinner:
+            id: spinner_sensor
+            text: "Select..."
+            values: root.sensor_list
+
+        # 2. Boil Temp
+        Label:
+            text: "Boil Temp: " + str(int(root.boil_temp))
+            halign: 'right'
+        Slider:
+            id: s_boil
+            min: 180
+            max: 212
+            step: 1
+            value: root.boil_temp
+            on_value: root.boil_temp = self.value
+
+        # 3. Audio Out
+        Label:
+            text: "Audio Out:"
+            halign: 'right'
+        Spinner:
+            id: spinner_audio
+            text: "Select..."
+            values: root.audio_list
+            
+        # 4. Alert Volume
+        Label:
+            text: "Alert Volume: " + str(int(root.system_volume)) + "%"
+            halign: 'right'
+        Slider:
+            id: s_vol
+            min: 0
+            max: 100
+            step: 5
+            value: root.system_volume
+            on_value: root.system_volume = self.value
+            on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
+
+        # 5. Alert Repeat (RESTORED)
+        Label:
+            text: "Alert Repeat: " + ("OFF" if root.alert_repeat_freq == 0 else str(int(root.alert_repeat_freq)) + "s")
+            halign: 'right'
+        Slider:
+            id: s_repeat
+            min: 0
+            max: 60
+            step: 5
+            value: root.alert_repeat_freq
+            on_value: root.alert_repeat_freq = self.value
+
+        # 6. Sound File
+        Label:
+            text: "Alert Sound:"
+            halign: 'right'
+        BoxLayout:
+            spacing: 10
+            Spinner:
+                id: spinner_sound
+                text: "Select..."
+                values: root.sound_list
+                size_hint_x: 0.6
+            Button:
+                text: "TEST"
+                size_hint_x: 0.4
+                background_color: 0.3, 0.3, 0.3, 1
+                on_release: root.test_audio()
+
+<CalibrationSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 15
+        
+        Label:
+            text: "Current Factor: " + root.current_factor_text
+            color: 0.6, 0.6, 0.6, 1
+            size_hint_y: 0.1
+
+        BoxLayout: # Vol & Time
+            spacing: 20
+            size_hint_y: 0.2
+            BoxLayout:
+                Label:
+                    text: "Vol: " + str(round(root.cal_vol, 2))
+                    size_hint_x: 0.4
+                Slider:
+                    id: s_cal_vol
+                    min: 2.0
+                    max: 10.0
+                    step: 0.25
+                    value: root.cal_vol
+                    on_value: root.cal_vol = self.value
+                    size_hint_x: 0.6
+            BoxLayout:
+                Label:
+                    text: "Min: " + str(int(root.cal_time))
+                    size_hint_x: 0.4
+                Slider:
+                    id: s_cal_time
+                    min: 1
+                    max: 90
+                    step: 1
+                    value: root.cal_time
+                    on_value: root.cal_time = self.value
+                    size_hint_x: 0.6
+
+        BoxLayout: # Start Temp
+            size_hint_y: 0.2
+            Label:
+                text: "Start: " + str(int(root.cal_start_temp))
+                size_hint_x: 0.3
+            Slider:
+                id: s_cal_start
+                value: root.cal_start_temp
+                on_value: root.cal_start_temp = self.value
+                size_hint_x: 0.7
+
+        BoxLayout: # End Temp
+            size_hint_y: 0.2
+            Label:
+                text: "End: " + str(int(root.cal_end_temp))
+                size_hint_x: 0.3
+            Slider:
+                id: s_cal_end
+                value: root.cal_end_temp
+                on_value: root.cal_end_temp = self.value
+                size_hint_x: 0.7
+
+        BoxLayout: # Action
+            size_hint_y: 0.2
+            spacing: 20
+            Button:
+                text: "CALCULATE"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.calculate_efficiency()
+            Label:
+                text: "Result: " + root.calc_result_text
+                bold: True
+                color: 1, 0.8, 0, 1
+
+<UpdatesSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        TextInput:
+            text: root.log_text
+            readonly: True
+            background_color: 0, 0, 0, 1
+            foreground_color: 0, 1, 0, 1
+            font_size: '12sp'
+
+<PIDSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 30
+        spacing: 20
+        
+        # P
+        BoxLayout:
+            Label:
+                text: "Kp (Proportional): " + str(round(root.kp, 1))
+                size_hint_x: 0.4
+                halign: 'right'
+            Slider:
+                min: 0.0
+                max: 200.0
+                step: 1.0
+                value: root.kp
+                on_value: root.kp = self.value
+                size_hint_x: 0.6
+
+        # I
+        BoxLayout:
+            Label:
+                text: "Ki (Integral): " + str(round(root.ki, 3))
+                size_hint_x: 0.4
+                halign: 'right'
+            Slider:
+                min: 0.000
+                max: 0.100
+                step: 0.001
+                value: root.ki
+                on_value: root.ki = self.value
+                size_hint_x: 0.6
+        
+        # D
+        BoxLayout:
+            Label:
+                text: "Kd (Derivative): " + str(round(root.kd, 1))
+                size_hint_x: 0.4
+                halign: 'right'
+            Slider:
+                min: 0.0
+                max: 100.0
+                step: 1.0
+                value: root.kd
+                on_value: root.kd = self.value
+                size_hint_x: 0.6
+        
+        Widget: # Spacer
+
+<HeaterSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 15
+        
+        Label:
+            text: "Heater Configuration"
+            font_size: '22sp'
+            size_hint_y: None
+            height: '40dp'
+            color: 0.2, 0.8, 1, 1
+
+        # RELAY 1
+        BoxLayout:
             size_hint_y: 0.3
-            on_release: root.go_back()
+            orientation: 'horizontal'
+            spacing: 20
+            Label:
+                text: "Relay 1: " + root.r1_text
+                halign: 'right'
+                valign: 'middle'
+                text_size: self.size
+                size_hint_x: 0.3
+                color: (1, 1, 1, 1) if root.r1_val > 0 else (0.5, 0.5, 0.5, 1)
+            Slider:
+                id: s_r1
+                min: 0
+                max: 2000
+                step: 50
+                on_value: root.on_slider_change(1, self.value)
+                size_hint_x: 0.7
+                cursor_size: dp(40), dp(40)
 
+        # RELAY 2
+        BoxLayout:
+            size_hint_y: 0.3
+            orientation: 'horizontal'
+            spacing: 20
+            Label:
+                text: "Relay 2: " + root.r2_text
+                halign: 'right'
+                valign: 'middle'
+                text_size: self.size
+                size_hint_x: 0.3
+                color: (1, 1, 1, 1) if root.r2_val > 0 else (0.5, 0.5, 0.5, 1)
+            Slider:
+                id: s_r2
+                min: 0
+                max: 2000
+                step: 50
+                on_value: root.on_slider_change(2, self.value)
+                size_hint_x: 0.7
+                cursor_size: dp(40), dp(40)
+
+        # RELAY 3
+        BoxLayout:
+            size_hint_y: 0.3
+            orientation: 'horizontal'
+            spacing: 20
+            Label:
+                text: "Relay 3: " + root.r3_text
+                halign: 'right'
+                valign: 'middle'
+                text_size: self.size
+                size_hint_x: 0.3
+                color: (1, 1, 1, 1) if root.r3_val > 0 else (0.5, 0.5, 0.5, 1)
+            Slider:
+                id: s_r3
+                min: 0
+                max: 2000
+                step: 50
+                on_value: root.on_slider_change(3, self.value)
+                size_hint_x: 0.7
+                cursor_size: dp(40), dp(40)
+
+        Widget: # Spacer
+
+<AboutScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: [0, 5, 0, 0]
+        
+        # MAIN CONTENT AREA (Horizontal Split)
+        BoxLayout:
+            orientation: 'horizontal'
+            padding: [10, 10]
+            spacing: 10
+            size_hint_y: 1
+
+            # LEFT: Text Content (Scrollable)
+            ScrollView:
+                do_scroll_x: False
+                size_hint_x: 0.75
+                
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: 10
+                    
+                    # -- 1. Brands --
+                    Label:
+                        text: "KegLevel Brands"
+                        color: 1, 0.6, 0, 1 # Amber
+                        size_hint_y: None
+                        height: '40dp' # Approx 5% of 800x480
+                        halign: 'left'
+                        text_size: self.size
+                        font_size: '24sp'
+                        bold: True
+
+                    Label:
+                        text: "Keglevel Lite(c), KegLevel Monitor(c), KettleBrain(c), and FermVault(c) names, texts, UI/UX and program code are copyrighted. This material and all components of this program are protected by copyright law. Unauthorized use, duplication, or distribution is strictly prohibited."
+                        bold: False
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                        text_size: self.width, None
+                        halign: 'left'
+                        color: 0.8, 0.8, 0.8, 1
+                        font_size: '18sp'
+
+                    Widget:
+                        size_hint_y: None
+                        height: 20
+
+                    # -- 2. Support --
+                    Label:
+                        text: "Support This App"
+                        color: 1, 0.6, 0, 1 # Amber
+                        size_hint_y: None
+                        height: '40dp'
+                        halign: 'left'
+                        text_size: self.size
+                        font_size: '24sp'
+                        bold: True
+
+                    Label:
+                        text: "This App took hundreds of hours to develop, test, and optimize. Please consider supporting this App with a donation so continuous improvements can be made. If you wish to receive customer support via email, please make a reasonable donation. Customer support requests without a donation may not be considered."
+                        bold: False
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                        text_size: self.width, None
+                        halign: 'left'
+                        color: 0.8, 0.8, 0.8, 1
+                        font_size: '18sp'
+
+                    Widget:
+                        size_hint_y: None
+                        height: 20
+
+                    # -- 3. Acknowledgements --
+                    Label:
+                        text: "Acknowledgements"
+                        color: 1, 0.6, 0, 1 # Amber
+                        size_hint_y: None
+                        height: '40dp'
+                        halign: 'left'
+                        text_size: self.size
+                        font_size: '24sp'
+                        bold: True
+
+                    Label:
+                        text: "Icons created by Pixel Perfect - Flaticon\nhttps://www.flaticon.com/free-icons/update"
+                        bold: False
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                        text_size: self.width, None
+                        halign: 'left'
+                        color: 0.8, 0.8, 0.8, 1
+                        font_size: '18sp'
+
+            # RIGHT: Image (Fixed Width)
+            AnchorLayout:
+                anchor_x: 'right'
+                anchor_y: 'top'
+                size_hint_x: None
+                width: 200
+                size_hint_y: 1 
+                padding: [0, 20, 20, 0] # Top/Right padding for positioning
+                
+                Image:
+                    source: 'assets/support.gif'
+                    size_hint: None, None
+                    size: 140, 140
+                    allow_stretch: True
+                    keep_ratio: True
 # --- POPUP MENU ---
 <ProfileOptionsPopup>:
     title: "Profile Options"
@@ -1432,529 +2052,7 @@
                 on_release: root.apply_changes()
 
        
-# --- SETTINGS HUB ---
-<SystemSettingsScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: 40
-        spacing: 20
-        canvas.before:
-            Color:
-                rgba: 0.08, 0.08, 0.08, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
 
-        Label:
-            text: "System Settings"
-            font_size: '32sp'
-            bold: True
-            size_hint_y: 0.15
-            color: 0.6, 0.6, 0.6, 1
-
-        GridLayout:
-            cols: 2
-            spacing: 20
-            
-            Button:
-                text: "Hardware Config\n(Sensors, Audio, Boil Temp)"
-                background_color: 0.2, 0.4, 0.6, 1
-                font_size: '20sp'
-                halign: 'center'
-                on_release: root.navigate_to('settings_hw')
-
-            Button:
-                text: "App Preferences\n(Units, Auto-Start)"
-                background_color: 0.2, 0.4, 0.6, 1  # Changed color to indicate active
-                font_size: '20sp'
-                halign: 'center'
-                on_release: root.navigate_to('settings_app') # Linked!
-                
-            Button:
-                text: "Calibration\n(Heater Efficiency)"
-                background_color: 0.2, 0.4, 0.6, 1
-                font_size: '20sp'
-                halign: 'center'
-                on_release: root.navigate_to('settings_cal') # Linked!
-
-            Button:
-                text: "System Updates"
-                background_color: 0.2, 0.4, 0.6, 1 # Linked!
-                font_size: '20sp'
-                halign: 'center'
-                on_release: root.navigate_to('settings_updates')
-
-        Button:
-            text: "BACK TO DASHBOARD"
-            size_hint_y: 0.15
-            background_color: 0.8, 0.2, 0.2, 1
-            on_release: root.go_back()
-
-# --- HARDWARE SETTINGS SCREEN ---
-<HardwareSettingsScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: 20
-        spacing: 10
-        canvas.before:
-            Color:
-                rgba: 0.1, 0.1, 0.1, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
-
-        Label:
-            text: "Hardware Configuration"
-            font_size: '24sp'
-            bold: True
-            size_hint_y: 0.15
-            color: 0.2, 0.8, 1, 1
-
-        # --- NEW 2-COLUMN GRID LAYOUT ---
-        GridLayout:
-            cols: 2
-            spacing: 20
-            padding: 10
-            size_hint_y: 0.7
-
-            # --- ROW 1 LEFT: TEMP SENSOR ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Temp Sensor:"
-                    size_hint_x: 0.4
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Spinner:
-                    id: spinner_sensor
-                    text: "Select..."
-                    values: root.sensor_list
-                    size_hint_x: 0.6
-                    background_color: 0.2, 0.2, 0.2, 1
-
-            # --- ROW 1 RIGHT: BOIL TEMP ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Boil Temp:\n" + str(int(root.boil_temp)) + " F"
-                    size_hint_x: 0.4
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Slider:
-                    id: s_boil
-                    min: 180
-                    max: 212
-                    step: 1
-                    value: root.boil_temp
-                    on_value: root.boil_temp = self.value
-                    size_hint_x: 0.6
-                    cursor_size: dp(30), dp(30)
-
-            # --- ROW 2 LEFT: AUDIO OUTPUT ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Audio Out:"
-                    size_hint_x: 0.4
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Spinner:
-                    id: spinner_audio
-                    text: "Select..."
-                    values: root.audio_list
-                    size_hint_x: 0.6
-                    background_color: 0.2, 0.2, 0.2, 1
-
-            # --- ROW 2 RIGHT: ALERT SOUND ---
-            BoxLayout:
-                orientation: 'horizontal'
-                spacing: 5
-                Label:
-                    text: "Sound:"
-                    size_hint_x: 0.25
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Spinner:
-                    id: spinner_sound
-                    text: "Select..."
-                    values: root.sound_list
-                    size_hint_x: 0.5
-                    background_color: 0.2, 0.2, 0.2, 1
-                Button:
-                    text: "TEST"
-                    size_hint_x: 0.25
-                    font_size: '12sp'
-                    background_color: 0.2, 0.6, 0.2, 1
-                    on_release: root.test_audio()
-
-            # --- ROW 3 LEFT: SYSTEM VOLUME ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Sys Vol:\n" + str(int(root.system_volume)) + "%"
-                    size_hint_x: 0.4
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Slider:
-                    min: 0
-                    max: 100
-                    step: 5
-                    value: root.system_volume
-                    on_value: root.system_volume = self.value
-                    on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
-                    size_hint_x: 0.6
-                    cursor_size: dp(30), dp(30)
-
-            # --- ROW 3 RIGHT: ALERT REPEAT ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Alert Repeat:\n" + str(int(root.alert_repeat_freq)) + "s"
-                    size_hint_x: 0.4
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Slider:
-                    min: 0
-                    max: 60
-                    step: 1
-                    value: root.alert_repeat_freq
-                    on_value: root.alert_repeat_freq = self.value
-                    size_hint_x: 0.6
-                    cursor_size: dp(30), dp(30)
-
-        # --- FOOTER ---
-        BoxLayout:
-            size_hint_y: 0.15
-            spacing: 20
-            Button:
-                text: "CANCEL"
-                background_color: 0.8, 0.2, 0.2, 1
-                on_release: root.go_back()
-            Button:
-                text: "SAVE CHANGES"
-                background_color: 0.2, 0.8, 0.2, 1
-                on_release: root.save_changes()
-                
-# --- NEW APP SETTINGS SCREEN (Refactored Layout) ---
-<AppSettingsScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: 20
-        spacing: 10
-        canvas.before:
-            Color:
-                rgba: 0.1, 0.1, 0.1, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
-
-        Label:
-            text: "App Preferences"
-            font_size: '24sp'
-            bold: True
-            size_hint_y: 0.15
-            color: 0.2, 0.8, 1, 1
-
-        # --- 2-COLUMN SETTINGS GRID ---
-        GridLayout:
-            cols: 2
-            spacing: 30
-            padding: 10
-            size_hint_y: 0.7
-
-            # --- ROW 1 LEFT: DISPLAY UNITS ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Display Units:"
-                    size_hint_x: 0.6
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Spinner:
-                    id: spinner_units
-                    # CORRECTED: Use existing property 'units_text'
-                    text: root.units_text
-                    # CORRECTED: Hardcode values since list property doesn't exist
-                    values: ["Imperial (°F / Gal)", "Metric (°C / L)"]
-                    size_hint_x: 0.4
-                    background_color: 0.2, 0.2, 0.2, 1
-                    # CORRECTED: Bind directly to property, no method call needed
-                    on_text: root.units_text = self.text
-
-            # --- ROW 1 RIGHT: FORCE NUMLOCK ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Force NumLock:"
-                    size_hint_x: 0.6
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Switch:
-                    # CORRECTED: Bind directly to existing property
-                    active: root.force_numlock
-                    size_hint_x: 0.4
-                    on_active: root.force_numlock = self.active
-
-            # --- ROW 2 LEFT: AUTO-START ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Auto-Start on Boot:"
-                    size_hint_x: 0.6
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Switch:
-                    active: root.auto_start
-                    size_hint_x: 0.4
-                    on_active: root.auto_start = self.active
-
-            # --- ROW 2 RIGHT: AUTO-RESUME (DISABLED) ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Auto-Resume Logic:"
-                    color: 0.5, 0.5, 0.5, 1  # Dimmed text
-                    size_hint_x: 0.6
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Switch:
-                    active: root.auto_resume
-                    disabled: True
-                    size_hint_x: 0.4
-                    on_active: root.auto_resume = self.active
-
-            # --- ROW 3 LEFT: CSV LOGGING (RESTORED) ---
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "CSV Data Logging:"
-                    size_hint_x: 0.6
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Switch:
-                    active: root.csv_logging
-                    size_hint_x: 0.4
-                    on_active: root.csv_logging = self.active
-
-            # --- ROW 3 RIGHT: SPACER (To keep grid balanced) ---
-            Label:
-                text: ""
-
-        # --- FOOTER ---
-        BoxLayout:
-            size_hint_y: 0.15
-            Button:
-                text: "BACK / SAVE"
-                background_color: 0.2, 0.4, 0.8, 1
-                on_release: root.save_changes()
-                
-<CalibrationSettingsScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: 20
-        spacing: 10
-        canvas.before:
-            Color:
-                rgba: 0.1, 0.1, 0.1, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
-
-        # --- HEADER ---
-        BoxLayout:
-            size_hint_y: 0.12
-            orientation: 'vertical'
-            Label:
-                text: "Heater Calibration"
-                font_size: '24sp'
-                bold: True
-                color: 0.2, 0.8, 1, 1
-            Label:
-                text: "Current Factor: " + root.current_factor_text
-                font_size: '16sp'
-                color: 0.6, 0.6, 0.6, 1
-
-        # --- ROW 1: SPLIT (Test Volume | Time Elapsed) ---
-        BoxLayout:
-            orientation: 'horizontal'
-            size_hint_y: 0.2
-            spacing: 20
-
-            # LEFT: Volume
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Test Vol:\n" + str(round(root.cal_vol, 2)) + (" L" if app.is_metric else " Gal")
-                    size_hint_x: 0.4
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Slider:
-                    id: s_cal_vol
-                    min: 2.0
-                    max: 10.0
-                    step: 0.25
-                    value: root.cal_vol
-                    on_value: root.cal_vol = self.value
-                    size_hint_x: 0.6
-                    cursor_size: dp(30), dp(30)
-
-            # RIGHT: Time
-            BoxLayout:
-                orientation: 'horizontal'
-                Label:
-                    text: "Time:\n" + str(int(root.cal_time)) + " min"
-                    size_hint_x: 0.4
-                    halign: 'right'
-                    valign: 'middle'
-                    font_size: '16sp'
-                Slider:
-                    id: s_cal_time  # <--- NEW ID for logic
-                    min: 1
-                    max: 90
-                    step: 1
-                    value: root.cal_time
-                    on_value: root.cal_time = self.value
-                    size_hint_x: 0.6
-                    cursor_size: dp(30), dp(30)
-
-        # --- ROW 2: START TEMP (Full Width) ---
-        BoxLayout:
-            orientation: 'horizontal'
-            size_hint_y: 0.2
-            Label:
-                text: "Start Temp:\n" + str(int(root.cal_start_temp)) + (" C" if app.is_metric else " F")
-                size_hint_x: 0.25
-                halign: 'right'
-                valign: 'middle'
-                font_size: '18sp'
-            Slider:
-                id: s_cal_start
-                # Ranges handled in main.py
-                value: root.cal_start_temp
-                on_value: root.cal_start_temp = self.value
-                size_hint_x: 0.75
-                cursor_size: dp(30), dp(30)
-
-        # --- ROW 3: END TEMP (Full Width) ---
-        BoxLayout:
-            orientation: 'horizontal'
-            size_hint_y: 0.2
-            Label:
-                text: "End Temp:\n" + str(int(root.cal_end_temp)) + (" C" if app.is_metric else " F")
-                size_hint_x: 0.25
-                halign: 'right'
-                valign: 'middle'
-                font_size: '18sp'
-            Slider:
-                id: s_cal_end
-                # Ranges handled in main.py
-                value: root.cal_end_temp
-                on_value: root.cal_end_temp = self.value
-                size_hint_x: 0.75
-                cursor_size: dp(30), dp(30)
-
-        # --- ACTION ROW: CALCULATE ---
-        BoxLayout:
-            size_hint_y: 0.15
-            spacing: 20
-            Button:
-                text: "CALCULATE"
-                background_color: 0.2, 0.4, 0.8, 1
-                on_release: root.calculate_efficiency()
-            Label:
-                text: "Result: " + root.calc_result_text
-                bold: True
-                color: 1, 0.8, 0, 1
-                font_size: '18sp'
-
-        # --- FOOTER ---
-        BoxLayout:
-            size_hint_y: 0.13
-            spacing: 20
-            Button:
-                text: "DEFAULTS"
-                background_color: 0.4, 0.4, 0.4, 1
-                on_release: root.restore_defaults()
-            Button:
-                text: "BACK"
-                background_color: 0.8, 0.2, 0.2, 1
-                on_release: root.go_back()
-            Button:
-                id: btn_update
-                text: "UPDATE"
-                disabled: True
-                background_color: 0.2, 0.8, 0.2, 1
-                on_release: root.save_calibration()
-
-<UpdatesSettingsScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: 20
-        spacing: 10
-        canvas.before:
-            Color:
-                rgba: 0.1, 0.1, 0.1, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
-
-        Label:
-            text: "System Updates"
-            font_size: '24sp'
-            bold: True
-            size_hint_y: 0.1
-            color: 0.2, 0.8, 1, 1
-
-        # --- LOG CONSOLE ---
-        TextInput:
-            text: root.log_text
-            readonly: True
-            background_color: 0, 0, 0, 1
-            foreground_color: 0, 1, 0, 1 # Matrix Green text
-            font_name: "RobotoMono-Regular" if app.fonts_loaded else "Roboto" # Fallback if mono font missing
-            font_size: '14sp'
-            size_hint_y: 0.75
-
-        # --- ACTIONS ---
-        BoxLayout:
-            size_hint_y: 0.15
-            spacing: 20
-            
-            Button:
-                text: "CHECK UPDATES"
-                background_color: 0.2, 0.4, 0.8, 1
-                disabled: root.is_working
-                on_release: root.check_updates()
-
-            Button:
-                text: "INSTALL UPDATES"
-                background_color: 0.2, 0.8, 0.2, 1
-                disabled: not root.install_enabled or root.is_working
-                on_release: root.install_updates()
-                
-            Button:
-                text: "RESTART APP"
-                background_color: 1, 0.6, 0, 1  # Orange Color
-                disabled: root.is_working
-                on_release: root.restart_app()
-                
-            Button:
-                text: "BACK"
-                background_color: 0.8, 0.2, 0.2, 1
-                disabled: root.is_working
-                on_release: root.go_back()
 
 <WaterScreen>:
     name: 'water_calc'

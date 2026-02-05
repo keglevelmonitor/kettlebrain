@@ -315,25 +315,27 @@ class StepEditorScreen(Screen):
     def _handle_type_change(self, value):
         app = App.get_running_app()
         if not app: return
+        
+        # REFRESH POWER MAP
+        self.watts_map = app.build_power_map()
+        self.ids.s_pwr.max = len(self.watts_map) - 1
 
         # 1. PREVENT OVERWRITE ON LOAD
-        # If the selected type matches the saved object's type, we are likely 
-        # just loading the step. Do not overwrite saved data with defaults.
         if self.step_obj_ref and hasattr(self.step_obj_ref, 'step_type'):
             if value == self.step_obj_ref.step_type.value:
-                # Still check locking logic for the loaded type
                 if value == "Boil": 
-                    # Boil steps are now editable
                     pass
                 return
 
         # 2. DEFINE DEFAULTS (Imperial Units)
-        # Structure: Target(F), Time(m), Vol(Gal), Power(W), Advance, Additions
         sys_boil = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
         
+        # Use Max Power from Map as default
+        default_pwr = self.watts_map[-1] if self.watts_map else 1800
+
         STEP_DEFAULTS = {
             "Step": {
-                "temp": 70.0, "time": 0.0, "vol": 8.0, "watts": 1800, 
+                "temp": 70.0, "time": 0.0, "vol": 8.0, "watts": default_pwr, 
                 "adv": TimeoutBehavior.AUTO_ADVANCE.value,
                 "adds": []
             },
@@ -346,7 +348,7 @@ class StepEditorScreen(Screen):
                 ]
             },
             "Dough-in": {
-                "temp": 156.0, "time": 0.0, "vol": 8.0, "watts": 1800, 
+                "temp": 156.0, "time": 0.0, "vol": 8.0, "watts": default_pwr, 
                 "adv": TimeoutBehavior.AUTO_ADVANCE.value,
                 "adds": [
                     {'name': "Drop grain basket", 'time': 0},
@@ -356,7 +358,7 @@ class StepEditorScreen(Screen):
                 ]
             },
             "Mash": {
-                "temp": 150.0, "time": 60.0, "vol": 8.75, "watts": 1800, 
+                "temp": 150.0, "time": 60.0, "vol": 8.75, "watts": default_pwr, 
                 "adv": TimeoutBehavior.AUTO_ADVANCE.value,
                 "adds": [
                     {'name': "Mix grains", 'time': 45},
@@ -368,7 +370,7 @@ class StepEditorScreen(Screen):
                 ]
             },
             "Mash-out": {
-                "temp": 170.0, "time": 10.0, "vol": 8.75, "watts": 1800, 
+                "temp": 170.0, "time": 10.0, "vol": 8.75, "watts": default_pwr, 
                 "adv": TimeoutBehavior.AUTO_ADVANCE.value,
                 "adds": [
                     {'name': "Remove cover", 'time': 10},
@@ -377,19 +379,19 @@ class StepEditorScreen(Screen):
                 ]
             },
             "Sparge": {
-                "temp": 200.0, "time": 0.0, "vol": 4.25, "watts": 1800, 
+                "temp": 200.0, "time": 0.0, "vol": 4.25, "watts": default_pwr, 
                 "adv": TimeoutBehavior.AUTO_ADVANCE.value,
                 "adds": [
                     {'name': "Remove grain basket", 'time': 0}
                 ]
             },
             "Boil Start": {
-                "temp": sys_boil, "time": 0.0, "vol": 6.75, "watts": 1800, 
+                "temp": sys_boil, "time": 0.0, "vol": 6.75, "watts": default_pwr, 
                 "adv": TimeoutBehavior.MANUAL_ADVANCE.value,
                 "adds": []
             },
             "Boil Off": {
-                "temp": sys_boil, "time": 60.0, "vol": 6.75, "watts": 1800, 
+                "temp": sys_boil, "time": 60.0, "vol": 6.75, "watts": default_pwr, 
                 "adv": TimeoutBehavior.AUTO_ADVANCE.value,
                 "adds": [
                     {'name': "Bittering hops", 'time': 60},
@@ -413,38 +415,25 @@ class StepEditorScreen(Screen):
         # 3. APPLY DEFAULTS
         if value in STEP_DEFAULTS:
             data = STEP_DEFAULTS[value]
-            
-            # Apply Name
             self.step_name = value
-            
-            # Apply Temp (Convert Imperial -> User Unit)
             self.step_temp = app.to_user_units(data["temp"], 'temp')
-            self.is_temp_locked = False # Always unlock
-            
-            # Apply Time
+            self.is_temp_locked = False 
             self.step_dur = float(data["time"])
             
-            # Apply Volume (Convert Imperial -> User Unit)
-            # Reconfigure slider first to ensure range validity
             app.configure_slider(self.ids.s_vol, data["vol"], 'vol')
             self.step_vol = app.to_user_units(data["vol"], 'vol')
             
-            # Apply Power (Map Watts -> Index)
             w = data["watts"]
             if w in self.watts_map:
                 self.step_power_idx = self.watts_map.index(w)
             else:
-                self.step_power_idx = 0 # Default to 0 if unknown
+                self.step_power_idx = 0 
                 
-            # Apply Advance
             self.selected_advance = data["adv"]
             
-            # Apply Additions
-            # Sort by time desc (Standard for UI)
             sorted_adds = sorted(data["adds"], key=lambda x: x['time'], reverse=True)
             self.current_additions = sorted_adds
             
-            # Trigger Updates
             self._update_target_display()
             self._check_dirty()
 
@@ -478,6 +467,10 @@ class StepEditorScreen(Screen):
         self.step_name = step_obj.name 
         
         app = App.get_running_app()
+        
+        # REFRESH MAP
+        self.watts_map = app.build_power_map()
+        self.ids.s_pwr.max = len(self.watts_map) - 1
 
         try: self.selected_type = step_obj.step_type.value
         except: self.selected_type = "Step"
@@ -485,31 +478,25 @@ class StepEditorScreen(Screen):
         try: self.selected_advance = step_obj.timeout_behavior.value
         except: self.selected_advance = TimeoutBehavior.AUTO_ADVANCE.value
 
-        # --- UNIT CONVERSION START ---
-        # 1. Temp: Read Imperial -> Configure Slider -> Set User Value
         raw_temp_f = float(step_obj.setpoint_f or 0.0)
-        
-        # Configure Slider (Handles Null mapping to 69/19 internally now)
         app.configure_slider(self.ids.s_temp, raw_temp_f, 'temp')
-        
-        # Read the value back from the slider to ensure self.step_temp matches UI
         self.step_temp = self.ids.s_temp.value
 
-        # 2. Volume
         raw_vol_gal = float(step_obj.lauter_volume or 0.0)
         if raw_vol_gal < 1.0: raw_vol_gal = 6.0
         app.configure_slider(self.ids.s_vol, raw_vol_gal, 'vol')
-        # -----------------------------
         
-        # HANDLE LOCKING: All steps are editable now.
         self.is_temp_locked = False
-            
         self.step_dur = float(step_obj.duration_min or 0.0)
         
+        # Map Saved Watts to Index
         w = getattr(step_obj, 'power_watts', 1800)
-        self.step_power_idx = self.watts_map.index(w) if w in self.watts_map else 4
+        if w in self.watts_map:
+            self.step_power_idx = self.watts_map.index(w)
+        else:
+            # Fallback to max if saved value invalid
+            self.step_power_idx = len(self.watts_map) - 1 
 
-        # Load Alerts
         temp_list = []
         if hasattr(step_obj, 'additions'):
             for a in step_obj.additions:
@@ -521,8 +508,6 @@ class StepEditorScreen(Screen):
         self.current_additions = temp_list
         
         self._update_target_display()
-        
-        # TAKE SNAPSHOT
         self.original_state = self._get_current_state()
         self.is_dirty = False
 
@@ -839,116 +824,179 @@ class ProfileEditorScreen(Screen):
         App.get_running_app().open_profiles()
 
 class MainScreen(Screen):
-    display_temp = StringProperty("--.- °F")
+    # --- EXISTING PROPERTIES ---
+    display_temp = StringProperty("-.-")
     display_target = StringProperty("--")
-    display_status = StringProperty("System Idle")
     display_timer = StringProperty("00:00")
-    display_elapsed = StringProperty("00:00")
-    display_power_watts = StringProperty("1800")
+    display_elapsed = StringProperty("00:00:00")
+    display_status = StringProperty("READY")
     display_profile_name = StringProperty("")
+    
+    # Colors
+    temp_color = ListProperty([1, 1, 1, 1])
+    heartbeat_color = ListProperty([0.2, 0.2, 0.2, 1])
+    action_button_color = ListProperty([0.2, 0.8, 0.4, 1])
     action_button_text = StringProperty("START")
-    temp_color = ListProperty([0.2, 0.8, 0.2, 1])
-    manual_target_display = StringProperty("Target: -- F")
-    manual_vol_display = StringProperty("Volume: --")
+    
+    # --- HEATER INDICATORS ---
+    heater_1_active = BooleanProperty(False)
+    heater_2_active = BooleanProperty(False)
+    heater_3_active = BooleanProperty(False) 
+    
+    # NEW: Dynamic Labels for Indicators
+    heater_1_text = StringProperty("1000")
+    heater_2_text = StringProperty("800")
+    heater_3_text = StringProperty("1000")
+    
+    # Cost / kWh
+    cost_per_kwh = NumericProperty(0.12)
+    cost_slider_value = NumericProperty(0.12)
+    kwh_display_text = StringProperty("kWh: 0.000")
+    
+    # Manual Mode Sliders
+    slider_temp_val = NumericProperty(150.0)
+    slider_time_val = NumericProperty(60.0)
+    slider_power_val = NumericProperty(0) 
+    slider_vol_val = NumericProperty(6.0)
+    
+    display_power_watts = StringProperty("1800")
+    manual_vol_display = StringProperty("6.0 gal") 
+    manual_target_display = StringProperty("150.0 °F") 
+    
+    # Prediction / Est
+    prediction_text = StringProperty("Est. Time: --:--")
     est_end_display = StringProperty("Est. End: --:-- --")
-    delay_target_dt = ObjectProperty(None) # Stores the calculated start time
     
-    # --- NEW: kWh / COST PROPERTIES ---
-    kwh_display_text = StringProperty("kWh: 0.000 $ 0.00")
-    cost_per_kwh = NumericProperty(0.120)
-    cost_slider_value = NumericProperty(0.120)
-    
-    delay_target_dt = ObjectProperty(None) # Stores the calculated start time
-    
-    is_profile_loaded = BooleanProperty(False)
-    
-    # Properties for Mode Switch Logic
-    mode_switch_target = StringProperty("") # 'auto' or 'manual'
-    mode_confirm_msg = StringProperty("")
-    mode_reset_btn_text = StringProperty("")
-    
-    # --- NEW DELAY PROPERTIES ---
-    delay_hour = NumericProperty(6)
-    delay_min = NumericProperty(0)
-    delay_temp = NumericProperty(154.0)
-    delay_vol = NumericProperty(8.0)
+    # --- DELAY START PROPERTIES ---
+    is_delay_active = BooleanProperty(False)
+    controls_disabled = BooleanProperty(False)
     delay_btn_text = StringProperty("DELAY START")
     delay_btn_color = ListProperty([0.2, 0.2, 0.4, 1])
-    delay_minutes_total = NumericProperty(360) # Default 6:00 AM (6 * 60)
+    
+    delay_temp = NumericProperty(150.0)
+    delay_vol = NumericProperty(8.0)
+    delay_minutes_total = NumericProperty(360) # 6 hours default
+    
     delay_target_display = StringProperty("Target: --")
-    delay_vol_display = StringProperty("Volume: --")
+    delay_vol_display = StringProperty("Volume: --") 
     
-    # Visual properties
-    controls_disabled = BooleanProperty(False)
-    heater_1_active = BooleanProperty(False) # 1000W
-    heater_2_active = BooleanProperty(False) # 800W
-    is_delay_active = BooleanProperty(False)
-    heartbeat_color = ListProperty([0.2, 0.2, 0.2, 1]) # Grey default
-    _heartbeat_anim = None # Track the animation object
+    delay_target_dt = ObjectProperty(None) 
     
-    expanded_indices = ListProperty([])
+    # Mode Switching
+    mode_switch_target = StringProperty("") 
+    mode_confirm_msg = StringProperty("")
+    mode_reset_btn_text = StringProperty("RESET")
 
+    # State tracking
+    is_profile_loaded = BooleanProperty(False)
     
-    action_button_text = StringProperty("START")
-    action_button_color = ListProperty([0.2, 0.4, 0.8, 1]) # <--- ADD THIS
-    
-    # Manual Mode Properties
-    slider_temp_val = NumericProperty(150.0)
-    slider_vol_val = NumericProperty(6.0)
-    slider_time_val = NumericProperty(60.0)
-    # UPDATED: Default to index 4
-    slider_power_val = NumericProperty(4) # Index 0-4
-
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super(MainScreen, self).__init__(**kwargs)
         self.app = App.get_running_app()
+        
+        # --- UI State & Logic Memory ---
+        from profile_data import SequenceStatus
+        self.last_status = SequenceStatus.IDLE
         self.last_profile_id = None
         self.last_step_index = -1
-        self.last_status = SequenceStatus.IDLE  # <--- NEW TRACKER
-        # UPDATED: Added 0 to map
-        self.watts_map = [0, 800, 1000, 1400, 1800]
-        # Track if we have set defaults for delay this session
+        self.last_refresh_time = 0
+        self._last_scrolled_index = -1
+        
+        # --- UI Interaction Flags ---
+        # FIX 1: Must be a list [], because code uses .append() and .remove()
+        self.expanded_indices = [] 
+        
+        self.is_confirming_switch = False
+        self.manual_power_slider_active = False
+        self.is_profile_loaded = False
+        self.is_delay_active = False
+        self.controls_disabled = False
+        
+        # FIX 2: Initialize this to prevent crash in open_delay_setup
         self.has_initialized_delay = False
         
-    def on_delay_temp(self, instance, value):
-        # 1. Get Units
-        u_temp = "C" if self.app.is_metric else "F"
+        # FIX 3: Initialize default power map to prevent crash in on_slider_drag
+        self.watts_map = [0, 800, 1000, 1800, 2000, 2800]
         
-        # --- NULL CHECK (New Logic) ---
-        threshold = 20 if self.app.is_metric else 70
-        
-        if value < threshold:
-            self.delay_target_display = "Target: --"
-            return
+        # --- Cost & Energy Data ---
+        sys_settings = self.app.sequencer.settings.get_section("system_settings")
+        self.cost_per_kwh = float(sys_settings.get("cost_per_kwh", 0.15))
+        self.cost_slider_value = self.cost_per_kwh
 
-        # 2. Check BOIL Threshold
-        val_f = self.app.to_backend_units(value, 'temp')
-        sys_boil_f = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+        # --- Display String Initializers ---
+        self.display_temp = "-.-"
+        self.display_target = "--"
+        self.display_timer = "00:00"
+        self.display_elapsed = "00:00:00"
+        self.display_status = "IDLE"
+        self.display_profile_name = ""
+        self.kwh_display_text = "kWh: 0.000 $ 0.00"
+        self.action_button_text = "START"
+        self.delay_btn_text = "DELAY START"
         
-        if val_f >= (sys_boil_f - 1.0):
-            self.delay_target_display = f"Target: {int(value)} {u_temp} (BOIL)"
-        else:
-            self.delay_target_display = f"Target: {int(value)} {u_temp}"
+        # --- Color Initializers ---
+        self.temp_color = [0.2, 0.8, 0.2, 1]
+        self.heartbeat_color = [0.2, 0.2, 0.2, 1]
+        self.action_button_color = [0.2, 0.8, 0.4, 1]
+        self.delay_btn_color = [0.2, 0.2, 0.4, 1]
 
-    def on_delay_vol(self, instance, value):
-        u_vol = "L" if self.app.is_metric else "Gal"
-        self.delay_vol_display = f"Volume: {value:.2f} {u_vol}"
-    
+        # --- Hardware States ---
+        self.heater_1_active = False
+        self.heater_2_active = False
+        self.heater_3_active = False
+
+        # --- Component References ---
+        self.step_list_container = None 
+
+        # --- Delayed Initialization ---
+        from kivy.clock import Clock
+        Clock.schedule_once(self._finish_init, 0.1)
+
+    def _finish_init(self, dt):
+        """Binds UI elements once the KV file is ready."""
+        if 'step_list' in self.ids:
+            self.step_list_container = self.ids.step_list
+        
+        # Sync the manual power slider to the 2800W range
+        # FIX 4: Use 'pwr_slider' to match _load_manual_settings
+        if 'pwr_slider' in self.ids:
+            current_pwr = self.app.sequencer.manual_power_watts
+            # Ensure we don't crash if the map isn't fully built yet
+            if not hasattr(self, 'watts_map'):
+                 self.watts_map = self.app.build_power_map()
+            
+            # Map watts to index
+            if current_pwr in self.watts_map:
+                self.ids.pwr_slider.value = self.watts_map.index(current_pwr)
+
     def on_enter(self):
         """Syncs UI with saved settings."""
         self._load_manual_settings()
+        self.refresh_heater_labels()
         
-        # --- NEW: Load Cost Setting ---
+        # Load Cost Setting
         sm = self.app.settings_manager
         self.cost_per_kwh = float(sm.get_system_setting("cost_per_kwh", 0.120))
 
+    def refresh_heater_labels(self):
+        """Updates the R1/R2/R3 indicators with configured wattages."""
+        sm = self.app.settings_manager
+        cfg = sm.get_section("heater_config")
+        
+        w1 = int(cfg.get("relay1_watts", 1000))
+        w2 = int(cfg.get("relay2_watts", 800))
+        w3 = int(cfg.get("relay3_watts", 1000))
+        
+        # Format: "1000" or "OFF" if 0
+        self.heater_1_text = str(w1) if w1 > 0 else "OFF"
+        self.heater_2_text = str(w2) if w2 > 0 else "OFF"
+        self.heater_3_text = str(w3) if w3 > 0 else "OFF"
+
+    # --- COST SETUP METHODS ---
     def open_cost_setup(self):
         """Slide to the Cost configuration hero screen."""
-        # Sync slider with current active setting
         self.cost_slider_value = self.cost_per_kwh
-        # Uncheck the reset box
         self.ids.chk_reset_cost.active = False
-        
         self.ids.hero_manager.transition.direction = 'left'
         self.ids.hero_manager.current = 'hero_cost'
         
@@ -961,17 +1009,12 @@ class MainScreen(Screen):
     
     def save_cost_setup(self):
         """Commit changes to cost settings."""
-        # 1. Update Runtime Property
         self.cost_per_kwh = self.cost_slider_value
-        
-        # 2. Persist to Settings
         self.app.settings_manager.set_system_setting("cost_per_kwh", self.cost_per_kwh)
         
-        # 3. Handle Reset Request
         if self.ids.chk_reset_cost.active:
             self.app.sequencer.reset_energy_counter()
             
-        # 4. Return
         self.ids.hero_manager.transition.direction = 'right'
         self.ids.hero_manager.current = 'hero_standard'
     
@@ -982,6 +1025,9 @@ class MainScreen(Screen):
     
     def _load_manual_settings(self):
         sm = self.app.settings_manager
+        
+        # REFRESH MAP ON LOAD (In case settings changed)
+        self.watts_map = self.app.build_power_map()
         
         # Load Imperial Defaults
         last_temp = sm.get("manual_mode_settings", "last_setpoint_f", 150.0)
@@ -1000,123 +1046,168 @@ class MainScreen(Screen):
         self.app.configure_slider(self.ids.vol_slider, last_vol, 'vol')
         
         self.slider_time_val = last_timer
-        try:
+        
+        # --- DYNAMIC POWER SLIDER CONFIG ---
+        self.ids.pwr_slider.min = 0
+        self.ids.pwr_slider.max = len(self.watts_map) - 1
+        self.ids.pwr_slider.step = 1
+        
+        if last_watts in self.watts_map:
             self.slider_power_val = self.watts_map.index(last_watts)
-        except ValueError:
-            # UPDATED: Default to index 4 (1800W)
-            self.slider_power_val = 4
-        
-        self.display_power_watts = str(last_watts)
-        self._update_prediction()
-        
-    def on_slider_drag(self, slider_type, value):
-        """Updates VISUALS (labels/prediction) immediately."""
-
-        # Unit Strings
-        u_temp = "C" if self.app.is_metric else "F"
-        u_vol = "L" if self.app.is_metric else "Gal"
-
-        if slider_type == 'temp': 
-            val = float(value)
-            self.slider_temp_val = val
-
-            # --- NULL CHECK (New Logic) ---
-            threshold = 20 if self.app.is_metric else 70
+        else:
+            # Fallback if saved watt value is no longer valid
+            self.slider_power_val = len(self.watts_map) - 1 # Default to Max
             
-            if val < threshold:
-                self.manual_target_display = "Target: --"
-            else:
-                # Normal Logic
-                sys_boil = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
-                val_f = self.app.to_backend_units(val, 'temp')
-
-                if val_f >= sys_boil:
-                    self.manual_target_display = f"Target: {int(val)} {u_temp} (BOIL)"
-                else:
-                    self.manual_target_display = f"Target: {int(val)} {u_temp}"
-
-        elif slider_type == 'vol': 
-            self.slider_vol_val = float(value)
-            self.manual_vol_display = f"Volume: {value:.2f} {u_vol}"
-
-        elif slider_type == 'time': 
-            self.slider_time_val = float(value)
-        elif slider_type == 'power': 
-            self.slider_power_val = int(value)
-            idx = int(value)
-            if 0 <= idx < len(self.watts_map):
-                self.display_power_watts = str(self.watts_map[idx])
-
+        self.display_power_watts = str(self.watts_map[int(self.slider_power_val)])
         self._update_prediction()
+
+    def on_slider_drag(self, slider_type, value):
+        """
+        Called by UI sliders to update local state and text displays.
+        Does NOT update the backend SequenceManager until 'Start' is pressed.
+        """
+        sm = self.app.settings_manager
+        is_metric = self.app.is_metric
+        
+        if slider_type == 'temp':
+            self.slider_temp_val = value
+            
+            # --- UPDATE TARGET DISPLAY TEXT ---
+            sys_boil = float(sm.get_system_setting("boil_temp_f", 212.0))
+            # Convert User Value to Backend F for comparison
+            val_f = self.app.to_backend_units(value, 'temp')
+            
+            # Null Check
+            threshold = 20 if is_metric else 70
+            if value < threshold:
+                 self.manual_target_display = "Target: --"
+            elif val_f >= sys_boil:
+                 self.manual_target_display = f"Target: {int(value)} (BOIL)"
+            else:
+                 unit = "C" if is_metric else "F"
+                 self.manual_target_display = f"Target: {value:.1f} °{unit}"
+            # ----------------------------------
+            self._update_prediction()
+
+        elif slider_type == 'time':
+            self.slider_time_val = value
+            # Note: We don't save to settings on every drag event, only final release or start
+            
+        elif slider_type == 'power':
+            # Value is an INDEX into the watts_map
+            idx = int(value)
+            if idx < 0: idx = 0
+            if idx >= len(self.watts_map): idx = len(self.watts_map) - 1
+            
+            self.slider_power_val = idx
+            real_watts = self.watts_map[idx]
+            self.display_power_watts = str(real_watts)
+            self._update_prediction()
+
+        elif slider_type == 'vol':
+            self.slider_vol_val = value
+            
+            # UPDATE VOL DISPLAY TEXT
+            if is_metric:
+                self.manual_vol_display = f"Volume: {value:.1f} L"
+            else:
+                self.manual_vol_display = f"Volume: {value:.1f} gal"
+            self._update_prediction()
 
     def on_slider_release(self, slider_type, value):
         self.on_slider_drag(slider_type, value) 
         seq = self.app.sequencer
+        sm = self.app.settings_manager
         
         # Convert User Input -> Backend Units
         if slider_type == 'temp':
-            # --- NULL CHECK ---
             threshold = 20 if self.app.is_metric else 70
-            
             if float(value) < threshold:
                 seq.set_manual_target(0.0) # Send OFF
             else:
                 val_f = self.app.to_backend_units(float(value), 'temp')
+                sm.set("manual_mode_settings", "last_setpoint_f", val_f)
                 seq.set_manual_target(val_f)
                 
         elif slider_type == 'vol':
             val_gal = self.app.to_backend_units(float(value), 'vol')
+            sm.set("manual_mode_settings", "last_volume_gal", val_gal)
             seq.set_manual_volume(val_gal)
+            
         elif slider_type == 'time':
+            sm.set("manual_mode_settings", "last_timer_min", float(value))
             seq.set_manual_timer_duration(float(value))
+            
         elif slider_type == 'power':
             idx = int(value)
             if 0 <= idx < len(self.watts_map):
-                seq.set_manual_power(self.watts_map[idx])
+                real_watts = self.watts_map[idx]
+                sm.set("manual_mode_settings", "last_power_watts", real_watts)
+                seq.set_manual_power(real_watts)
                 
         self._update_prediction()
 
     def _update_prediction(self):
-        seq = self.app.sequencer
-        if seq.status != SequenceStatus.MANUAL:
+        # Retrieve System Settings
+        sm = self.app.settings_manager
+        ref_vol = sm.get_system_setting("heater_ref_volume_gal", 8.0)
+        ref_rate = sm.get_system_setting("heater_ref_rate_fpm", 1.3)
+        
+        # Get Current Inputs
+        current_temp_f = self.app.sequencer.current_temp if self.app.sequencer.current_temp else 60.0
+        
+        # Target Temp
+        target_f = self.app.to_backend_units(self.slider_temp_val, 'temp')
+        
+        # Volume
+        vol_gal = self.app.to_backend_units(self.slider_vol_val, 'vol')
+        
+        # Watts
+        idx = int(self.slider_power_val)
+        if idx >= len(self.watts_map): idx = len(self.watts_map) - 1
+        watts = self.watts_map[idx]
+        
+        if watts <= 0 or target_f <= current_temp_f:
+            self.prediction_text = "Est. Time: --:--"
+            self.display_status = "System Idle" # Reset status text if not heating
             return
 
-        current_temp = seq.current_temp if seq.current_temp else 60.0
-        target_temp = self.slider_temp_val
-        vol = self.slider_vol_val
+        # Ratio Logic (Baseline is ~1800W)
+        power_ratio = watts / 1800.0
         
-        p_idx = int(self.slider_power_val)
-        watts = self.watts_map[p_idx] if 0 <= p_idx < len(self.watts_map) else 1800
-
-        if target_temp > current_temp:
-            if hasattr(seq, 'calculate_ramp_minutes'):
-                mins = seq.calculate_ramp_minutes(current_temp, target_temp, vol, watts)
-                import time
-                from datetime import datetime
-                ready_epoch = time.time() + (mins * 60)
-                dt = datetime.fromtimestamp(ready_epoch)
-                self.display_status = f"Ready At: {dt.strftime('%H:%M')}"
-        else:
-            self.display_status = "System Idle"
+        # Adjusted Rate
+        adj_rate = ref_rate * power_ratio * (ref_vol / vol_gal)
+        
+        if adj_rate <= 0.1:
+            self.prediction_text = "Est. Time: > 60m"
+            return
+            
+        delta_t = target_f - current_temp_f
+        minutes = delta_t / adj_rate
+        
+        # Update Prediction Label
+        self.prediction_text = f"Est. Time: {int(minutes)} min"
+        
+        # Update Main Status Display with Ready Time
+        import time
+        from datetime import datetime
+        ready_epoch = time.time() + (minutes * 60)
+        dt = datetime.fromtimestamp(ready_epoch)
+        self.display_status = f"Ready At: {dt.strftime('%H:%M')}"
 
     def _update_est_end(self):
         """
-        Calculates estimated completion time by simulating the full profile:
-        Sum(Ramp Time + Hold Time) for all remaining steps.
+        Calculates estimated completion time by simulating the full profile.
         """
         seq = self.app.sequencer
         status = seq.status
 
-        # 1. Validation: Must be Auto Mode with a profile
         if not seq.current_profile or status == SequenceStatus.MANUAL:
             self.est_end_display = "Est. End: --:-- --"
             return
 
-        # 2. Determine Start Time & Temp
         if status == SequenceStatus.DELAYED_WAIT and self.delay_target_dt:
             start_time = self.delay_target_dt
-            # If delayed, assume we start heating from the current temp
-            # (or we could assume room temp, but current probe reading is safest)
             sim_temp = seq.current_temp if seq.current_temp else 60.0
         else:
             start_time = datetime.now()
@@ -1127,137 +1218,89 @@ class MainScreen(Screen):
         steps = seq.current_profile.steps
         current_idx = seq.current_step_index
         
-        # 3. Determine where to start in the list
         start_list_idx = 0
         if status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
             start_list_idx = current_idx if current_idx >= 0 else 0
 
-        # --- Helper for Ramp Math ---
         def get_ramp_min(start_f, end_f, vol_gal, watts):
             if end_f > start_f and hasattr(seq, 'calculate_ramp_minutes'):
-                # Use the backend physics engine
                 return seq.calculate_ramp_minutes(start_f, end_f, vol_gal, watts)
             return 0.0
-        # ----------------------------
 
-        # 4. Loop through Steps
         for i in range(start_list_idx, len(steps)):
             step = steps[i]
-            
-            # Step Parameters
             target = float(step.setpoint_f or 0.0)
-            vol = float(step.lauter_volume or 6.0) # Default to 6 Gal if unspecified
+            vol = float(step.lauter_volume or 6.0)
             watts = getattr(step, 'power_watts', 1800)
             dur = float(step.duration_min or 0.0)
 
-            # A. ACTIVE STEP LOGIC
             if i == current_idx and status not in [SequenceStatus.DELAYED_WAIT, SequenceStatus.IDLE]:
-                # If we are already holding (temp reached), no ramp needed, just remaining timer.
                 if getattr(seq, 'temp_reached', False):
                     if hasattr(seq, 'timer'):
                          total_minutes += (seq.timer.remaining_time / 60.0)
                 else:
-                    # We are currently ramping.
-                    # Add ramp from CURRENT TEMP -> TARGET
                     total_minutes += get_ramp_min(sim_temp, target, vol, watts)
-                    # Add full duration (timer hasn't started yet)
                     total_minutes += dur
-            
-            # B. FUTURE STEP LOGIC
             else:
-                # Ramp from PREV STEP TEMP -> THIS TARGET
                 total_minutes += get_ramp_min(sim_temp, target, vol, watts)
                 total_minutes += dur
             
-            # Update simulation temp for the next iteration
-            # (Assume we finish this step at the target temp)
             if target >= 60:
                 sim_temp = target
         
-        # 5. Format Output
         end_dt = start_time + timedelta(minutes=total_minutes)
         self.est_end_display = f"Est. End: {end_dt.strftime('%I:%M %p')}"
-       
+        
     def open_water_calculator(self):
-        """Called by the WATER button."""
         app = App.get_running_app()
         seq = app.sequencer
-        
-        # Logic: If Auto Mode and No Profile, do nothing (Button should be disabled visually, but safe check here)
         if seq.status != SequenceStatus.MANUAL and not seq.current_profile:
             return
-
         self.manager.current = 'water_calc'
 
     def switch_to_manual(self):
-        """
-        Request to switch to Manual Mode. 
-        If Auto is currently running/paused, ask for confirmation.
-        """
         seq = self.app.sequencer
         
-        # --- NEW SAFETY CHECK ---
-        # If temp is 0.0 or None, it likely means Unassigned or Error
-        # But allow bypass if user is just navigating, unless they try to START heaters.
-        # Ideally, we block entry entirely or block the START button.
-        # Per request, we intercept the navigation here.
         current_temp = seq.current_temp if seq.current_temp is not None else 0.0
         if current_temp == 0.0:
              self.ids.bottom_nav.transition.direction = 'up'
              self.ids.bottom_nav.current = 'nav_temp_warning'
              return
-        # ------------------------
 
-        # NEW: If Delay is Active, just show the screen.
-        # Do NOT change mode, do NOT call enter_manual_mode().
         if seq.status == SequenceStatus.DELAYED_WAIT:
              self.ids.center_content.current = 'page_manual'
              return
 
-        # 1. Check if AUTO is Active (Running, Paused, or Waiting)
         if seq.status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
             self._prompt_mode_switch('manual', active_mode="AUTO", inactive_mode="MANUAL")
             return
 
-        # 2. Normal Switch
         self.ids.center_content.current = 'page_manual'
-        # Only reset/enter if we aren't already there (avoids resetting a running Manual session)
         if seq.status != SequenceStatus.MANUAL:
             seq.enter_manual_mode()
 
     def switch_to_auto(self):
-        """
-        Request to switch to Auto Mode.
-        If Manual is currently running (Timer/PID active), ask for confirmation.
-        """
         seq = self.app.sequencer
         
-        # --- NEW SAFETY CHECK ---
         current_temp = seq.current_temp if seq.current_temp is not None else 0.0
         if current_temp == 0.0:
              self.ids.bottom_nav.transition.direction = 'up'
              self.ids.bottom_nav.current = 'nav_temp_warning'
              return
-        # ------------------------
         
-        # NEW: If Delay is Active, just show the screen.
         if seq.status == SequenceStatus.DELAYED_WAIT:
              self.ids.center_content.current = 'page_auto'
              return
         
-        # 1. Check if MANUAL is Active (Heater or Timer running)
         if seq.status == SequenceStatus.MANUAL and getattr(seq, 'is_manual_running', False):
             self._prompt_mode_switch('auto', active_mode="MANUAL", inactive_mode="AUTO")
             return
 
-        # 2. Normal Switch
         self.ids.center_content.current = 'page_auto'
-        # Only Stop if we are coming from Manual (avoids resetting a running Auto session)
         if seq.status == SequenceStatus.MANUAL:
             seq.stop()
     
     def _prompt_mode_switch(self, target, active_mode, inactive_mode):
-        """Slides up the confirmation panel."""
         self.mode_switch_target = target
         self.mode_confirm_msg = f"{active_mode} is active. RESET {active_mode} SESSION and switch to {inactive_mode} or CANCEL to return."
         self.mode_reset_btn_text = f"RESET {active_mode} SESSION"
@@ -1266,64 +1309,38 @@ class MainScreen(Screen):
         self.ids.bottom_nav.current = 'nav_mode_confirm'
 
     def prompt_profile_load(self):
-        """
-        Redirects user to Dashboard and slides up the Warning.
-        """
-        # 1. Force navigation to Dashboard so they see the running state
         self.manager.current = 'main'
-        
-        # 2. Configure the shared Confirmation Slider
         self.mode_switch_target = 'profile_load'
         self.mode_reset_btn_text = "RESET SESSION & LOAD PROFILE"
-        
-        # 3. Slide it up
         self.ids.bottom_nav.transition.direction = 'up'
         self.ids.bottom_nav.current = 'nav_mode_confirm'
 
-    # UPDATE this existing method
     def confirm_mode_switch(self):
-        """Executed when user clicks the Red Action Button."""
-        
-        # 1. Handle Profile Load (NEW)
         if self.mode_switch_target == 'profile_load':
             self.app.finish_pending_load()
-            
-        # 2. Handle Manual Switch (Existing)
         elif self.mode_switch_target == 'manual':
-            self.app.sequencer.stop() # Hard Stop
+            self.app.sequencer.stop() 
             self.ids.center_content.current = 'page_manual'
             self.app.sequencer.enter_manual_mode()
-            
-        # 3. Handle Auto Switch (Existing)
         elif self.mode_switch_target == 'auto':
-            self.app.sequencer.stop() # Hard Stop
+            self.app.sequencer.stop() 
             self.ids.center_content.current = 'page_auto'
-            
-        # 4. Restore Bottom Nav
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
 
     def cancel_mode_switch(self):
-        """Executed when user clicks CANCEL."""
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
     
     def open_hardware_setup(self):
-        """
-        Called by 'ASSIGN TEMP PROBE' button in the warning slider.
-        Navigates to the Hardware Settings screen.
-        """
-        # 1. Close the warning slider immediately
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
-        
-        # 2. Navigate to Hardware Settings
-        self.manager.current = 'settings_hw'
+        self.manager.transition.direction = 'left'
+        self.manager.current = 'sys_settings'
+        if self.app.settings_master:
+            self.app.settings_master.select_tab('settings_hw')
 
     def cancel_temp_warning(self):
-        """
-        Called by 'CANCEL' button in the warning slider.
-        """
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
     
@@ -1332,22 +1349,14 @@ class MainScreen(Screen):
         status = seq.status
         current_screen = self.ids.center_content.current
 
-        # --- MANUAL MODE LOGIC ---
         if current_screen == 'page_manual' or status == SequenceStatus.MANUAL:
-            
-            # --- SAFETY SYNC: Ensure Backend matches Visual Sliders ---
-            # 1. Sync Power
+            # Sync Visuals to Backend before Action
             p_idx = int(self.slider_power_val)
             if 0 <= p_idx < len(self.watts_map):
                 seq.set_manual_power(self.watts_map[p_idx])
-                
-            # 2. Sync Temp
             val_f = self.app.to_backend_units(self.slider_temp_val, 'temp')
             seq.set_manual_target(val_f)
-            
-            # 3. Sync Timer
             seq.set_manual_timer_duration(self.slider_time_val)
-            # ---------------------------------------------------------
 
             if status != SequenceStatus.MANUAL:
                 seq.enter_manual_mode()
@@ -1357,7 +1366,6 @@ class MainScreen(Screen):
             else:
                 seq.start_manual()
         
-        # --- AUTO MODE LOGIC ---
         elif status == SequenceStatus.IDLE:
             if current_screen == 'page_auto': 
                 seq.start_sequence()
@@ -1373,115 +1381,73 @@ class MainScreen(Screen):
 
     def on_stop_request(self):
         seq = self.app.sequencer
-        
-        # 1. Ignore if Manual Mode is Inactive (Standby)
         if seq.status == SequenceStatus.MANUAL and not getattr(seq, 'is_manual_running', False):
             return
-
-        # 2. Ignore if Auto Mode is Inactive (Idle)
         if seq.status == SequenceStatus.IDLE:
             return
-
-        # 3. Proceed with Hard Stop
         self.app.sequencer.emergency_cut_power()
         self.ids.bottom_nav.transition.direction = 'up'
         self.ids.bottom_nav.current = 'nav_confirm'
 
     def on_confirm_reset(self):
-        """
-        Resets the system but keeps the user on their current mode (Manual or Auto).
-        """
-        # 1. Check which view is currently active
         was_manual = (self.ids.center_content.current == 'page_manual')
-
-        # 2. Perform the Reset
         if was_manual:
-            # If we were in Manual, this Resets the sequencer AND sets status back to MANUAL
             self.app.sequencer.enter_manual_mode()
         else:
-            # If we were in Auto, calling stop() would unload the profile.
-            # reset_profile() stops the relays and rewinds to Step 1, but keeps the profile loaded.
             self.app.sequencer.reset_profile()
-
-        # 3. Restore Bottom Navigation
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
 
     def on_confirm_resume(self):
-        """
-        Called by the RESUME SESSION button in the Stop/Confirm menu.
-        Restarts the Sequence or Manual Mode and restores the UI.
-        """
         seq = self.app.sequencer
-        
-        # 1. Resume based on Status
         if seq.status == SequenceStatus.PAUSED:
-            # Auto Mode was running -> Resume
             if hasattr(seq, 'resume_sequence'): 
                 seq.resume_sequence()
-                
         elif seq.status == SequenceStatus.MANUAL:
-            # Manual Mode was active -> Restart Heater/Timer
-            # (emergency_cut_power turns is_manual_running=False, so we must start it again)
             seq.start_manual()
-
-        # 2. Restore Bottom Navigation
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
     
     def on_stop_click(self):
-        # Legacy catch-all, redirects to new logic
         self.on_stop_request()
 
     def on_recover_pause(self):
-        """
-        Called by 'PAUSE SESSION' in the Confirm Slider.
-        Reverts a Hard Stop to a Soft Pause (Heat On, Timer Frozen).
-        """
         seq = self.app.sequencer
-        
         if seq.status == SequenceStatus.MANUAL:
             seq.pause_manual()
         else:
             seq.pause_sequence()
-
         self.ids.bottom_nav.transition.direction = 'down'
         self.ids.bottom_nav.current = 'nav_standard'
         
     def open_profiles(self):
+        self.manager.transition.direction = 'left'
         self.manager.current = 'profiles'
         self.manager.get_screen('profiles').refresh_list()
 
     def open_settings(self):
+        self.manager.transition.direction = 'left'
         self.manager.current = 'sys_settings'
 
     def get_delay_time_str(self, total_minutes):
-        """Formats 0-1440 minutes into HH:MM AM/PM string for the label."""
         val = int(total_minutes)
         h = val // 60
         m = val % 60
-        
         ampm = "AM"
         if h >= 12:
             ampm = "PM"
-        
-        # Convert 24h to 12h display
         if h > 12:
             h -= 12
         if h == 0:
             h = 12
-            
         return f"{h}:{m:02d} {ampm}"
 
     def toggle_step_expansion(self, step_index):
-        """Called when the arrow button is clicked."""
         idx = int(step_index)
         if idx in self.expanded_indices:
             self.expanded_indices.remove(idx)
         else:
             self.expanded_indices.append(idx)
-        
-        # Force a refresh of the list
         self.refresh_step_list()
 
     def refresh_step_list(self):
@@ -1490,29 +1456,22 @@ class MainScreen(Screen):
             self.ids.rv_steps.data = []
             return
         
-        # 1. Force Refresh Predictions
         if hasattr(seq, 'update_predictions'):
             seq.update_predictions()
 
-        # 2. Auto-Expand the Current Step
         current_idx = seq.current_step_index
         if current_idx != -1 and current_idx not in self.expanded_indices:
             self.expanded_indices.append(current_idx)
 
         data = []
-        
         active_list_index = -1
         current_row_count = 0
-        
         active_alert_name = None
         if seq.status == SequenceStatus.WAITING_FOR_USER and seq.current_alert_text:
             active_alert_name = seq.current_alert_text
 
-        # Unit String Helper
         unit = "C" if self.app.is_metric else "F"
         u_vol = "L" if self.app.is_metric else "Gal"
-
-        # Retrieve System Boil Temp (Strict Float)
         try:
             sys_boil_f = float(self.app.settings_manager.get_system_setting("boil_temp_f", 212.0))
         except (ValueError, TypeError):
@@ -1534,38 +1493,28 @@ class MainScreen(Screen):
             elif is_done:
                 txt = [0.5, 0.5, 0.5, 1]
 
-            # --- TARGET TEMP LOGIC (STRICT) ---
             raw_f = float(step.setpoint_f) if step.setpoint_f is not None else 0.0
-            
             is_boil_type = (step.step_type == StepType.BOIL)
-            # STRICT CHECK: No buffer. 208.0 >= 209.0 is False.
             is_high_temp = (raw_f >= sys_boil_f)
 
             if is_boil_type:
-                # Type is BOIL: Always show System Boil Setting
                 user_boil = self.app.to_user_units(sys_boil_f, 'boil_temp')
                 t_str = f"{user_boil:.0f}°{unit} (BOIL)"
-                
             elif is_high_temp:
-                # Type is Normal, but Target >= Boil: Show TARGET + (BOIL)
                 user_val = self.app.to_user_units(raw_f, 'temp')
                 t_str = f"{user_val:.0f}°{unit} (BOIL)"
-                
             elif raw_f >= 60:
-                # Normal Step
                 user_val = self.app.to_user_units(raw_f, 'temp')
                 t_str = f"{user_val:.0f}°{unit}"
             else:
                 t_str = "--"
 
-            # VOLUME
             if step.lauter_volume and step.lauter_volume > 0:
                 user_vol = self.app.to_user_units(step.lauter_volume, 'vol')
                 v_str = f"{user_vol:.2f} {u_vol}"
             else:
                 v_str = "--"
 
-            # DURATION
             if step.duration_min and step.duration_min > 0:
                 d_str = f"{int(step.duration_min)} min"
             else:
@@ -1608,7 +1557,7 @@ class MainScreen(Screen):
                     
                     if is_active_child:
                         child_bg = [0.2, 0.8, 0.2, 1] 
-                        child_txt = [1, 1, 1, 1]       
+                        child_txt = [1, 1, 1, 1]        
                         active_list_index = current_row_count 
 
                     data.append({
@@ -1620,150 +1569,81 @@ class MainScreen(Screen):
                     current_row_count += 1
 
         self.ids.rv_steps.data = data
-        
         if active_list_index != -1:
             self.scroll_to_active(active_list_index)
         
     def scroll_to_active(self, index):
-        """
-        Manually calculates scroll_y to place the item at 'index' at the top.
-        """
         rv = self.ids.rv_steps
         if not rv.data: return
-        
-        # Calculate the total height of the list and the position of our target
-        # We assume StepItems are 50dp and AlertChildItems are 40dp
         total_height = 0
         target_top_offset = 0
-        
-        # Use dp to match Kivy's scaling
         from kivy.metrics import dp
-        
         for i, item in enumerate(rv.data):
-            # Determine height of this specific row
             row_h = dp(40) if item.get('view_type') == 'AlertChildItem' else dp(50)
-            
-            # If this is a row ABOVE our target, add to offset
             if i < index:
                 target_top_offset += row_h
-            
             total_height += row_h
-            
-        # Calculate Viewport parameters
         viewport_height = rv.height
         scrollable_distance = total_height - viewport_height
-        
-        # If content fits entirely in screen, just go to top
         if scrollable_distance <= 0:
             rv.scroll_y = 1.0
             return
-
-        # Calculate scroll_y (1.0 is top, 0.0 is bottom)
-        # We want the top of our target row to be at the top of the viewport.
-        # This means we need to hide 'target_top_offset' pixels above the viewport.
         pixels_from_bottom = total_height - target_top_offset - viewport_height
         new_scroll_y = pixels_from_bottom / scrollable_distance
-        
-        # Clamp between 0 and 1 (don't scroll past bounds)
         new_scroll_y = max(0.0, min(1.0, new_scroll_y))
-        
-        # Apply scroll only if changed (prevents jitter)
         if not hasattr(self, '_last_scrolled_index'): self._last_scrolled_index = -1
-        
         if self._last_scrolled_index != index:
             rv.scroll_y = new_scroll_y
             self._last_scrolled_index = index
 
     def open_delay_setup(self):
-        """Called when DELAY START (or ACTIVE) is clicked."""
         status = self.app.sequencer.status
-        
-        # 1. Determine Values (Time, Temp, Vol)
-        
-        # Case A: Delay is currently running/waiting. 
-        # We MUST show what is actually set in the system.
         if status == SequenceStatus.DELAYED_WAIT:
-            # Convert UI Slider Values (which track the system) back to Backend for configure_slider
             raw_temp = self.app.to_backend_units(self.delay_temp, 'temp')
             raw_vol = self.app.to_backend_units(self.delay_vol, 'vol')
-            # Keep existing time (don't reset to 6am)
-            
-        # Case B: First time opening in this session. Load Defaults.
         elif not self.has_initialized_delay:
             now = datetime.now()
-            # Default target: 6:00 AM tomorrow
             next_target = now.replace(hour=6, minute=0, second=0, microsecond=0)
             if next_target <= now:
                 next_target += timedelta(days=1)
-            
-            # Set the time property
             self.delay_minutes_total = (next_target.hour * 60) + next_target.minute
-            
-            # Load Manual defaults (Imperial)
             sm = self.app.settings_manager
             raw_temp = sm.get("manual_mode_settings", "last_setpoint_f", 154.0)
             raw_vol = sm.get("manual_mode_settings", "last_volume_gal", 8.0)
-            
-            # Mark as initialized so we don't overwrite next time
             self.has_initialized_delay = True
-
-        # Case C: Not active, but we have opened it before. 
-        # Use whatever is currently stored in the Kivy Properties (Persistence).
         else:
-            # Convert the current UI values back to Imperial for configure_slider
             raw_temp = self.app.to_backend_units(self.delay_temp, 'temp')
             raw_vol = self.app.to_backend_units(self.delay_vol, 'vol')
-            # Time is already in self.delay_minutes_total, no need to touch it.
 
-        # 2. Slide the Hero Panel
         self.ids.hero_manager.transition.direction = 'left'
         self.ids.hero_manager.current = 'hero_delay'
-
-        # 3. Configure Sliders (raw_temp/raw_vol must be Imperial here)
         self.app.configure_slider(self.ids.s_delay_temp, raw_temp, 'temp')
         self.app.configure_slider(self.ids.s_delay_vol, raw_vol, 'vol')
-        
-        # 4. Trigger the labels manually to ensure they appear
         self.on_delay_temp(None, self.delay_temp)
         self.on_delay_vol(None, self.delay_vol)
 
     def close_delay_setup(self):
-        """Cancel button in Delay Setup."""
         self.ids.hero_manager.transition.direction = 'right'
         self.ids.hero_manager.current = 'hero_standard'
 
     def confirm_delay_start(self):
-        """ACTIVATE/UPDATE button in Delay Setup."""
         try:
-            # 1. Calculate Target Time
             val = int(self.delay_minutes_total)
             h = val // 60
             m = val % 60
-            
             now = datetime.now()
             target_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
-            
             if target_dt <= now:
                 target_dt += timedelta(days=1)
-            
             self.delay_target_dt = target_dt
-            
-            # 2. Context (Auto vs Manual)
             is_auto = (self.app.sequencer.status != SequenceStatus.MANUAL)
-            
-            # --- UNIT CONVERSION START ---
             threshold = 20 if self.app.is_metric else 70
-            
-            # Check Null Threshold for Temp
             if self.delay_temp < threshold:
                 target_f = 0.0
             else:
                 target_f = self.app.to_backend_units(self.delay_temp, 'temp')
-                
             target_gal = self.app.to_backend_units(self.delay_vol, 'vol')
-            # -----------------------------
-
-            # 3. Call Sequencer (Always expects Imperial)
+            
             self.app.sequencer.start_delayed_mode(
                 target_f, 
                 target_gal, 
@@ -1771,67 +1651,67 @@ class MainScreen(Screen):
                 from_auto_mode=is_auto
             )
             
-            # 4. MIRROR SETTINGS TO MANUAL UI (Visual confirmation)
-            # Use configure_slider to handle unit ranges correctly
-            # Note: configure_slider handles the < 15.0 null mapping internally
             self.app.configure_slider(self.ids.temp_slider, target_f, 'temp')
             self.app.configure_slider(self.ids.vol_slider, target_gal, 'vol')
-            
             self.slider_time_val = 30.0
             self.slider_power_val = 3
             
-            # 5. Update UI & Slide Back
             self.update_status_display()
             self.close_delay_setup()
-            
         except Exception as e:
             print(f"Delay Start Error: {e}")
     
     def deactivate_delay(self):
-        """Stops the Delayed Start and resets to Idle."""
-        # This resets status to IDLE. 
-        # Because we updated update_ui (below), the screen will stay where it is.
         self.app.sequencer.stop()
-        
         self.update_status_display()
         self.close_delay_setup()
     
     def update_status_display(self):
-        """
-        Updates the Status Text, Delay Button, and Control Locking 
-        based on the current Sequencer Status.
-        """
         seq = self.app.sequencer
         status = seq.status
-
-        # --- 1. HANDLE DELAYED WAIT STATE ---
         if status == SequenceStatus.DELAYED_WAIT:
             self.is_delay_active = True
-            self.controls_disabled = True  # <--- LOCK CONTROLS
-            
+            self.controls_disabled = True
             self.delay_btn_text = "DELAY ACTIVE"
             self.delay_btn_color = [0.2, 0.6, 0.8, 1]
-            
             if hasattr(seq, 'get_delayed_status_msg'):
                 msg = seq.get_delayed_status_msg()
             else:
                 msg = "Waiting for start time..."
-            
             self.display_status = f"SLEEPING\n{msg}"
-
-        # --- 2. HANDLE NORMAL STATES ---
         else:
             self.is_delay_active = False
-            self.controls_disabled = False # <--- UNLOCK CONTROLS
-
+            self.controls_disabled = False
             self.delay_btn_text = "DELAY START"
             self.delay_btn_color = [0.2, 0.2, 0.4, 1]
-
             if status == SequenceStatus.IDLE:
                 self.display_status = "System Idle"
-            
             elif status == SequenceStatus.MANUAL:
                 self._update_prediction()
+
+    def on_delay_temp(self, instance, value):
+        # 1. Get Units
+        u_temp = "C" if self.app.is_metric else "F"
+        
+        # --- NULL CHECK ---
+        threshold = 20 if self.app.is_metric else 70
+        
+        if value < threshold:
+            self.delay_target_display = "Target: --"
+            return
+
+        # 2. Check BOIL Threshold
+        val_f = self.app.to_backend_units(value, 'temp')
+        sys_boil_f = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
+        
+        if val_f >= (sys_boil_f - 1.0):
+            self.delay_target_display = f"Target: {int(value)} {u_temp} (BOIL)"
+        else:
+            self.delay_target_display = f"Target: {int(value)} {u_temp}"
+
+    def on_delay_vol(self, instance, value):
+        u_vol = "L" if self.app.is_metric else "Gal"
+        self.delay_vol_display = f"Volume: {value:.2f} {u_vol}"
 
 class ProfilesScreen(Screen):
     def refresh_list(self):
@@ -1852,19 +1732,202 @@ class ProfilesScreen(Screen):
     def go_back(self):
         self.manager.current = 'main'
 
-class SystemSettingsScreen(Screen):
-    """
-    The 'Hub' for all settings menus.
-    """
-    def go_back(self):
+class SettingsMasterScreen(Screen):
+    # Dynamic Footer Button Properties
+    btn_3_text = StringProperty("")
+    btn_3_visible = BooleanProperty(False)
+    
+    btn_4_text = StringProperty("RESET/DEFAULTS")
+    btn_4_visible = BooleanProperty(True)
+    
+    btn_5_text = StringProperty("SAVE")
+    btn_5_visible = BooleanProperty(True)
+    
+    current_tab = StringProperty('settings_app')
+
+    def select_tab(self, tab_name):
+        self.ids.content_manager.transition = SlideTransition(direction='left')
+        self.ids.content_manager.current = tab_name
+        self.current_tab = tab_name
+        
+        # Configure Footer based on Tab
+        if tab_name == 'settings_updates':
+            self.btn_3_text = "CHECK"
+            self.btn_3_visible = True
+            
+            self.btn_4_text = "INSTALL"
+            self.btn_4_visible = True
+            
+            self.btn_5_text = "RESTART APP"
+            self.btn_5_visible = True
+            
+        elif tab_name == 'settings_about':
+            self.btn_3_visible = False
+            self.btn_4_visible = False
+            self.btn_5_visible = False
+            
+        else:
+            # Standard View (Pref, Hw, Heaters, Calib, PID)
+            self.btn_3_visible = False
+            
+            self.btn_4_text = "RESET/DEFAULTS"
+            self.btn_4_visible = True
+            
+            self.btn_5_text = "SAVE"
+            self.btn_5_visible = True
+
+    def exit_settings(self):
         # Return to Dashboard
         self.manager.transition.direction = 'right'
         self.manager.current = 'main'
 
-    def navigate_to(self, screen_name):
-        # Go deeper into a settings sub-screen
-        self.manager.transition.direction = 'left'
-        self.manager.current = screen_name
+    def show_help(self):
+        # Placeholder for help popup
+        print(f"[Settings] Help requested for {self.current_tab}")
+
+    def on_btn_3(self):
+        # Slot 3: Usually Blank, or CHECK (Updates)
+        screen = self.ids.content_manager.get_screen(self.current_tab)
+        if self.current_tab == 'settings_updates':
+            if hasattr(screen, 'check_updates'): screen.check_updates()
+
+    def on_btn_4(self):
+        # Slot 4: RESET/DEFAULTS or INSTALL (Updates)
+        screen = self.ids.content_manager.get_screen(self.current_tab)
+        
+        if self.current_tab == 'settings_updates':
+            if hasattr(screen, 'install_updates'): screen.install_updates()
+        else:
+            # Standard Reset
+            if hasattr(screen, 'restore_defaults'): screen.restore_defaults()
+
+    def on_btn_5(self):
+        # Slot 5: SAVE or RESTART (Updates)
+        screen = self.ids.content_manager.get_screen(self.current_tab)
+        
+        if self.current_tab == 'settings_updates':
+            if hasattr(screen, 'restart_app'): screen.restart_app()
+        else:
+            # Standard Save
+            if hasattr(screen, 'save_changes'): screen.save_changes()
+            elif hasattr(screen, 'save_calibration'): screen.save_calibration() # Calib uses different name
+
+class PIDSettingsScreen(Screen):
+    kp = NumericProperty(50.0)
+    ki = NumericProperty(0.02)
+    kd = NumericProperty(10.0)
+
+    def on_pre_enter(self):
+        app = App.get_running_app()
+        sm = app.settings_manager
+        pid_cfg = sm.get_section("pid_settings")
+        
+        self.kp = float(pid_cfg.get("kp", 50.0))
+        self.ki = float(pid_cfg.get("ki", 0.02))
+        self.kd = float(pid_cfg.get("kd", 10.0))
+
+    def save_changes(self):
+        app = App.get_running_app()
+        sm = app.settings_manager
+        
+        # Update Settings
+        sm.set("pid_settings", "kp", self.kp)
+        sm.set("pid_settings", "ki", self.ki)
+        sm.set("pid_settings", "kd", self.kd)
+        
+        # Live Update Controller
+        if hasattr(app.sequencer, 'pid'):
+            app.sequencer.pid.kp = self.kp
+            app.sequencer.pid.ki = self.ki
+            app.sequencer.pid.kd = self.kd
+            
+        print("[PID] Settings Saved.")
+
+    def restore_defaults(self):
+        self.kp = 50.0
+        self.ki = 0.02
+        self.kd = 10.0
+        print("[PID] Restored defaults (Unsaved). Press Save to apply.")
+
+class HeaterSettingsScreen(Screen):
+    r1_val = NumericProperty(1000)
+    r2_val = NumericProperty(800)
+    r3_val = NumericProperty(1000)
+    
+    r1_text = StringProperty("1000 W")
+    r2_text = StringProperty("800 W")
+    r3_text = StringProperty("1000 W")
+    
+    def on_pre_enter(self):
+        """Load from settings on view."""
+        app = App.get_running_app()
+        cfg = app.settings_manager.get_section("heater_config")
+        
+        self.r1_val = float(cfg.get("relay1_watts", 1000))
+        self.r2_val = float(cfg.get("relay2_watts", 800))
+        self.r3_val = float(cfg.get("relay3_watts", 1000))
+        
+        # PUSH values to the sliders (since we removed the KV binding loop)
+        if 's_r1' in self.ids: self.ids.s_r1.value = self.r1_val
+        if 's_r2' in self.ids: self.ids.s_r2.value = self.r2_val
+        if 's_r3' in self.ids: self.ids.s_r3.value = self.r3_val
+        
+        # Trigger text updates
+        self.on_slider_change(1, self.r1_val)
+        self.on_slider_change(2, self.r2_val)
+        self.on_slider_change(3, self.r3_val)
+
+    def on_slider_change(self, relay_num, value):
+        """Snap-to-zero logic: < 500 becomes 0 (Disabled)."""
+        snapped_val = value
+        
+        # Snap Logic for Backend/Text (Visual slider keeps moving smoothly)
+        if value < 500:
+            snapped_val = 0
+        else:
+            # Round to nearest 50
+            snapped_val = round(value / 50.0) * 50.0
+            
+        # Update Property & Text
+        txt = f"{int(snapped_val)} W" if snapped_val > 0 else "DISABLED"
+        
+        if relay_num == 1:
+            self.r1_val = snapped_val
+            self.r1_text = txt
+        elif relay_num == 2:
+            self.r2_val = snapped_val
+            self.r2_text = txt
+        elif relay_num == 3:
+            self.r3_val = snapped_val
+            self.r3_text = txt
+
+    def save_changes(self):
+        app = App.get_running_app()
+        sm = app.settings_manager
+        
+        sm.set("heater_config", "relay1_watts", int(self.r1_val))
+        sm.set("heater_config", "relay2_watts", int(self.r2_val))
+        sm.set("heater_config", "relay3_watts", int(self.r3_val))
+        
+        print("[HeaterSettings] Configuration Saved.")
+        
+        # Force System Refresh (Rebuild Power Maps)
+        app.refresh_all_screens()
+
+    def restore_defaults(self):
+        self.r1_val = 1000
+        self.r2_val = 800
+        self.r3_val = 1000
+        
+        # Update sliders visually
+        if 's_r1' in self.ids: self.ids.s_r1.value = 1000
+        if 's_r2' in self.ids: self.ids.s_r2.value = 800
+        if 's_r3' in self.ids: self.ids.s_r3.value = 1000
+        
+        print("[HeaterSettings] UI Reset (Unsaved). Press Save to Apply.")
+
+class AboutScreen(Screen):
+    pass
 
 class HardwareSettingsScreen(Screen):
     """
@@ -1873,7 +1936,7 @@ class HardwareSettingsScreen(Screen):
     # Properties bound to UI widgets
     boil_temp = NumericProperty(212)
     system_volume = NumericProperty(80)
-    alert_repeat_freq = NumericProperty(15)  # <--- NEW PROPERTY
+    alert_repeat_freq = NumericProperty(15)
     
     # Selection lists for Spinners
     sensor_list = ListProperty(["unassigned"])
@@ -1955,12 +2018,16 @@ class HardwareSettingsScreen(Screen):
         # Sound File
         sm.set_system_setting("alert_sound_file", self.ids.spinner_sound.text)
         
-        # Alert Frequency
+        # Alert Frequency (UNCOMMENTED SO IT SAVES)
         sm.set_system_setting("alert_repeat_freq", int(self.alert_repeat_freq))
         
         print("[HardwareSettings] Saved.")
-        self.go_back()
 
+    def restore_defaults(self):
+        # Reloads from disk (cancels pending edits)
+        self.on_pre_enter()
+        print("[Hardware] Reloaded current settings.")
+    
     # --- RESTORED METHODS BELOW ---
 
     def test_audio(self):
@@ -2000,10 +2067,6 @@ class HardwareSettingsScreen(Screen):
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as e:
             print(f"Vol Error: {e}")
-
-    def go_back(self):
-        self.manager.transition.direction = 'right'
-        self.manager.current = 'sys_settings'
         
 class AppSettingsScreen(Screen):
     """
@@ -2049,29 +2112,26 @@ class AppSettingsScreen(Screen):
     def save_changes(self):
         sm = self.app.settings_manager
         
-        # 1. Update Global Prop
         is_now_metric = (self.units_text == "Metric (°C / L)")
         self.app.is_metric = is_now_metric
         
-        # 2. Save Units
         val_unit = "metric" if is_now_metric else "imperial"
         sm.set_system_setting("units", val_unit)
-        
-        # 3. Save Booleans
         sm.set_system_setting("auto_start_enabled", self.auto_start)
+        # RESTORED SAVE LINE:
         sm.set_system_setting("auto_resume_enabled", self.auto_resume)
+        
         sm.set_system_setting("force_numlock", self.force_numlock)
         sm.set_system_setting("enable_csv_logging", self.csv_logging)
         
-        # 4. Manage Auto-Start
         self._manage_autostart_file(self.auto_start)
         
         print("[AppSettings] Saved.")
-        
-        # 5. TRIGGER REFRESH
         self.app.refresh_all_screens()
         
-        self.go_back()
+    def restore_defaults(self):
+        self.on_pre_enter()
+        print("[Apps] Reloaded current settings.")     
 
     def _manage_autostart_file(self, enable):
         """Creates or removes the LXDE autostart entry."""
@@ -2116,10 +2176,6 @@ Categories=Utility;
                     os.remove(file_path)
                 except Exception as e: 
                     print(f"[Settings] Error removing autostart: {e}")
-
-    def go_back(self):
-        self.manager.transition.direction = 'right'
-        self.manager.current = 'sys_settings'
 
 class CalibrationSettingsScreen(Screen):
     """
@@ -2215,7 +2271,7 @@ class CalibrationSettingsScreen(Screen):
 
         self.calc_result_text = "--"
         self.new_calculated_factor = None
-        self.ids.btn_update.disabled = True
+        # REMOVED: Legacy button disabling (Handled by global footer now)
 
     def calculate_efficiency(self):
         try:
@@ -2249,7 +2305,7 @@ class CalibrationSettingsScreen(Screen):
                 unit = "F/min"
                 
             self.calc_result_text = f"{disp_val:.2f} {unit}"
-            self.ids.btn_update.disabled = False
+            # REMOVED: Legacy button enabling
             
         except Exception as e:
             print(f"[Calibration] Math Error: {e}")
@@ -2263,17 +2319,13 @@ class CalibrationSettingsScreen(Screen):
             # Refresh display
             self.current_factor_text = f"{self.new_calculated_factor:.2f} °F/min (Ref: 8 Gal)"
             self.calc_result_text = "Saved!"
-            self.ids.btn_update.disabled = True
+            # REMOVED: Legacy button disabling
 
     def restore_defaults(self):
         sm = self.app.settings_manager
         sm.set_system_setting("heater_ref_rate_fpm", 1.2)
         self.on_pre_enter()
         print("[Calibration] Restored defaults.")
-
-    def go_back(self):
-        self.manager.transition.direction = 'right'
-        self.manager.current = 'sys_settings'
 
 
 class UpdatesSettingsScreen(Screen):
@@ -2374,9 +2426,9 @@ class UpdatesSettingsScreen(Screen):
             self.install_enabled = enable_install
         Clock.schedule_once(_reset)
 
-    def go_back(self):
-        self.manager.transition.direction = 'right'
-        self.manager.current = 'sys_settings'    
+    # ~ def go_back(self):
+        # ~ self.manager.transition.direction = 'right'
+        # ~ self.manager.current = 'sys_settings'    
         
     def restart_app(self):
         """
@@ -2422,7 +2474,7 @@ class UpdatesSettingsScreen(Screen):
 class KettleApp(App):
     
     fonts_loaded = BooleanProperty(False)
-    is_metric = BooleanProperty(False) # <--- NEW GLOBAL PROPERTY
+    is_metric = BooleanProperty(False) 
     
     def build(self):
         self.title = "KettleBrain"
@@ -2432,11 +2484,9 @@ class KettleApp(App):
         
         self.settings_manager = SettingsManager(root_dir)
         
-        # --- NEW: Initialize Metric State ---
-        # Default is Imperial (False)
+        # Initialize Metric State
         sys_units = self.settings_manager.get_system_setting("units", "imperial")
         self.is_metric = (sys_units == "metric")
-        # ------------------------------------
         
         self.hw = HardwareInterface(self.settings_manager)
         
@@ -2460,31 +2510,52 @@ class KettleApp(App):
         # ADDED: Water Screen
         self.water_screen = WaterScreen(name='water_calc')
         
-        # NEW SETTINGS SCREENS
-        self.sys_settings_screen = SystemSettingsScreen(name='sys_settings')
-        self.hw_settings_screen = HardwareSettingsScreen(name='settings_hw')
-        self.app_settings_screen = AppSettingsScreen(name='settings_app')
-        self.cal_settings_screen = CalibrationSettingsScreen(name='settings_cal')
-        self.updates_screen = UpdatesSettingsScreen(name='settings_updates')
-        
-        # Add widgets to ScreenManager         
+        # NEW SETTINGS MASTER
+        self.settings_master = SettingsMasterScreen(name='sys_settings')        
+
+        # --- FIX 2: REMOVED ORPHAN INSTANTIATION ---
+        # We do NOT create self.hw_settings_screen here anymore because 
+        # they are created automatically inside SettingsMasterScreen (via KV).
+        # Keeping them here would create duplicate "ghost" screens.
+
+        # Add widgets to ScreenManager
         sm.add_widget(self.main_screen)
         sm.add_widget(self.profiles_screen)
         sm.add_widget(self.editor_screen)
         sm.add_widget(self.step_editor_screen)
         sm.add_widget(self.alerts_screen)
-        sm.add_widget(self.water_screen) # <--- ADDED WIDGET
-        sm.add_widget(self.cal_settings_screen)
-        sm.add_widget(self.updates_screen)
+        sm.add_widget(self.water_screen)
         
-        # Add the new settings screens
-        sm.add_widget(self.sys_settings_screen)
-        sm.add_widget(self.hw_settings_screen)
-        sm.add_widget(self.app_settings_screen)
+        # Add the NEW Master
+        sm.add_widget(self.settings_master)        
                 
         Clock.schedule_interval(self.update_ui, 0.1)
         return sm
     
+    # Add this method to KettleApp class
+    def build_power_map(self):
+        """
+        Generates a list of wattage options: 
+        [0] + [500, 600, ... MaxSystemWatts] in 100W steps.
+        """
+        cfg = self.settings_manager.get_section("heater_config")
+        w1 = int(cfg.get("relay1_watts", 1000))
+        w2 = int(cfg.get("relay2_watts", 800))
+        w3 = int(cfg.get("relay3_watts", 1000))
+        
+        total_max = w1 + w2 + w3
+        p_map = [0]
+        
+        if total_max >= 500:
+            # Range from 500 to Total in 100W increments
+            for w in range(500, total_max + 101, 100):
+                if w > total_max: w = total_max
+                if w not in p_map:
+                    p_map.append(w)
+                    
+        return sorted(p_map)
+        
+    # Update update_ui method in KettleApp class
     def update_ui(self, dt):
         """
         Main UI Loop (10Hz).
@@ -2501,16 +2572,9 @@ class KettleApp(App):
         screen.is_profile_loaded = (seq.current_profile is not None)
 
         # --- NEW: kWh Calculation & Display ---
-        # 1. Get raw watt-seconds
         ws = getattr(seq, 'total_watt_seconds', 0.0)
-        
-        # 2. Convert to kWh (1 kWh = 3,600,000 Joules/Watt-seconds)
         kwh = ws / 3600000.0
-        
-        # 3. Calculate Cost
         cost = kwh * screen.cost_per_kwh
-        
-        # 4. Update String
         screen.kwh_display_text = f"kWh: {kwh:.3f} $ {cost:.2f}"
         
         # --- UNIT CONVERSION PREP ---
@@ -2524,11 +2588,11 @@ class KettleApp(App):
         if tgt_check_f:
             diff = safe_temp_f - tgt_check_f
             if abs(diff) < 1.0: 
-                screen.temp_color = [0.2, 0.8, 0.2, 1] # Green (Good)
+                screen.temp_color = [0.2, 0.8, 0.2, 1] 
             elif diff < 0: 
-                screen.temp_color = [0.2, 0.4, 0.8, 1] # Blue (Heating)
+                screen.temp_color = [0.2, 0.4, 0.8, 1] 
             else: 
-                screen.temp_color = [0.8, 0.2, 0.2, 1] # Red (Hot)
+                screen.temp_color = [0.8, 0.2, 0.2, 1] 
         else:
             screen.temp_color = [0.2, 0.8, 0.2, 1] 
             
@@ -2551,7 +2615,6 @@ class KettleApp(App):
         raw_target_f = 0.0
         is_boil_type = False
 
-        # Determine Target based on State
         if status == SequenceStatus.MANUAL:
             if getattr(seq, 'is_manual_running', False):
                 raw_target_f = seq.target_temp
@@ -2561,7 +2624,6 @@ class KettleApp(App):
         elif status == SequenceStatus.DELAYED_WAIT:
              raw_target_f = self.to_backend_units(screen.delay_temp, 'temp')
 
-        # AUTO MODE: Check Step
         elif seq.current_profile and seq.current_step_index >= 0 and seq.current_step_index < len(seq.current_profile.steps):
             step = seq.current_profile.steps[seq.current_step_index]
             if step.step_type == StepType.BOIL:
@@ -2569,7 +2631,6 @@ class KettleApp(App):
             else:
                 raw_target_f = float(step.setpoint_f) if step.setpoint_f is not None else 0.0
         
-        # Display Logic (Strict Inequality)
         is_high_temp = (raw_target_f >= sys_boil_f)
         
         if is_boil_type:
@@ -2594,27 +2655,26 @@ class KettleApp(App):
         if is_manual_active or is_auto_active:
             if int(now * 2) % 2 == 0: screen.heartbeat_color = [0, 1, 0, 1] 
             else: screen.heartbeat_color = [0, 0.3, 0, 1]
-            
         elif status == SequenceStatus.PAUSED:
             if int(now * 2) % 2 == 0: screen.heartbeat_color = [0.2, 0.4, 0.8, 1] 
             else: screen.heartbeat_color = [0.1, 0.2, 0.4, 1] 
-            
         elif status == SequenceStatus.DELAYED_WAIT:
             if int(now) % 2 == 0: screen.heartbeat_color = [0.2, 0.6, 0.8, 1]
             else: screen.heartbeat_color = [0.1, 0.3, 0.4, 1]
-            
         else:
             screen.heartbeat_color = [0.2, 0.2, 0.2, 1]
             
-        # --- 4. HEATER INDICATORS ---
+        # --- 4. HEATER INDICATORS (UPDATED 3-RELAY: Heater3) ---
         relay_obj = getattr(seq, 'relay', getattr(seq, 'relays', None))
         if relay_obj and hasattr(relay_obj, 'relay_states'):
             states = relay_obj.relay_states
             screen.heater_1_active = states.get("Heater1", False)
             screen.heater_2_active = states.get("Heater2", False)
+            screen.heater_3_active = states.get("Heater3", False)
         else:
             screen.heater_1_active = False
             screen.heater_2_active = False
+            screen.heater_3_active = False
 
         # --- 5. STATUS TEXT & PREDICTION ---
         sys_msg = seq.get_status_message()
@@ -2733,15 +2793,22 @@ class KettleApp(App):
         if self.water_screen:
             self.water_screen.convert_values(self.is_metric)
             
-        # 3. Hardware Settings (Re-run pre-enter)
-        if self.hw_settings_screen:
-            self.hw_settings_screen.on_pre_enter()
+        # --- FIX 3: TARGET THE MASTER SCREEN CHILDREN ---
+        # We access the IDs defined in kettle.kv (view_hw, view_cal, view_app)
+        
+        # 3. Hardware Settings
+        if self.settings_master and 'view_hw' in self.settings_master.ids:
+            self.settings_master.ids.view_hw.on_pre_enter()
             
-        # 4. Calibration Settings (Re-run pre-enter)
-        if self.cal_settings_screen:
-            self.cal_settings_screen.on_pre_enter()
+        # 4. Calibration Settings
+        if self.settings_master and 'view_cal' in self.settings_master.ids:
+            self.settings_master.ids.view_cal.on_pre_enter()
             
-        # 5. Profile Editor (Refresh List)
+        # 5. App Settings
+        if self.settings_master and 'view_app' in self.settings_master.ids:
+            self.settings_master.ids.view_app.on_pre_enter()
+            
+        # 6. Profile Editor
         if self.editor_screen:
             self.editor_screen.refresh_steps()
     

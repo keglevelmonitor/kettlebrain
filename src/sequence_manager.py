@@ -615,79 +615,58 @@ class SequenceManager:
     def _process_manual_logic(self):
         """
         Handles Heating logic for Manual Mode.
+        Updated to ensure the user-selected power is fully applied.
         """
-        # 1. READ SENSORS
         if self.current_temp is None:
-             if hasattr(self, 'relay'): self.relay.stop_all()
-             elif hasattr(self, 'relays'): self.relays.stop_all()
+             self.relay.stop_all()
              return
              
         current_temp = self.current_temp 
         now = time.monotonic()
         
-        # 2. TIMER LOGIC (Only runs if "Running")
+        # 1. TIMER LOGIC
         if self.is_manual_running:
-            # Calculate time passed since last tick
             if not hasattr(self, 'last_tick_time'): self.last_tick_time = now
             delta = now - self.last_tick_time
             self.last_tick_time = now
             
-            # Retrieve System Boil Temp for Latch Logic
             sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
-            
-            # Determine effective trigger threshold (Clamp to Boil Temp)
-            # If target (212) > Boil (205), we trigger at 205
             trigger_threshold = min(self.manual_target_temp, sys_boil)
 
-            # A. Wait for Temp (Latch)
             if not self.temp_reached:
-                # Use the clamped threshold - 0.5 buffer
                 if current_temp >= (trigger_threshold - 0.5):
                     self.temp_reached = True
-                    # Timer technically starts NOW
                     self.log_message(f"Target Reached ({current_temp:.1f}F). Timer Started.")
-            # B. Countdown
             else:
-                # Subtract actual elapsed time from the bucket
                 self.manual_timer_remaining -= delta
-                
-                # C. Auto-Reset on Expiry
                 if self.manual_timer_remaining <= 0:
                     self.manual_timer_remaining = 0
-                    self.log_message("Timer Expired. Resetting Manual Mode.")
-                    self.enter_manual_mode() # Full Reset
+                    self.enter_manual_mode()
                     return 
         else:
-             # Update tick time to avoid huge jumps on resume
              self.last_tick_time = now
 
-        # 3. HEATER CONTROL (Independent of Timer status)
-        # CHANGE: Decoupled from is_manual_running to allow Heat-While-Paused
+        # 2. HEATER CONTROL (FIXED FOR HEATER 3)
         if self.is_heating:
             # Over-temp Safety
-            if current_temp > (self.manual_target_temp + 1.0) or current_temp > 215:
-                 if hasattr(self, 'relay'): self.relay.stop_all()
-                 elif hasattr(self, 'relays'): self.relays.stop_all()
+            if current_temp > (self.manual_target_temp + 2.0) or current_temp > 215:
+                 self.relay.stop_all()
                  return
 
-            # PID Calculation
-            pid_out = self.pid.compute(current_temp, self.manual_target_temp)
-            
-            watts_to_apply = 0
-            if pid_out > 90: watts_to_apply = 1800
-            elif pid_out > 75: watts_to_apply = 1400
-            elif pid_out > 50: watts_to_apply = 1000
-            elif pid_out > 20: watts_to_apply = 800
-            else: watts_to_apply = 0 
-
-            if watts_to_apply > self.manual_power_watts:
+            # Determine Watts to apply
+            # If we are far from target, apply the FULL user-selected wattage (Open Loop)
+            # If we are close, use PID but CAP it at the user-selected wattage
+            if (self.manual_target_temp - current_temp) > 2.0:
                 watts_to_apply = self.manual_power_watts
+            else:
+                pid_out = self.pid.compute(current_temp, self.manual_target_temp)
+                # Map 0-100% PID to 0-Manual Power Limit
+                watts_to_apply = (pid_out / 100.0) * self.manual_power_watts
 
             self._apply_power_logic(watts_to_apply)
             
         else:
-            if hasattr(self, 'relay'): self.relay.stop_all()
-            elif hasattr(self, 'relays'): self.relays.stop_all()
+            self.relay.stop_all()
 
     def toggle_manual_heater(self, enabled):
         """Toggles the heater on/off in manual mode."""
@@ -720,27 +699,34 @@ class SequenceManager:
         pass 
 
     def _control_loop(self):
-        last_delay_calc = 0.0  # Track last recalculation time
+        last_delay_calc = 0.0  
 
         while not self._stop_event.is_set():
             time.sleep(0.1) 
             try:
                 self.current_temp = self.hw.read_temperature()
             except:
-                # FIX: On crash/error, set to None (not 0.0)
                 self.current_temp = None
 
-            # --- NEW: ENERGY INTEGRATION START ---
+            # --- NEW: ENERGY INTEGRATION START (UPDATED FOR 3 RELAYS) ---
             now_mono = time.monotonic()
             dt = now_mono - self.last_integration_time
             self.last_integration_time = now_mono
             
-            # Calculate instantaneous watts based on ACTUAL relay state
+            # Calculate instantaneous watts based on ACTUAL relay state & Config
             current_watts = 0
             if self.relay and hasattr(self.relay, 'relay_states'):
                 states = self.relay.relay_states
-                if states.get("Heater1", False): current_watts += 1000
-                if states.get("Heater2", False): current_watts += 800
+                h_cfg = self.settings.get_section("heater_config")
+                
+                # Fetch live config in case it changed
+                w1 = int(h_cfg.get("relay1_watts", 1000))
+                w2 = int(h_cfg.get("relay2_watts", 800))
+                w3 = int(h_cfg.get("relay3_watts", 1000))
+                
+                if states.get("Heater1", False): current_watts += w1
+                if states.get("Heater2", False): current_watts += w2
+                if states.get("Heater3", False): current_watts += w3
             
             if current_watts > 0 and dt > 0:
                 self.total_watt_seconds += (current_watts * dt)
@@ -752,13 +738,11 @@ class SequenceManager:
                 continue
                 
             # --- HARD STOP OVERRIDE ---
-            # If Emergency Stop is active, forcefully cut power and skip logic
             if getattr(self, 'override_hard_stop', False):
                  self.relay.set_relays(False, False, False)
                  continue
 
             # --- CSV LOGGING ---
-            # now_mono already defined above
             if now_mono - self.last_log_write > 30.0:
                 self._log_csv()
                 self.last_log_write = now_mono
@@ -766,49 +750,31 @@ class SequenceManager:
             # --- ALERT NAG / REPEAT LOGIC ---
             if self.status == SequenceStatus.WAITING_FOR_USER:
                 freq = self.settings.get_system_setting("alert_repeat_freq", 15)
-                # Only repeat if freq > 0 and time has elapsed
                 if freq > 0 and (now_mono - self.last_alert_nag_time > freq):
-                    self._play_alert_sound() # This will update last_alert_nag_time
+                    self._play_alert_sound() 
 
             # --- DELAYED START WAIT ---
             if self.status == SequenceStatus.DELAYED_WAIT:
                 now = time.time()
                 
-                # ADAPTIVE RECALCULATION
                 if now - last_delay_calc > 30.0:
                     last_delay_calc = now
-                    # FIX: Check for correct variables set in start_delayed_mode
                     if hasattr(self, 'delayed_target_temp') and hasattr(self, 'delayed_ready_epoch'):
-                         # FIX: Calculate Ramp needs arguments (Current Temp -> Target Temp)
-                         # We use 1800W (default) for calculation estimation
                          current_t = self.current_temp if self.current_temp else 60.0
                          ramp_min = self.calculate_ramp_minutes(
                              current_t, 
                              self.delayed_target_temp, 
                              getattr(self, 'delayed_vol', 8.0), 
-                             1800
+                             1800 # Estimation wattage
                          )
-                         
-                         # Update Start Epoch based on new ramp
-                         # Start = ReadyTime - RampTime
                          self.delayed_start_epoch = self.delayed_ready_epoch - (ramp_min * 60.0)
-                         
-                         # Update UI String
                          self.delayed_start_time_str = datetime.fromtimestamp(self.delayed_start_epoch).strftime("%H:%M")
-                         
-                         # Update Profile Predictions if applicable
                          self.update_predictions()
 
-                # CHECK FOR START
-                # FIX: Variable name mismatch (delayed_start_trigger_time -> delayed_start_epoch)
                 if hasattr(self, 'delayed_start_epoch'):
                     if now >= self.delayed_start_epoch:
                          print("[SequenceManager] Delayed Start Triggered!")
-                         
-                         # --- NEW: Reset Energy Counter Here ---
                          self.reset_energy_counter()
-                         
-                         # FIX: Context Awareness (Auto vs Manual)
                          if getattr(self, 'delayed_is_auto', True):
                              self.status = SequenceStatus.RUNNING
                              self.start_sequence()
@@ -816,16 +782,10 @@ class SequenceManager:
                              self.start_manual()
             
             # --- MAIN SEQUENCE LOGIC ---
-            # CHANGE: Consolidated RUNNING, PAUSED, and WAITING to maintain Temp Hold
             elif self.status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
                 if self.current_profile:
-                     # Get current step
                      step = self.current_profile.steps[self.current_step_index]
-                     
-                     # ALWAYS Manage Temp (Hold Target)
                      self._manage_temperature(step)
-                     
-                     # ONLY Process Time if RUNNING
                      if self.status == SequenceStatus.RUNNING:
                          self._process_time_logic(step)
             
@@ -834,7 +794,6 @@ class SequenceManager:
                 self._process_manual_logic()
                 
             else:
-                # IDLE, COMPLETED -> Safety Off
                 self.relay.set_relays(False, False, False)
 
     def _process_time_logic(self, step):
@@ -843,8 +802,13 @@ class SequenceManager:
             self.step_elapsed_time = 0
             return 
 
+        # FIX: Self-Correction for the "Step Ends Immediately" bug
+        # If temp is reached but start time is missing, fix it now.
+        if self.step_start_time == 0.0:
+             print("[Sequence] Correction: Temp reached but start time was 0. Setting to now.")
+             self.step_start_time = time.monotonic()
+
         # CHANGE: If waiting for "Step Complete", allow time to freeze (effectively paused).
-        # But for Additions, we proceed to update step_elapsed_time.
         if self.status == SequenceStatus.WAITING_FOR_USER and self.current_alert_text == "Step Complete":
             return
 
@@ -852,7 +816,6 @@ class SequenceManager:
         self.step_elapsed_time = now - self.step_start_time - self.total_paused_time
         
         # CHANGE: If we are already waiting for an Alert, just update the time (above) and exit.
-        # We don't want to re-check triggers or auto-advance while waiting.
         if self.status == SequenceStatus.WAITING_FOR_USER:
             return
 
@@ -878,9 +841,6 @@ class SequenceManager:
                         
                         self._play_alert_sound()
                         self._save_recovery_snapshot()
-                        
-                        # CHANGE: Do NOT set last_pause_start. 
-                        # This ensures the timer keeps running during the wait.
                         return
 
         if self.step_elapsed_time >= duration_sec:
@@ -1066,7 +1026,10 @@ class SequenceManager:
                 # Heater 2 = 800W
                 val_2 = 800  if states.get("Heater2", False) else 0
                 
-                watts = val_1 + val_2
+                # Heater 3 = 1000W
+                val_3 = 1000  if states.get("Heater3", False) else 0
+
+                watts = val_1 + val_2 + val_3
             # --------------------------------
 
             # Determine Timer
@@ -1211,87 +1174,64 @@ class SequenceManager:
             self.relay.set_relays(False, False, False)
             return
 
-        # Retrieve System Boil Temp for Latch AND Control Logic
+        # Retrieve System Boil Temp
         sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
 
-        # 2. Timer Latch Logic (Temp Reached?)
-        # Only check if we haven't reached temp yet
+        # 2. Timer Latch Logic
         if target > 0 and not self.temp_reached:
-            # Clamp trigger check to system boil temp so we don't wait for 213F
             trigger_threshold = min(target, sys_boil)
             
-            # Check if we crossed the threshold
-            if self.current_temp >= trigger_threshold:
-                # --- DEBOUNCE LOGIC (Hold for 5 seconds) ---
+            # FIX: Added -0.5 tolerance. 
+            # If target is 76.0, timer starts once we hold 75.5+ for 5 seconds.
+            if self.current_temp >= (trigger_threshold - 0.5):
                 now = time.monotonic()
                 if self.trigger_start_time == 0.0:
-                    self.trigger_start_time = now  # Start counting
-                
-                # Check if 5 seconds have passed
+                    self.trigger_start_time = now 
                 elif (now - self.trigger_start_time) >= 5.0:
                     self.temp_reached = True
                     self.step_start_time = time.monotonic()
-                    
-                    # --- FIX: Reset Paused Time so Timer starts fresh at 00:00 ---
                     self.total_paused_time = 0.0
+                    self.trigger_start_time = 0.0 
                     
-                    self.trigger_start_time = 0.0 # Reset
-                    
-                    # Alert sound if we started cold
                     start_t = getattr(self, 'initial_step_temp', 0.0)
+                    # Only beep if we actually heated up to get here
                     if start_t < (target - 0.5):
                         self._play_alert_sound()
                     self._save_recovery_snapshot()
             else:
-                # Reset if temp drops below target before confirmed
                 self.trigger_start_time = 0.0
 
         # 3. Heater Power Logic
         watts_to_apply = 0
 
-        # EXCEPTION: BOIL Steps OR High Target are Open Loop (Ignore PID)
-        # Checks if step type is BOIL OR if the numeric target implies boiling
+        # EXCEPTION: BOIL Steps OR High Target are Open Loop
         if step.step_type == StepType.BOIL or target >= sys_boil:
-            # Force "In Demand" at the configured wattage without regard to PID
+            # Force "In Demand" at the configured wattage
             watts_to_apply = step.power_watts if step.power_watts is not None else 1800
             self.is_heating = True
             
         # STANDARD: PID Control
         elif target > 0:
-            # Execute PID
             pid_out = self.pid.compute(self.current_temp, target)
             self.is_heating = (pid_out > 0)
             
-            # Map PID % to Discrete Power Levels
-            if pid_out <= 0:
-                watts_to_apply = 0
-            elif pid_out < 20:
-                watts_to_apply = 0
-            elif pid_out < 50:
-                watts_to_apply = 800
-            elif pid_out < 75:
-                watts_to_apply = 1000
-            elif pid_out < 90:
-                watts_to_apply = 1400
-            else:
-                watts_to_apply = 1800
-                
-            # Limit by Step Setting
+            # Map PID (0-100) to Linear Wattage (0-Limit)
             step_limit = step.power_watts if step.power_watts is not None else 1800
-            if watts_to_apply > step_limit:
-                watts_to_apply = step_limit
+            
+            # Linear mapping
+            watts_to_apply = (pid_out / 100.0) * step_limit
+            
+            # Clamp to limit
+            if watts_to_apply > step_limit: watts_to_apply = step_limit
                 
         else:
-            # Target 0 -> Off
             watts_to_apply = 0
             self.is_heating = False
-            # If target is 0, we are "reached" immediately
+            # If target is 0, we treat it as reached immediately
             if not self.temp_reached:
                 self.temp_reached = True
                 self.step_start_time = time.monotonic()
-                # --- FIX: Ensure clean start for 0-target steps as well ---
                 self.total_paused_time = 0.0
-                
                 self._save_recovery_snapshot()
 
         # 4. Apply Power
@@ -1300,30 +1240,173 @@ class SequenceManager:
         else:
             self.relay.set_relays(False, False, False)
             
-        # Store for logging
         self.last_applied_power = watts_to_apply
+    
+    # def _manage_temperature(self, step):
+        # # 1. Use the Target determined in _init_step
+        # target = self.target_temp
 
-    def _apply_power_logic(self, watts):
-        h1 = False 
-        h2 = False 
+        # # Safety Clamp
+        # if target > 215: target = 215
+        
+        # # Safety Protocol
+        # if self.current_temp is None:
+            # self.relay.set_relays(False, False, False)
+            # return
 
-        if watts >= 1800:
-            h1 = True; h2 = True
-        elif watts == 1400:
-            h1 = True
-            cycle_time = time.monotonic() % 30
-            if cycle_time < 15: h2 = True
-            else: h2 = False
-        elif watts == 1000:
-            h1 = True; h2 = False
-        elif watts == 800:
-            h1 = False; h2 = True
-        else:
-            # SAFETY UPDATE: Catch-all defaults to OFF (0W)
-            h1 = False; h2 = False
+        # # Retrieve System Boil Temp
+        # sys_boil = self.settings.get_system_setting("boil_temp_f", 212.0)
 
-        self.relay.set_relays(h1, h2, False)
+        # # 2. Timer Latch Logic
+        # if target > 0 and not self.temp_reached:
+            # trigger_threshold = min(target, sys_boil)
+            # if self.current_temp >= trigger_threshold:
+                # now = time.monotonic()
+                # if self.trigger_start_time == 0.0:
+                    # self.trigger_start_time = now 
+                # elif (now - self.trigger_start_time) >= 5.0:
+                    # self.temp_reached = True
+                    # self.step_start_time = time.monotonic()
+                    # self.total_paused_time = 0.0
+                    # self.trigger_start_time = 0.0 
+                    # start_t = getattr(self, 'initial_step_temp', 0.0)
+                    # if start_t < (target - 0.5):
+                        # self._play_alert_sound()
+                    # self._save_recovery_snapshot()
+            # else:
+                # self.trigger_start_time = 0.0
 
+        # # 3. Heater Power Logic
+        # watts_to_apply = 0
+
+        # # EXCEPTION: BOIL Steps OR High Target are Open Loop
+        # if step.step_type == StepType.BOIL or target >= sys_boil:
+            # # Force "In Demand" at the configured wattage
+            # watts_to_apply = step.power_watts if step.power_watts is not None else 1800
+            # self.is_heating = True
+            
+        # # STANDARD: PID Control
+        # elif target > 0:
+            # pid_out = self.pid.compute(self.current_temp, target)
+            # self.is_heating = (pid_out > 0)
+            
+            # # Map PID (0-100) to Linear Wattage (0-Limit)
+            # step_limit = step.power_watts if step.power_watts is not None else 1800
+            
+            # # Linear mapping
+            # watts_to_apply = (pid_out / 100.0) * step_limit
+            
+            # # Clamp to limit
+            # if watts_to_apply > step_limit: watts_to_apply = step_limit
+                
+        # else:
+            # watts_to_apply = 0
+            # self.is_heating = False
+            # if not self.temp_reached:
+                # self.temp_reached = True
+                # self.step_start_time = time.monotonic()
+                # self.total_paused_time = 0.0
+                # self._save_recovery_snapshot()
+
+        # # 4. Apply Power
+        # if watts_to_apply > 0:
+            # self._apply_power_logic(watts_to_apply)
+        # else:
+            # self.relay.set_relays(False, False, False)
+            
+        # self.last_applied_power = watts_to_apply
+
+    def _apply_power_logic(self, target_watts):
+        """
+        DYNAMIC 3-RELAY ALLOCATOR with 60s Duty Cycle
+        Allocates relays (100% or PWM) to match target_watts.
+        """
+        import time
+        
+        # 1. Retrieve Configured Watts [cite: 35]
+        h_cfg = self.settings.get_section("heater_config")
+        r1_cap = int(h_cfg.get("relay1_watts", 1000))
+        r2_cap = int(h_cfg.get("relay2_watts", 800))
+        r3_cap = int(h_cfg.get("relay3_watts", 1000))
+
+        # Use the specific IDs registered in RelayControl 
+        relays = [
+            {'id': 'Heater1', 'cap': r1_cap},
+            {'id': 'Heater2', 'cap': r2_cap},
+            {'id': 'Heater3', 'cap': r3_cap}
+        ]
+
+        # 2. COMBINATORIAL SEARCH
+        best_combo = []
+        best_sum = 0
+        
+        # Check every possible combination (0-7) to find the highest sum <= target
+        for i in range(8):
+            current_combo = []
+            current_sum = 0
+            
+            if (i & 1): # Heater 1
+                current_sum += relays[0]['cap']
+                current_combo.append(0)
+            if (i & 2): # Heater 2
+                current_sum += relays[1]['cap']
+                current_combo.append(1)
+            if (i & 4): # Heater 3
+                current_sum += relays[2]['cap']
+                current_combo.append(2)
+                
+            if current_sum <= target_watts:
+                if current_sum > best_sum:
+                    best_sum = current_sum
+                    best_combo = current_combo
+
+        # 3. Calculate Remainder for PWM
+        remainder = target_watts - best_sum
+        pwm_relay_idx = -1
+        duty_cycle = 0.0
+
+        # 4. PWM ALLOCATION (The Fix)
+        # We look for a relay NOT in best_combo that has a capacity > 0
+        if remainder > 0:
+            for i in range(3):
+                if i not in best_combo and relays[i]['cap'] > 0:
+                    duty_cycle = remainder / float(relays[i]['cap'])
+                    # Clamp duty cycle to 100%
+                    if duty_cycle > 1.0: duty_cycle = 1.0
+                    pwm_relay_idx = i
+                    break
+        
+        # 5. Duty Cycle Timing
+        cycle_duration = 30.0
+        now = time.monotonic()
+        cycle_pos = now % cycle_duration
+        threshold = duty_cycle * cycle_duration
+        is_pwm_on = (cycle_pos < threshold)
+                
+        # 6. Determine Final States 
+        final_states = {
+            'Heater1': False,
+            'Heater2': False,
+            'Heater3': False
+        }
+
+        # Set Always-On Relays
+        for idx in best_combo:
+            r_id = relays[idx]['id']
+            final_states[r_id] = True
+            
+        # Set PWM Relay State
+        if pwm_relay_idx != -1:
+            r_id = relays[pwm_relay_idx]['id']
+            if is_pwm_on:
+                final_states[r_id] = True
+        
+        # 7. Apply to Hardware 
+        self.relay.set_relays(
+            final_states['Heater1'], 
+            final_states['Heater2'], 
+            final_states['Heater3']
+        )
 
     def get_display_timer(self):
         # 1. Manual Mode

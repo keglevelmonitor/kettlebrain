@@ -11,18 +11,21 @@ class RelayControl:
         """
         self.settings = settings_manager
         
-        # PIN CONFIGURATION
+        # --- HARDCODED PIN MAP (Source of Truth) ---
+        # R1=26, R2=20, R3=21
         self.RELAY_MAP = {
             "Heater1": 26,
             "Heater2": 20,
-            "Aux":     21
+            "Heater3": 21  # <--- CHANGED KEY FROM 'Aux' TO 'Heater3'
         }
+        
+        print(f"[RelayControl] Mapping: {self.RELAY_MAP}")
 
         # Initialize Internal State Tracking
         self.relay_states = {
             "Heater1": False,
             "Heater2": False,
-            "Aux":     False
+            "Heater3": False 
         }
 
         # GPIO Setup
@@ -30,14 +33,11 @@ class RelayControl:
             GPIO.setmode(GPIO.BCM)
             GPIO.setwarnings(False)
 
-            # Detect logic immediately to ensure safe startup state
             active_high = False
             if self.settings:
                 active_high = self.settings.get_system_setting("relay_active_high", False)
 
-            # Set initial state to OFF
-            # If Active High: OFF = LOW
-            # If Active Low:  OFF = HIGH
+            # OFF State
             initial_output = GPIO.LOW if active_high else GPIO.HIGH
 
             for name, pin in self.RELAY_MAP.items():
@@ -52,12 +52,10 @@ class RelayControl:
 
     def set_relay(self, relay_name, state):
         """
-        Control a SINGLE relay independently.
-        :param relay_name: "Heater1", "Heater2", or "Aux"
-        :param state: True (ON) or False (OFF)
+        Sets a specific relay to True (ON) or False (OFF).
         """
         if relay_name not in self.RELAY_MAP:
-            print(f"[RelayControl] Error: Unknown relay name '{relay_name}'")
+            print(f"[RelayControl] Unknown Relay '{relay_name}'")
             return
 
         # 1. Update our internal memory
@@ -69,11 +67,10 @@ class RelayControl:
             active_high = self.settings.get_system_setting("relay_active_high", False)
 
         # 3. Determine Physical Signal
-        # If Active High: ON=High, OFF=Low
-        # If Active Low:  ON=Low,  OFF=High
         if active_high:
             gpio_state = GPIO.HIGH if state else GPIO.LOW
         else:
+            # Active Low: True(ON) -> LOW signal
             gpio_state = GPIO.LOW if state else GPIO.HIGH
         
         # 4. Update Hardware
@@ -81,14 +78,14 @@ class RelayControl:
         try:
             GPIO.output(pin, gpio_state)
         except Exception as e:
-            print(f"[RelayControl] Hardware Error setting {relay_name}: {e}")
+            print(f"[RelayControl] Hardware Error setting {relay_name} (Pin {pin}): {e}")
 
-    def set_relays(self, h1_state, h2_state, aux_state):
+    def set_relays(self, h1_state, h2_state, h3_state):
         """Batch method: Set ALL relays at once."""
         self.set_relay("Heater1", h1_state)
         self.set_relay("Heater2", h2_state)
-        self.set_relay("Aux", aux_state)
-
+        self.set_relay("Heater3", h3_state)
+        
     def stop_all(self):
         """Helper to safely shut everything down"""
         self.set_relays(False, False, False)
@@ -98,10 +95,9 @@ class RelayControl:
         self.stop_all()
 
     def cleanup_gpio(self):
-        """Release GPIO pins on shutdown"""
-        print("[RelayControl] Cleaning up GPIO...")
-        self.stop_all()
+        """Release GPIO resources on exit."""
         try:
             GPIO.cleanup()
+            print("[RelayControl] GPIO Cleaned up.")
         except:
             pass

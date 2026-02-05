@@ -17,9 +17,10 @@ DEFAULT_SETTINGS = {
     "system_settings": {
         "units": "imperial",
         "temp_sensor_id": "unassigned",
-        "heater_gpio": 17,
+        "heater1_gpio": 26,     # Relay 1 (Hardcoded to 26 in RelayControl for now)
+        "heater2_gpio": 20,     # Relay 2
+        "heater3_gpio": 21,     # Relay 3 (Renamed from aux_gpio)
         "pump_gpio": 27,
-        "aux_gpio": 22,
         "buzzer_gpio": 13,
         "sensor_type": "DS18B20",
         "screen_timeout": 300,
@@ -36,7 +37,13 @@ DEFAULT_SETTINGS = {
         "heater_ref_rate_fpm": 1.3,
         "last_profile_id": None,
         "alert_repeat_freq": 15,
-        "cost_per_kwh": 0.120  # <--- NEW DEFAULT
+        "cost_per_kwh": 0.120
+    },
+    # --- HEATER CONFIG ---
+    "heater_config": {
+        "relay1_watts": 1000,
+        "relay2_watts": 800,
+        "relay3_watts": 1000
     },
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
@@ -45,10 +52,9 @@ DEFAULT_SETTINGS = {
         "last_volume_gal": 6.0,
         "heater_enabled": False
     },
-    # --- COMBINED WATER DEFAULTS (The "House Defaults") ---
     "water_defaults": {
         "mash_method": "No Sparge (BIAB)",
-        "tun_capacity": 10.0,  # <--- NEW DEFAULT
+        "tun_capacity": 10.0,
         "grain_wt": 10.0,
         "grain_temp": 65.0,
         "mash_temp": 152.0,
@@ -66,10 +72,7 @@ DEFAULT_SETTINGS = {
         "tgt_so4": 75,
         "tgt_cl": 63
     },
-    # --- MANUAL SESSION ---
     "manual_water_session": {}, 
-    
-    # --- PID SETTINGS ---
     "pid_settings": {
         "kp": 50.0,
         "ki": 0.02,
