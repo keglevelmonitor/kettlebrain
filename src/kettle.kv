@@ -52,11 +52,10 @@
     bold: True
 
 <Slider>:
-    cursor_size: (40, 40)
-    # KEEPING SQUARES AS REQUESTED
+    cursor_size: dp(30), dp(30)
     background_width: '6dp'
     padding: 20
-    
+        
 <ScrollView>:
     bar_width: '30dp'
     scroll_type: ['bars', 'content']
@@ -582,71 +581,133 @@
             Screen:
                 name: 'page_manual'
                 BoxLayout:
-                    spacing: 5
-                    Card:
-                        BoxLayout:
-                            orientation: 'vertical'
-                            Label:
-                                # CHANGED: Uses property to allow "(BOIL)" text
-                                text: root.manual_target_display
-                                size_hint_y: 0.4
-                                color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
-                            Slider:
-                                id: temp_slider
-                                disabled: root.controls_disabled
-                                min: 70
-                                max: 212
-                                value: root.slider_temp_val
-                                on_value: root.on_slider_drag('temp', self.value)
-                                on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('temp', self.value)
-                        BoxLayout:
-                            orientation: 'vertical'
-                            Label:
-                                # FIX: Use dynamic property
-                                text: root.manual_vol_display
-                                size_hint_y: 0.4
-                                color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
-                            Slider:
-                                id: vol_slider
-                                disabled: root.controls_disabled
-                                min: 2.0
-                                max: 9.0
-                                step: 0.25
-                                value: root.slider_vol_val
-                                on_value: root.on_slider_drag('vol', self.value)
-                                on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('vol', self.value)
-                    Card:
-                        BoxLayout:
-                            orientation: 'vertical'
-                            Label:
-                                text: "Timer: " + str(int(time_slider.value)) + " min"
-                                size_hint_y: 0.4
-                                color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
-                            Slider:
-                                id: time_slider
-                                disabled: root.controls_disabled
-                                min: 0
-                                max: 120
-                                step: 1
-                                value: root.slider_time_val
-                                on_value: root.on_slider_drag('time', self.value)
-                                on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('time', self.value)
-                        BoxLayout:
-                            orientation: 'vertical'
-                            Label:
-                                text: "Power: " + root.display_power_watts + " W"
-                                size_hint_y: 0.4
-                                color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
-                            Slider:
-                                id: pwr_slider
-                                disabled: root.controls_disabled
-                                min: 0
-                                max: 4
-                                step: 1
-                                value: root.slider_power_val
-                                on_value: root.on_slider_drag('power', self.value)
-                                # UPDATED: Captures release even if cursor drifted outside
-                                on_touch_up: if args[1].grab_current == self or self.collide_point(*args[1].pos): root.on_slider_release('power', self.value)
+                    orientation: 'vertical'
+                    padding: [30, 10, 30, 10] # Side padding to center controls visually
+                    spacing: 10
+                    
+                    # 1. TARGET TEMP
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: root.manual_target_display
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
+                        Slider:
+                            id: temp_slider
+                            disabled: root.controls_disabled
+                            min: 70
+                            max: 212
+                            value: root.slider_temp_val
+                            on_value: root.on_slider_drag('temp', self.value)
+                            on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('temp', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+                    # 2. TIMER
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: "Timer: " + str(int(time_slider.value)) + " min"
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (0.2, 0.6, 1, 1)
+                        Slider:
+                            id: time_slider
+                            disabled: root.controls_disabled
+                            min: 0
+                            max: 120
+                            step: 1
+                            value: root.slider_time_val
+                            on_value: root.on_slider_drag('time', self.value)
+                            on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('time', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+                    # 3. VOLUME
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: root.manual_vol_display
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (0.2, 0.6, 0.8, 1)
+                        Slider:
+                            id: vol_slider
+                            disabled: root.controls_disabled
+                            min: 2.0
+                            max: 9.0
+                            step: 0.25
+                            value: root.slider_vol_val
+                            on_value: root.on_slider_drag('vol', self.value)
+                            on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('vol', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+                    # 4. RAMP POWER
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: "Ramp: " + root.display_ramp_watts + " W"
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 0.6, 0.2, 1)
+                        Slider:
+                            id: ramp_slider
+                            disabled: root.controls_disabled
+                            min: 0
+                            max: 4
+                            step: 1
+                            value: root.slider_ramp_power_val
+                            on_value: root.on_slider_drag('ramp_power', self.value)
+                            on_touch_up: if args[1].grab_current == self or self.collide_point(*args[1].pos): root.on_slider_release('ramp_power', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+                    # 5. HOLD POWER
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: "Hold: " + root.display_hold_watts + " W"
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (0.2, 0.8, 0.2, 1)
+                        Slider:
+                            id: hold_slider
+                            disabled: root.controls_disabled
+                            min: 0
+                            max: 4
+                            step: 1
+                            value: root.slider_hold_power_val
+                            on_value: root.on_slider_drag('hold_power', self.value)
+                            on_touch_up: if args[1].grab_current == self or self.collide_point(*args[1].pos): root.on_slider_release('hold_power', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
 
             # SCREEN: AUTO STEPS LIST
             Screen:
@@ -729,7 +790,7 @@
         ScreenManager:
             id: bottom_nav
             size_hint_y: None
-            height: '80dp'
+            height: '50dp' # <--- CHANGED FROM 80dp TO 60dp
             transition: kivy.uix.screenmanager.SlideTransition(direction='up')
             Screen:
                 name: 'nav_standard'
@@ -739,18 +800,12 @@
                     # 1. MANUAL
                     Button:
                         text: "MANUAL"
-                        # LOGIC:
-                        # 1. If Delay Active AND Manual Page -> DARK BLUE (Waiting Context)
-                        # 2. If Delay Active AND NOT Manual Page -> DARK GRAY (Inactive)
-                        # 3. If Normal AND Manual Page -> GREEN (Running Context)
-                        # 4. Else -> DARK GRAY
                         background_color: (0.1, 0.2, 0.4, 1) if (root.is_delay_active and root.ids.center_content.current == 'page_manual') else ((0.3, 0.3, 0.3, 1) if root.is_delay_active else ((0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_manual' else (0.3, 0.3, 0.3, 1)))
                         on_release: root.switch_to_manual()
 
                     # 2. AUTO
                     Button:
                         text: "AUTO"
-                        # SAME LOGIC for Auto Page
                         background_color: (0.1, 0.2, 0.4, 1) if (root.is_delay_active and root.ids.center_content.current == 'page_auto') else ((0.3, 0.3, 0.3, 1) if root.is_delay_active else ((0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_auto' else (0.3, 0.3, 0.3, 1)))
                         on_release: root.switch_to_auto()
                         
@@ -771,19 +826,12 @@
                     # --- WATER BUTTON ---
                     Button:
                         text: "WATER"
-                        # Logic:
-                        # 1. Manual Mode (Idle or Active) -> Blue
-                        # 2. Auto/Profile Mode (Profile Loaded) -> Blue (via is_profile_loaded)
-                        # 3. Auto Mode (No Profile) -> Gray & Disabled
-                        
-                        # FIX: Use the Kivy Property 'is_profile_loaded' instead of app.sequencer
                         disabled: not (root.ids.center_content.current == 'page_manual' or root.is_profile_loaded)
-                        
                         background_color: (0.2, 0.6, 1, 1) if not self.disabled else (0.2, 0.2, 0.2, 1)
                         color: (1, 1, 1, 1) if not self.disabled else (0.5, 0.5, 0.5, 1)
                         on_release: root.open_water_calculator()
                     # ------------------------                     
-                        
+                         
                     Button:
                         text: "SETTINGS"
                         background_color: 0.3, 0.3, 0.3, 1
@@ -830,8 +878,6 @@
                             pos: self.pos
                             size: self.size
                     
-                    # Text removed as requested. Buttons now fill the space.
-
                     Button:
                         text: root.mode_reset_btn_text
                         background_color: 0.8, 0.2, 0.2, 1 # Red
@@ -840,7 +886,7 @@
                         text: "CANCEL"
                         background_color: 0.5, 0.5, 0.5, 1 # Grey
                         on_release: root.cancel_mode_switch()
-                        
+                         
             Screen:
                 name: 'nav_temp_warning'
                 BoxLayout:
@@ -899,7 +945,8 @@
         # --- UPDATED FOOTER ---
         BoxLayout:
             orientation: 'horizontal'
-            size_hint_y: 0.15
+            size_hint_y: None
+            height: '50dp'     # <--- ADDED fixed height
             spacing: 20
             
             Button:
@@ -1022,7 +1069,7 @@
         # --- 3. FOOTER BUTTONS ---
         BoxLayout:
             size_hint_y: None
-            height: '60dp'
+            height: '50dp'
             spacing: 10
             padding: [0, 5, 0, 0]
 
@@ -1758,9 +1805,10 @@
         # Footer Actions
         BoxLayout:
             size_hint_y: None
-            height: '60dp'
-            spacing: 40
-            
+            height: '50dp'          # <--- Standardized Height
+            spacing: 20             # <--- Reduced from 40 to match other screens
+            padding: [0, 10, 0, 0]  # <--- Added to align vertical position with Step Editor
+
             # DYNAMIC CANCEL BUTTON
             Button:
                 text: "DISCARD CHANGES" if root.is_dirty else "CANCEL"
@@ -1848,21 +1896,14 @@
             BoxLayout:
                 size_hint_y: 1
                 Label: 
-                    # UPDATED: Uses python property for "(BOIL)" logic
                     text: root.step_target_display
                     size_hint_x: 0.25
                     color: (0.5, 0.5, 0.5, 1) if root.is_temp_locked else (1,1,1,1)
                 Slider:
                     id: s_temp
-                    # Remove hardcoded min/max/step - Python controls this now
-                    
-                    # FIX 1: Direct Binding (No more +69/-69 math)
                     value: root.step_temp
                     on_value: if not self.disabled: root.step_temp = self.value
-                    
                     disabled: root.is_temp_locked
-                    
-                    # FIX 2: Add padding to prevent the dot from covering the "Target" label
                     padding: dp(25) 
                     cursor_size: dp(30), dp(30)
             
@@ -1880,50 +1921,61 @@
                     step: 1
                     value: root.step_dur
                     on_value: root.step_dur = self.value
+                    cursor_size: dp(30), dp(30)
 
             # 3. VOLUME
             BoxLayout:
                 size_hint_y: 1
                 Label: 
-                    # FIX: Use dynamic property
                     text: root.step_vol_display
                     size_hint_x: 0.25
                     color: 0.2, 0.6, 0.8, 1
                 Slider:
                     id: s_vol
-                    # Remove hardcoded min/max/step - Python controls this now
-                    
-                    # FIX: Direct Binding
                     value: root.step_vol
                     on_value: root.step_vol = self.value
-                    
                     padding: dp(25)
                     cursor_size: dp(30), dp(30)
 
-            # 4. POWER
+            # 4. RAMP POWER
             BoxLayout:
                 size_hint_y: 1
                 Label: 
-                    # UPDATED: "Power" label
-                    text: f"Power: {root.display_power}"
+                    text: f"Ramp: {root.display_ramp_power}"
                     size_hint_x: 0.25
                     color: 1, 0.6, 0.2, 1
                 Slider:
-                    id: s_pwr
+                    id: s_ramp
                     min: 0
-                    max: 4  # <--- CHANGED FROM 3 TO 4
+                    max: 4
                     step: 1
-                    value: root.step_power_idx
-                    on_value: root.step_power_idx = self.value
+                    value: root.step_ramp_power_idx
+                    on_value: root.step_ramp_power_idx = self.value
+                    cursor_size: dp(30), dp(30)
+
+            # 5. HOLD POWER
+            BoxLayout:
+                size_hint_y: 1
+                Label: 
+                    text: f"Hold: {root.display_hold_power}"
+                    size_hint_x: 0.25
+                    color: 0.2, 0.8, 0.2, 1
+                Slider:
+                    id: s_hold
+                    min: 0
+                    max: 4
+                    step: 1
+                    value: root.step_hold_power_idx
+                    on_value: root.step_hold_power_idx = self.value
+                    cursor_size: dp(30), dp(30)
 
         # --- FOOTER ACTIONS ---
         BoxLayout:
             size_hint_y: None
-            height: '60dp'
+            height: '50dp'
             spacing: 20
             padding: [0, 10, 0, 0]
             
-            # DYNAMIC LEFT BUTTON
             Button:
                 text: "DISCARD CHANGES" if root.is_dirty else "CANCEL"
                 background_color: (0.8, 0.2, 0.2, 1) if root.is_dirty else (0.5, 0.5, 0.5, 1)
@@ -1934,7 +1986,6 @@
                 background_color: 0.2, 0.4, 0.6, 1
                 on_release: root.open_alerts_screen()
                 
-            # DYNAMIC RIGHT BUTTON
             Button:
                 text: "APPLY CHANGES" if root.is_dirty else "APPLY"
                 background_color: (0.2, 0.8, 0.2, 1) if root.is_dirty else (0.3, 0.6, 0.3, 1)
@@ -2036,7 +2087,7 @@
         # --- FOOTER ---
         BoxLayout:
             size_hint_y: None
-            height: '60dp'
+            height: '50dp'
             spacing: 20
             
             # Left Button: DISCARD / CANCEL
@@ -2713,7 +2764,7 @@
         # --- FOOTER ---
         BoxLayout:
             size_hint_y: None
-            height: '60dp'
+            height: '50dp'
             orientation: 'horizontal'
             spacing: 10
             

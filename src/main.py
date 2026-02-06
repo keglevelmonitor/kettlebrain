@@ -234,11 +234,14 @@ class StepEditorScreen(Screen):
     step_vol = NumericProperty(0.0)
     step_vol_display = StringProperty("Volume: --")
     
-    # Power (Discrete Map)
-    # UPDATED: Default index 4 (1800W) and added 0 to map
-    step_power_idx = NumericProperty(4)
+    # --- NEW: DUAL POWER PROPERTIES ---
+    step_ramp_power_idx = NumericProperty(4)
+    step_hold_power_idx = NumericProperty(4)
+    
     watts_map = ListProperty([0, 800, 1000, 1400, 1800])
-    display_power = StringProperty("1800W")
+    
+    display_ramp_power = StringProperty("1800W")
+    display_hold_power = StringProperty("1800W")
     
     # Label Display Property
     step_target_display = StringProperty("Target: 150 F") 
@@ -251,10 +254,16 @@ class StepEditorScreen(Screen):
     is_dirty = BooleanProperty(False)
     original_state = {}
 
-    def on_step_power_idx(self, instance, value):
+    def on_step_ramp_power_idx(self, instance, value):
         idx = int(value)
         if 0 <= idx < len(self.watts_map):
-            self.display_power = f"{self.watts_map[idx]}W"
+            self.display_ramp_power = f"{self.watts_map[idx]}W"
+        self._check_dirty()
+
+    def on_step_hold_power_idx(self, instance, value):
+        idx = int(value)
+        if 0 <= idx < len(self.watts_map):
+            self.display_hold_power = f"{self.watts_map[idx]}W"
         self._check_dirty()
 
     def on_step_temp(self, instance, value):
@@ -266,8 +275,6 @@ class StepEditorScreen(Screen):
     
     def on_step_vol(self, instance, value):
         self._check_dirty()
-
-        # FIX: Update label dynamically
         app = App.get_running_app()
         if not app: return
         u_vol = "L" if app.is_metric else "Gal"
@@ -279,8 +286,6 @@ class StepEditorScreen(Screen):
     def on_selected_advance(self, instance, value): self._check_dirty()
     def on_current_additions(self, instance, value): self._check_dirty()
 
-    # In src/main.py inside class StepEditorScreen(Screen):
-
     def _update_target_display(self):
         """Formats the label to show (BOIL) or --."""
         app = App.get_running_app()
@@ -290,8 +295,6 @@ class StepEditorScreen(Screen):
         val = float(self.step_temp)
         
         # --- NULL CHECK (Step 1) ---
-        # If value is at (or below) the "Null" threshold
-        # Imperial: < 70 (i.e. 69), Metric: < 20 (i.e. 19)
         threshold = 20 if app.is_metric else 70
         
         if val < threshold: 
@@ -299,14 +302,11 @@ class StepEditorScreen(Screen):
             return
             
         # --- UNIT CONVERSION LOGIC ---
-        # 1. Convert User Value (C) back to F to compare against System Boil (stored in F)
         val_f = app.to_backend_units(val, 'temp')
         sys_boil_f = app.settings_manager.get_system_setting("boil_temp_f", 212.0)
         
         unit = "C" if app.is_metric else "F"
         
-        # Compare F to F
-        # [cite_start]UPDATED: Removed 1.0 buffer to match strict Manual Mode logic [cite: 1]
         if val_f >= sys_boil_f:
             self.step_target_display = f"Target: {int(val)} {unit} (BOIL)"
         else:
@@ -318,13 +318,14 @@ class StepEditorScreen(Screen):
         
         # REFRESH POWER MAP
         self.watts_map = app.build_power_map()
-        self.ids.s_pwr.max = len(self.watts_map) - 1
+        
+        # --- FIX: Update DUAL sliders, removing reference to s_pwr ---
+        self.ids.s_ramp.max = len(self.watts_map) - 1
+        self.ids.s_hold.max = len(self.watts_map) - 1
 
         # 1. PREVENT OVERWRITE ON LOAD
         if self.step_obj_ref and hasattr(self.step_obj_ref, 'step_type'):
             if value == self.step_obj_ref.step_type.value:
-                if value == "Boil": 
-                    pass
                 return
 
         # 2. DEFINE DEFAULTS (Imperial Units)
@@ -424,10 +425,13 @@ class StepEditorScreen(Screen):
             self.step_vol = app.to_user_units(data["vol"], 'vol')
             
             w = data["watts"]
+            idx = 0
             if w in self.watts_map:
-                self.step_power_idx = self.watts_map.index(w)
-            else:
-                self.step_power_idx = 0 
+                idx = self.watts_map.index(w)
+            
+            # --- FIX: Apply to BOTH Ramp and Hold ---
+            self.step_ramp_power_idx = idx
+            self.step_hold_power_idx = idx
                 
             self.selected_advance = data["adv"]
             
@@ -439,7 +443,6 @@ class StepEditorScreen(Screen):
 
     def _get_current_state(self):
         """Returns a snapshot dictionary of the current UI values."""
-        # Normalize additions for accurate comparison
         adds = [{'name': x['name'], 'time': float(x['time'])} for x in self.current_additions]
         adds.sort(key=lambda x: (x['time'], x['name']))
         
@@ -450,7 +453,9 @@ class StepEditorScreen(Screen):
             'temp': float(self.step_temp),
             'dur': float(self.step_dur),
             'vol': float(self.step_vol),
-            'power': int(self.step_power_idx),
+            # --- FIX: Track Dual Power State ---
+            'ramp': int(self.step_ramp_power_idx),
+            'hold': int(self.step_hold_power_idx),
             'additions': adds
         }
 
@@ -470,7 +475,10 @@ class StepEditorScreen(Screen):
         
         # REFRESH MAP
         self.watts_map = app.build_power_map()
-        self.ids.s_pwr.max = len(self.watts_map) - 1
+        
+        # --- FIX: Update DUAL sliders, removing reference to s_pwr ---
+        self.ids.s_ramp.max = len(self.watts_map) - 1
+        self.ids.s_hold.max = len(self.watts_map) - 1
 
         try: self.selected_type = step_obj.step_type.value
         except: self.selected_type = "Step"
@@ -489,13 +497,20 @@ class StepEditorScreen(Screen):
         self.is_temp_locked = False
         self.step_dur = float(step_obj.duration_min or 0.0)
         
-        # Map Saved Watts to Index
-        w = getattr(step_obj, 'power_watts', 1800)
-        if w in self.watts_map:
-            self.step_power_idx = self.watts_map.index(w)
+        # --- FIX: Load Dual Power (Polyfill from Legacy) ---
+        legacy = getattr(step_obj, 'power_watts', 1800)
+        r_watts = step_obj.ramp_power_watts if step_obj.ramp_power_watts is not None else legacy
+        h_watts = step_obj.hold_power_watts if step_obj.hold_power_watts is not None else legacy
+
+        if r_watts in self.watts_map:
+            self.step_ramp_power_idx = self.watts_map.index(r_watts)
         else:
-            # Fallback to max if saved value invalid
-            self.step_power_idx = len(self.watts_map) - 1 
+            self.step_ramp_power_idx = len(self.watts_map) - 1 
+
+        if h_watts in self.watts_map:
+            self.step_hold_power_idx = self.watts_map.index(h_watts)
+        else:
+            self.step_hold_power_idx = len(self.watts_map) - 1 
 
         temp_list = []
         if hasattr(step_obj, 'additions'):
@@ -523,8 +538,6 @@ class StepEditorScreen(Screen):
         if self.step_obj_ref:
             self.step_obj_ref.name = self.step_name
             
-            # --- UNIT CONVERSION START ---
-            # Threshold check: < 70 (Imp) or < 20 (Met) means OFF (0.0)
             threshold = 20 if app.is_metric else 70
             
             if self.step_temp < threshold:
@@ -535,11 +548,6 @@ class StepEditorScreen(Screen):
             
             val_gal = app.to_backend_units(self.step_vol, 'vol')
             self.step_obj_ref.lauter_volume = val_gal 
-            # -----------------------------
-            
-            # FIX: Force duration to Integer to prevent Timer vs List mismatch
-            # Sliders can return 1.233 min, which shows as "1 min" in list but "01:14" on timer.
-            # Rounding ensures 1.8 becomes 2.0, and 1.2 becomes 1.0.
             self.step_obj_ref.duration_min = float(round(self.step_dur))
             
             try: self.step_obj_ref.step_type = StepType(self.selected_type)
@@ -547,9 +555,14 @@ class StepEditorScreen(Screen):
             try: self.step_obj_ref.timeout_behavior = TimeoutBehavior(self.selected_advance)
             except: pass
 
-            idx = int(self.step_power_idx)
-            if 0 <= idx < len(self.watts_map):
-                self.step_obj_ref.power_watts = self.watts_map[idx]
+            # --- FIX: Save Dual Power ---
+            r_idx = int(self.step_ramp_power_idx)
+            if 0 <= r_idx < len(self.watts_map):
+                self.step_obj_ref.ramp_power_watts = self.watts_map[r_idx]
+
+            h_idx = int(self.step_hold_power_idx)
+            if 0 <= h_idx < len(self.watts_map):
+                self.step_obj_ref.hold_power_watts = self.watts_map[h_idx]
             
             new_list = []
             for item in self.current_additions:
@@ -562,7 +575,6 @@ class StepEditorScreen(Screen):
 
     def cancel(self):
         """Exits without saving (Discard Changes)."""
-        # Since we haven't touched step_obj_ref yet, simply leaving discards the changes.
         App.get_running_app().root.current = 'editor'
 
 
@@ -890,6 +902,12 @@ class MainScreen(Screen):
     # State tracking
     is_profile_loaded = BooleanProperty(False)
     
+    # --- NEW DUAL POWER PROPERTIES (Add these to the top of MainScreen) ---
+    slider_ramp_power_val = NumericProperty(0)
+    slider_hold_power_val = NumericProperty(0)
+    display_ramp_watts = StringProperty("1800")
+    display_hold_watts = StringProperty("1800")
+    
     def __init__(self, **kwargs):
         super(MainScreen, self).__init__(**kwargs)
         self.app = App.get_running_app()
@@ -1026,58 +1044,61 @@ class MainScreen(Screen):
     def _load_manual_settings(self):
         sm = self.app.settings_manager
         
-        # REFRESH MAP ON LOAD (In case settings changed)
+        # REFRESH MAP ON LOAD
         self.watts_map = self.app.build_power_map()
         
-        # Load Imperial Defaults
+        # 1. Load Defaults
         last_temp = sm.get("manual_mode_settings", "last_setpoint_f", 150.0)
         last_vol = sm.get("manual_mode_settings", "last_volume_gal", 6.0)
-        
-        # FIX: Force an update of the text labels on load
-        self.on_slider_drag('temp', self.slider_temp_val)
-        self.on_slider_drag('vol', self.slider_vol_val)
-    
-        # Time/Power don't need unit conversion
         last_timer = sm.get("manual_mode_settings", "last_timer_min", 60.0)
-        last_watts = sm.get("manual_mode_settings", "last_power_watts", 1800)
+        
+        # 2. Load Dual Power
+        last_ramp = sm.get("manual_mode_settings", "last_ramp_watts", 1800)
+        last_hold = sm.get("manual_mode_settings", "last_hold_watts", 1800)
 
-        # Configure Sliders (Sets min/max/step/value)
+        # 3. Configure Temp/Vol Sliders
         self.app.configure_slider(self.ids.temp_slider, last_temp, 'temp')
         self.app.configure_slider(self.ids.vol_slider, last_vol, 'vol')
-        
         self.slider_time_val = last_timer
         
-        # --- DYNAMIC POWER SLIDER CONFIG ---
-        self.ids.pwr_slider.min = 0
-        self.ids.pwr_slider.max = len(self.watts_map) - 1
-        self.ids.pwr_slider.step = 1
+        # Force Text Update
+        self.on_slider_drag('temp', self.ids.temp_slider.value)
+        self.on_slider_drag('vol', self.ids.vol_slider.value)
         
-        if last_watts in self.watts_map:
-            self.slider_power_val = self.watts_map.index(last_watts)
+        # 4. Configure Power Sliders
+        # Ramp
+        self.ids.ramp_slider.min = 0
+        self.ids.ramp_slider.max = len(self.watts_map) - 1
+        self.ids.ramp_slider.step = 1
+        if last_ramp in self.watts_map:
+            self.slider_ramp_power_val = self.watts_map.index(last_ramp)
         else:
-            # Fallback if saved watt value is no longer valid
-            self.slider_power_val = len(self.watts_map) - 1 # Default to Max
+            self.slider_ramp_power_val = len(self.watts_map) - 1
             
-        self.display_power_watts = str(self.watts_map[int(self.slider_power_val)])
+        # Hold
+        self.ids.hold_slider.min = 0
+        self.ids.hold_slider.max = len(self.watts_map) - 1
+        self.ids.hold_slider.step = 1
+        if last_hold in self.watts_map:
+            self.slider_hold_power_val = self.watts_map.index(last_hold)
+        else:
+            self.slider_hold_power_val = len(self.watts_map) - 1
+            
+        # Update Display Text
+        self.display_ramp_watts = str(self.watts_map[int(self.slider_ramp_power_val)])
+        self.display_hold_watts = str(self.watts_map[int(self.slider_hold_power_val)])
+        
         self._update_prediction()
 
     def on_slider_drag(self, slider_type, value):
-        """
-        Called by UI sliders to update local state and text displays.
-        Does NOT update the backend SequenceManager until 'Start' is pressed.
-        """
         sm = self.app.settings_manager
         is_metric = self.app.is_metric
         
         if slider_type == 'temp':
             self.slider_temp_val = value
-            
-            # --- UPDATE TARGET DISPLAY TEXT ---
             sys_boil = float(sm.get_system_setting("boil_temp_f", 212.0))
-            # Convert User Value to Backend F for comparison
             val_f = self.app.to_backend_units(value, 'temp')
             
-            # Null Check
             threshold = 20 if is_metric else 70
             if value < threshold:
                  self.manual_target_display = "Target: --"
@@ -1086,44 +1107,44 @@ class MainScreen(Screen):
             else:
                  unit = "C" if is_metric else "F"
                  self.manual_target_display = f"Target: {value:.1f} °{unit}"
-            # ----------------------------------
             self._update_prediction()
 
         elif slider_type == 'time':
             self.slider_time_val = value
-            # Note: We don't save to settings on every drag event, only final release or start
             
-        elif slider_type == 'power':
-            # Value is an INDEX into the watts_map
-            idx = int(value)
-            if idx < 0: idx = 0
-            if idx >= len(self.watts_map): idx = len(self.watts_map) - 1
-            
-            self.slider_power_val = idx
-            real_watts = self.watts_map[idx]
-            self.display_power_watts = str(real_watts)
-            self._update_prediction()
-
         elif slider_type == 'vol':
             self.slider_vol_val = value
-            
-            # UPDATE VOL DISPLAY TEXT
             if is_metric:
                 self.manual_vol_display = f"Volume: {value:.1f} L"
             else:
                 self.manual_vol_display = f"Volume: {value:.1f} gal"
             self._update_prediction()
 
+        # --- NEW: Dual Power Handling ---
+        elif slider_type == 'ramp_power':
+            idx = int(value)
+            if idx < 0: idx = 0
+            if idx >= len(self.watts_map): idx = len(self.watts_map) - 1
+            self.slider_ramp_power_val = idx
+            self.display_ramp_watts = str(self.watts_map[idx])
+            self._update_prediction() # Prediction relies on Ramp watts
+
+        elif slider_type == 'hold_power':
+            idx = int(value)
+            if idx < 0: idx = 0
+            if idx >= len(self.watts_map): idx = len(self.watts_map) - 1
+            self.slider_hold_power_val = idx
+            self.display_hold_watts = str(self.watts_map[idx])
+
     def on_slider_release(self, slider_type, value):
         self.on_slider_drag(slider_type, value) 
         seq = self.app.sequencer
         sm = self.app.settings_manager
         
-        # Convert User Input -> Backend Units
         if slider_type == 'temp':
             threshold = 20 if self.app.is_metric else 70
             if float(value) < threshold:
-                seq.set_manual_target(0.0) # Send OFF
+                seq.set_manual_target(0.0)
             else:
                 val_f = self.app.to_backend_units(float(value), 'temp')
                 sm.set("manual_mode_settings", "last_setpoint_f", val_f)
@@ -1138,12 +1159,19 @@ class MainScreen(Screen):
             sm.set("manual_mode_settings", "last_timer_min", float(value))
             seq.set_manual_timer_duration(float(value))
             
-        elif slider_type == 'power':
+        elif slider_type == 'ramp_power':
             idx = int(value)
             if 0 <= idx < len(self.watts_map):
                 real_watts = self.watts_map[idx]
-                sm.set("manual_mode_settings", "last_power_watts", real_watts)
-                seq.set_manual_power(real_watts)
+                sm.set("manual_mode_settings", "last_ramp_watts", real_watts)
+                seq.set_manual_ramp_power(real_watts)
+                
+        elif slider_type == 'hold_power':
+            idx = int(value)
+            if 0 <= idx < len(self.watts_map):
+                real_watts = self.watts_map[idx]
+                sm.set("manual_mode_settings", "last_hold_watts", real_watts)
+                seq.set_manual_hold_power(real_watts)
                 
         self._update_prediction()
 
@@ -1350,10 +1378,17 @@ class MainScreen(Screen):
         current_screen = self.ids.center_content.current
 
         if current_screen == 'page_manual' or status == SequenceStatus.MANUAL:
-            # Sync Visuals to Backend before Action
-            p_idx = int(self.slider_power_val)
-            if 0 <= p_idx < len(self.watts_map):
-                seq.set_manual_power(self.watts_map[p_idx])
+            # 1. Sync Ramp Power
+            r_idx = int(self.slider_ramp_power_val)
+            if 0 <= r_idx < len(self.watts_map):
+                seq.set_manual_ramp_power(self.watts_map[r_idx])
+
+            # 2. Sync Hold Power
+            h_idx = int(self.slider_hold_power_val)
+            if 0 <= h_idx < len(self.watts_map):
+                seq.set_manual_hold_power(self.watts_map[h_idx])
+
+            # 3. Sync Other Settings
             val_f = self.app.to_backend_units(self.slider_temp_val, 'temp')
             seq.set_manual_target(val_f)
             seq.set_manual_timer_duration(self.slider_time_val)

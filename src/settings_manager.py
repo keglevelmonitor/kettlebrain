@@ -48,7 +48,8 @@ DEFAULT_SETTINGS = {
     "manual_mode_settings": {
         "last_setpoint_f": 150.0,
         "last_timer_min": 60.0,
-        "last_power_watts": 1800,
+        "last_ramp_watts": 1800, # <--- NEW
+        "last_hold_watts": 1800, # <--- NEW
         "last_volume_gal": 6.0,
         "heater_enabled": False
     },
@@ -114,7 +115,7 @@ class SettingsManager:
         profile = BrewProfile(id=p_id, name="Default Profile")
         
         # Add basic default water data
-        profile.water_data = copy.deepcopy(DEFAULT_SETTINGS["no_sparge_settings"])
+        profile.water_data = copy.deepcopy(DEFAULT_SETTINGS["water_defaults"])
 
         # --- STEP 1: Heat to Strike ---
         s1 = BrewStep(
@@ -123,7 +124,8 @@ class SettingsManager:
             step_type=StepType.STEP, 
             setpoint_f=156.0,
             duration_min=0.0,
-            power_watts=1800,
+            ramp_power_watts=1800, # <--- NEW
+            hold_power_watts=1800, # <--- NEW
             lauter_volume=7.5,
             timeout_behavior=TimeoutBehavior.AUTO_ADVANCE,
             note="Heat to dough-in, reserve water, dough-in."
@@ -140,7 +142,8 @@ class SettingsManager:
             step_type=StepType.MASH, 
             setpoint_f=152.0, 
             duration_min=60.0,
-            power_watts=1800,
+            ramp_power_watts=1800, # <--- NEW
+            hold_power_watts=1800, # <--- NEW
             lauter_volume=6.5,
             timeout_behavior=TimeoutBehavior.AUTO_ADVANCE,
             note="Mash and take SG reading"
@@ -155,7 +158,8 @@ class SettingsManager:
             step_type=StepType.MASH_OUT, 
             setpoint_f=170.0, 
             duration_min=10.0,
-            power_watts=1800,
+            ramp_power_watts=1800, # <--- NEW
+            hold_power_watts=1800, # <--- NEW
             timeout_behavior=TimeoutBehavior.AUTO_ADVANCE,
             note="Mash-out, turn off pump, lift basket, lauter"
         )
@@ -171,7 +175,8 @@ class SettingsManager:
             step_type=StepType.BOIL, 
             setpoint_f=212.0, 
             duration_min=60.0,
-            power_watts=1800,
+            ramp_power_watts=1800, # <--- NEW
+            hold_power_watts=1800, # <--- NEW
             lauter_volume=6.5,
             timeout_behavior=TimeoutBehavior.AUTO_ADVANCE,
             note="Boil and follow hops schedule"
@@ -189,7 +194,8 @@ class SettingsManager:
             step_type=StepType.CHILL, 
             setpoint_f=70.0, 
             duration_min=15.0,
-            power_watts=1800,
+            ramp_power_watts=1800, # <--- NEW
+            hold_power_watts=1800, # <--- NEW
             lauter_volume=5.5,
             timeout_behavior=TimeoutBehavior.END_PROGRAM,
             note=""
@@ -366,6 +372,14 @@ class SettingsManager:
                         except ValueError:
                             t_behavior = TimeoutBehavior.MANUAL_ADVANCE
 
+                        # --- BACKWARD COMPATIBILITY LOGIC ---
+                        legacy_power = s_data.get("power_watts")
+                        ramp_p = s_data.get("ramp_power_watts")
+                        hold_p = s_data.get("hold_power_watts")
+                        
+                        if ramp_p is None: ramp_p = legacy_power
+                        if hold_p is None: hold_p = legacy_power
+
                         step = BrewStep(
                             id=s_data.get("id"),
                             name=s_data.get("name", "Step"),
@@ -374,7 +388,8 @@ class SettingsManager:
                             setpoint_f=s_data.get("setpoint_f"),
                             duration_min=s_data.get("duration_min", 0.0),
                             target_completion_time=s_data.get("target_completion_time"),
-                            power_watts=s_data.get("power_watts"),
+                            ramp_power_watts=ramp_p, # <--- NEW
+                            hold_power_watts=hold_p, # <--- NEW
                             timeout_behavior=t_behavior,
                             sg_reading=s_data.get("sg_reading"),
                             sg_temp_f=s_data.get("sg_temp_f"),

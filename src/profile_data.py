@@ -47,7 +47,8 @@ class BrewAddition:
 class BrewStep:
     def __init__(self, id=None, name="New Step", step_type=StepType.STEP, note="", 
                  setpoint_f=None, duration_min=0.0, target_completion_time=None,
-                 power_watts=None, timeout_behavior=TimeoutBehavior.MANUAL_ADVANCE, 
+                 ramp_power_watts=None, hold_power_watts=None, # <--- CHANGED
+                 timeout_behavior=TimeoutBehavior.MANUAL_ADVANCE, 
                  sg_reading=None, sg_temp_f=None, sg_temp_correction=False, sg_corrected_value=None,
                  lauter_temp_f=None, lauter_volume=None):
         
@@ -60,7 +61,11 @@ class BrewStep:
         self.setpoint_f = setpoint_f
         self.duration_min = duration_min
         self.target_completion_time = target_completion_time
-        self.power_watts = power_watts
+        
+        # NEW: Dual Power Settings
+        self.ramp_power_watts = ramp_power_watts
+        self.hold_power_watts = hold_power_watts
+        
         self.timeout_behavior = timeout_behavior
         
         # Data Logging
@@ -84,7 +89,10 @@ class BrewStep:
             "setpoint_f": self.setpoint_f,
             "duration_min": self.duration_min,
             "target_completion_time": self.target_completion_time,
-            "power_watts": self.power_watts,
+            # NEW KEYS
+            "ramp_power_watts": self.ramp_power_watts,
+            "hold_power_watts": self.hold_power_watts,
+            
             "timeout_behavior": self.timeout_behavior.value,
             "sg_reading": self.sg_reading,
             "sg_temp_f": self.sg_temp_f,
@@ -125,7 +133,6 @@ class BrewProfile:
             try:
                 # Determine Step Type
                 st_str = s_data.get("step_type", "Step")
-                # Handle potential Enum string mismatch or missing enum
                 try:
                     st_enum = StepType(st_str)
                 except ValueError:
@@ -138,13 +145,24 @@ class BrewProfile:
                 except ValueError:
                     tb_enum = TimeoutBehavior.MANUAL_ADVANCE
                 
+                # --- BACKWARD COMPATIBILITY LOGIC ---
+                # Check for new keys. If missing, look for legacy 'power_watts'.
+                # If legacy exists, apply it to BOTH Ramp and Hold.
+                legacy_power = s_data.get("power_watts")
+                ramp_p = s_data.get("ramp_power_watts")
+                hold_p = s_data.get("hold_power_watts")
+                
+                if ramp_p is None: ramp_p = legacy_power
+                if hold_p is None: hold_p = legacy_power
+
                 step = BrewStep(
                     id=s_data.get("id"),
                     name=s_data.get("name", "New Step"),
                     step_type=st_enum,
                     duration_min=s_data.get("duration_min", 0),
-                    target_temp=s_data.get("target_temp", 0),
-                    target_vol=s_data.get("target_vol", 0),
+                    setpoint_f=s_data.get("setpoint_f", 0), # Corrected key from target_temp to setpoint_f
+                    ramp_power_watts=ramp_p, # <--- NEW
+                    hold_power_watts=hold_p, # <--- NEW
                     timeout_behavior=tb_enum,
                     sg_reading=s_data.get("sg_reading"),
                     sg_temp_f=s_data.get("sg_temp_f"),
@@ -172,9 +190,8 @@ class BrewProfile:
 
         # 2. Rehydrate Water Data (Ensure defaults exist)
         w_data = data.get("water_data", {})
-        # Ensure 'tun_capacity' is preserved if present
         if "tun_capacity" not in w_data:
-            w_data["tun_capacity"] = 10.0 # Default if missing
+            w_data["tun_capacity"] = 10.0 
             
         # 3. Rehydrate Chemistry Data
         c_data = data.get("chemistry_data", {})
