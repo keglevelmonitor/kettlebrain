@@ -1120,20 +1120,21 @@ class SequenceManager:
                 tgt = self.target_temp
             tgt_t = f"{tgt:.0f}"
 
-            # --- FIX: REAL HARDWARE POWER ---
+            # --- FIX: REAL HARDWARE POWER (Dynamic Config) ---
             # Checks the physical state of the relays at this exact moment.
             watts = 0
             if self.relay and hasattr(self.relay, 'relay_states'):
                 states = self.relay.relay_states
                 
-                # Heater 1 = 1000W
-                val_1 = 1000 if states.get("Heater1", False) else 0
+                # Retrieve Dynamic Settings instead of Hardcoded Values
+                h_cfg = self.settings.get_section("heater_config")
+                w1 = int(h_cfg.get("relay1_watts", 1000))
+                w2 = int(h_cfg.get("relay2_watts", 800))
+                w3 = int(h_cfg.get("relay3_watts", 1000))
                 
-                # Heater 2 = 800W
-                val_2 = 800  if states.get("Heater2", False) else 0
-                
-                # Heater 3 = 1000W
-                val_3 = 1000  if states.get("Heater3", False) else 0
+                val_1 = w1 if states.get("Heater1", False) else 0
+                val_2 = w2 if states.get("Heater2", False) else 0
+                val_3 = w3 if states.get("Heater3", False) else 0
 
                 watts = val_1 + val_2 + val_3
             # --------------------------------
@@ -1158,10 +1159,6 @@ class SequenceManager:
 
         except Exception as e:
             print(f"[Sequence] Log Error: {e}")
-            
-    def _get_total_elapsed_seconds(self):
-        if self.global_start_time is None: return 0
-        return time.monotonic() - self.global_start_time - self.global_paused_time
 
     # --- RESTORE LOGIC ---
     def restore_from_recovery(self, state_dict):
