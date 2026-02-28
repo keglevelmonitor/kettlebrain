@@ -1,0 +1,2837 @@
+#:kivy 2.3.0
+
+# --- GLOBAL STYLES ---
+
+# --- SINGLE DEFINITION FOR ALERT ROW ---
+<AlertItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '50dp'
+    padding: 5
+    spacing: 10
+    canvas.before:
+        Color:
+            rgba: 0.25, 0.25, 0.25, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            
+    # Label (Name & Time)
+    Label:
+        text: root.name + " @ " + str(int(root.time)) + "m"
+        font_size: '18sp'
+        halign: 'left'
+        valign: 'middle'
+        text_size: self.size
+        
+    # EDIT Button
+    Button:
+        text: "EDIT"
+        size_hint_x: None
+        width: '60dp'
+        background_color: 0.2, 0.4, 0.8, 1
+        on_release: app.root.get_screen('step_alerts').load_for_edit(root.index)
+
+    # DEL Button
+    Button:
+        text: "DEL"
+        size_hint_x: None
+        width: '60dp'
+        background_color: 0.8, 0.2, 0.2, 1
+        on_release: app.root.get_screen('step_alerts').remove_alert_by_index(root.index)
+                
+<Label>:
+    font_size: '18sp'
+    color: 0.9, 0.9, 0.9, 1
+
+<Button>:
+    font_size: '20sp'
+    background_normal: ''
+    background_color: 0.2, 0.2, 0.2, 1
+    color: 1, 1, 1, 1
+    bold: True
+
+<Slider>:
+    cursor_size: dp(20), dp(20)
+    background_width: '6dp'
+    padding: 20
+    # NEW: Shrinks the vertical touch boundary to prevent fat-finger overlap
+    size_hint_y: 0.2
+    pos_hint: {'center_y': 0.5}
+        
+<ScrollView>:
+    bar_width: '30dp'
+    scroll_type: ['bars', 'content']
+    bar_color: 0.5, 0.5, 0.5, 0.9
+    bar_inactive_color: 0.2, 0.2, 0.2, 0.5
+
+# --- CUSTOM WIDGETS ---
+<Card@BoxLayout>:
+    canvas.before:
+        Color:
+            rgba: 0.15, 0.15, 0.15, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    padding: 10
+    spacing: 5
+    orientation: 'vertical'
+
+<HeroLabel@Label>:
+    font_size: '42sp'
+    bold: True
+    color: 0.2, 0.8, 0.2, 1
+
+# --- STEP LIST ITEM (Auto View) ---
+<StepItem>:
+    # Add these properties for the toggle logic
+    arrow_text: ""
+    arrow_disabled: True
+    internal_index: 0 # Passed from Python
+    
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '50dp'
+    padding: 5
+    spacing: 5
+    canvas.before:
+        Color:
+            rgba: root.bg_color
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    # ARROW BUTTON (Toggle)
+    Button:
+        text: root.arrow_text
+        disabled: root.arrow_disabled
+        size_hint_x: 0.1
+        background_normal: ''
+        background_color: 0, 0, 0, 0
+        color: root.text_color
+        font_size: '24sp'
+        bold: True
+        on_release: app.root.get_screen('main').toggle_step_expansion(root.internal_index)
+
+    # Index (Reduced)
+    Label:
+        text: root.step_index
+        size_hint_x: 0.05
+        font_size: '20sp'
+        bold: True
+        color: root.text_color
+
+    # Name (Reduced)
+    Label:
+        text: root.step_name
+        size_hint_x: 0.25
+        halign: 'left'
+        text_size: self.size
+        font_size: '20sp'
+        valign: 'center'
+        color: root.text_color
+
+    # Volume
+    Label:
+        text: root.step_volume
+        size_hint_x: 0.15
+        color: root.text_color
+
+    # Target
+    Label:
+        text: root.step_target
+        size_hint_x: 0.15
+        color: root.text_color
+
+    # Duration
+    Label:
+        text: root.step_duration
+        size_hint_x: 0.15
+        color: root.text_color
+
+    # Ready At
+    Label:
+        text: root.step_ready
+        size_hint_x: 0.15
+        color: root.text_color
+        bold: True
+        
+<AlertChildItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '40dp' # Slightly smaller than parent
+    padding: [40, 0, 10, 0] # Indent left side to look nested
+    canvas.before:
+        Color:
+            rgba: root.bg_color
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    
+    # Simple icon or bullet
+    Label:
+        text: "↳" 
+        size_hint_x: None
+        width: '30dp'
+        color: root.text_color
+        font_size: '20sp'
+        
+    Label:
+        text: root.alert_name
+        halign: 'left'
+        text_size: self.size
+        valign: 'center'
+        color: root.text_color
+        font_size: '16sp'
+        italic: True
+        
+# --- MAIN SCREEN ---
+<MainScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 5
+        spacing: 5
+        canvas.before:
+            Color:
+                rgba: 0.05, 0.05, 0.05, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # --- HERO ROW (Top 120dp - Sliding Area) ---
+        ScreenManager:
+            id: hero_manager
+            size_hint_y: None
+            height: '120dp'
+            transition: kivy.uix.screenmanager.SlideTransition(direction='left')
+
+            # SCREEN 1: Standard Dashboard (Cards)
+            Screen:
+                name: 'hero_standard'
+                BoxLayout:
+                    spacing: 5
+                    
+                    # CARD 1: Temp & Heaters (UPDATED LAYOUT)
+                    Card:
+                        BoxLayout:
+                            orientation: 'horizontal'
+                            spacing: 10
+                            
+                            # Heaters (Left Column - Compressed)
+                            BoxLayout:
+                                orientation: 'vertical'
+                                size_hint_x: 0.25
+                                spacing: 2
+                                padding: [0, 5, 0, 5]
+                                
+                                # RELAY 1 INDICATOR
+                                Label:
+                                    text: root.heater_1_text
+                                    font_size: '11sp'
+                                    bold: True
+                                    canvas.before:
+                                        Color:
+                                            # Always RED (0.8, 0, 0, 1) when active
+                                            rgba: (0.8, 0, 0, 1) if root.heater_1_active else (0.1, 0.1, 0.1, 1)
+                                        Rectangle:
+                                            pos: self.pos
+                                            size: self.size
+
+                                # RELAY 2 INDICATOR
+                                Label:
+                                    text: root.heater_2_text
+                                    font_size: '11sp'
+                                    bold: True
+                                    canvas.before:
+                                        Color:
+                                            rgba: (0.8, 0, 0, 1) if root.heater_2_active else (0.1, 0.1, 0.1, 1)
+                                        Rectangle:
+                                            pos: self.pos
+                                            size: self.size
+
+                                # RELAY 3 INDICATOR
+                                Label:
+                                    text: root.heater_3_text
+                                    font_size: '11sp'
+                                    bold: True
+                                    canvas.before:
+                                        Color:
+                                            rgba: (0.8, 0, 0, 1) if root.heater_3_active else (0.1, 0.1, 0.1, 1)
+                                        Rectangle:
+                                            pos: self.pos
+                                            size: self.size
+
+                            # Temp & Cost (Right Column)
+                            BoxLayout:
+                                orientation: 'vertical'
+                                size_hint_x: 0.75
+                                
+                                # 1. Current Temp (Top - Largest)
+                                HeroLabel:
+                                    text: root.display_temp
+                                    color: root.temp_color
+                                    size_hint_y: 0.5
+                                    
+                                # 2. Target (Middle)
+                                Label:
+                                    text: "Target: " + root.display_target
+                                    font_size: '16sp'
+                                    color: 0.6, 0.6, 0.6, 1
+                                    size_hint_y: 0.25
+                                    
+                                # 3. kWh / Cost Button (Bottom)
+                                Button:
+                                    text: root.kwh_display_text
+                                    size_hint_y: 0.25
+                                    background_normal: ''
+                                    background_color: 0, 0, 0, 0
+                                    canvas.before:
+                                        Color:
+                                            rgba: 0.2, 0.2, 0.4, 1
+                                        Rectangle:
+                                            pos: self.pos
+                                            size: self.size
+                                    font_size: '14sp'
+                                    bold: True
+                                    color: 0.8, 0.8, 1, 1
+                                    on_release: root.open_cost_setup()
+
+                    # CARD 2: Status & Delay Button
+                    Card:
+                        # 1. PROFILE NAME (Fixed Top Slot)
+                        Label:
+                            text: root.display_profile_name
+                            size_hint_y: 0.25
+                            text_size: self.width, None
+                            halign: 'center'
+                            valign: 'bottom' # Align bottom so it sits just above status
+                            color: 1, 1, 1, 1
+                            font_size: '14sp'
+                            bold: True
+
+                        # 2. STATUS / ALERT (Middle Slot)
+                        Label:
+                            text: root.display_status
+                            # No markup needed unless you want it for other things
+                            # Removed explicit size_hint_y so it fills remaining space automatically
+                            # (The Button is 0.6, Profile is 0.25, this gets the rest)
+                            text_size: self.width, None
+                            halign: 'center'
+                            valign: 'center'
+                            color: 1, 0.8, 0, 1
+                            font_size: '16sp'
+                            line_height: 1.1
+
+                        # 3. BUTTON (Bottom Slot)
+                        Button:
+                            text: root.delay_btn_text
+                            size_hint_y: 0.6
+                            background_color: root.delay_btn_color
+                            on_release: root.open_delay_setup()
+
+                    # CARD 3: Timer & Heartbeat
+                    Card:
+                        # Stack Vertically: (Timer+Heartbeat) on Top, (Est End) on Bottom
+                        BoxLayout:
+                            orientation: 'vertical'
+                            spacing: 0
+                            
+                            # TOP ROW: Timer (Left) + Heartbeat (Right)
+                            BoxLayout:
+                                orientation: 'horizontal'
+                                spacing: 5
+                                
+                                HeroLabel:
+                                    text: root.display_timer
+                                    size_hint_x: 0.75
+                                    halign: 'center'
+                                    valign: 'middle'
+                                
+                                Widget:
+                                    size_hint_x: 0.25
+                                    size_hint_y: 1
+                                    canvas:
+                                        Color:
+                                            rgba: root.heartbeat_color
+                                        Ellipse:
+                                            pos: self.center_x - dp(15), self.center_y - dp(15)
+                                            size: dp(30), dp(30)
+
+                            # BOTTOM ROW: Estimated End Time
+                            Label:
+                                text: root.est_end_display
+                                font_size: '16sp' # Matches "Target" label size in Card 1
+                                color: 0.6, 0.6, 0.6, 1
+                                size_hint_y: 1 # Equal weight to Top Row creates 50/50 split matching Card 1
+                                valign: 'top'
+
+            # SCREEN 2: Delay Setup (Stacked Sliders & Action Stack)
+            Screen:
+                name: 'hero_delay'
+                BoxLayout:
+                    orientation: 'horizontal'
+                    spacing: 5
+                    padding: 5
+                    canvas.before:
+                        Color:
+                            rgba: 0.1, 0.15, 0.2, 1
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+
+                    # --- LEFT COLUMN: SLIDERS (75% Width) ---
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_x: 0.75
+                        spacing: 0
+
+                        # ROW 1: TIME
+                        BoxLayout:
+                            spacing: 10
+                            Slider:
+                                # REDUCED WIDTH (Was 0.8)
+                                size_hint_x: 0.7
+                                min: 0
+                                max: 1435
+                                step: 5
+                                value: root.delay_minutes_total
+                                on_value: root.delay_minutes_total = self.value
+                                cursor_size: dp(30), dp(30)
+                            Label:
+                                # INCREASED WIDTH (Was 0.2)
+                                size_hint_x: 0.3
+                                # MATCHING STYLE
+                                text: "Ready At: " + root.get_delay_time_str(root.delay_minutes_total)
+                                font_size: '18sp'
+                                bold: True
+                                halign: 'left'
+                                valign: 'middle'
+                                text_size: self.size
+
+                        # ROW 2: TEMP
+                        BoxLayout:
+                            spacing: 10
+                            Slider:
+                                id: s_delay_temp  # <--- NEW ID
+                                size_hint_x: 0.7
+                                min: 70
+                                max: 212
+                                step: 1
+                                value: root.delay_temp
+                                on_value: root.delay_temp = self.value
+                                cursor_size: dp(30), dp(30)
+                            Label:
+                                size_hint_x: 0.3
+                                # FIX: Use dynamic property
+                                text: root.delay_target_display
+                                font_size: '18sp'
+                                bold: True
+                                halign: 'left'
+                                valign: 'middle'
+                                text_size: self.size
+
+                       # ROW 3: VOLUME
+                        BoxLayout:
+                            spacing: 10
+                            Slider:
+                                id: s_delay_vol   # <--- NEW ID
+                                size_hint_x: 0.7
+                                min: 2
+                                max: 9
+                                step: 0.25
+                                value: root.delay_vol
+                                on_value: root.delay_vol = self.value
+                                cursor_size: dp(30), dp(30)
+                            Label:
+                                size_hint_x: 0.3
+                                # FIX: Use dynamic property
+                                text: root.delay_vol_display
+                                font_size: '18sp'
+                                bold: True
+                                halign: 'left'
+                                valign: 'middle'
+                                text_size: self.size
+
+                    # --- RIGHT COLUMN: ACTIONS (25% Width) ---
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_x: 0.25
+                        spacing: 5
+                        padding: 5
+                        
+                        # 1. ACTIVATE / UPDATE
+                        Button:
+                            text: "UPDATE" if root.is_delay_active else "ACTIVATE"
+                            font_size: '14sp'
+                            bold: True
+                            background_color: 0.2, 0.8, 0.2, 1
+                            on_release: root.confirm_delay_start()
+                        
+                        # 2. CANCEL (Close Menu)
+                        Button:
+                            text: "CANCEL"
+                            font_size: '14sp'
+                            background_color: 0.5, 0.5, 0.5, 1
+                            on_release: root.close_delay_setup()
+
+                        # 3. DEACTIVATE (Kill Timer)
+                        Button:
+                            text: "DEACTIVATE"
+                            font_size: '14sp'
+                            bold: True
+                            background_color: (0.8, 0.2, 0.2, 1) if root.is_delay_active else (0.2, 0.2, 0.2, 1)
+                            disabled: not root.is_delay_active
+                            on_release: root.deactivate_delay()
+                            
+            # SCREEN 3: Cost Setup (NEW)
+            Screen:
+                name: 'hero_cost'
+                BoxLayout:
+                    orientation: 'horizontal'
+                    spacing: 5
+                    padding: 5
+                    canvas.before:
+                        Color:
+                            rgba: 0.1, 0.15, 0.2, 1
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+
+                    # --- LEFT COLUMN: SETTINGS (75%) ---
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_x: 0.75
+                        spacing: 5
+                        
+                        # Row 1: Header
+                        Label:
+                            text: "Electricity Cost Configuration"
+                            font_size: '16sp'
+                            color: 0.7, 0.7, 1, 1
+                            size_hint_y: 0.3
+                            halign: 'left'
+                            text_size: self.size
+
+                        # Row 2: Slider & Buttons
+                        BoxLayout:
+                            size_hint_y: 0.4
+                            spacing: 10
+                            
+                            Button:
+                                text: "-"
+                                size_hint_x: 0.15
+                                background_color: 0.3, 0.3, 0.3, 1
+                                on_release: root.adjust_cost_slider(-0.001)
+                                
+                            Slider:
+                                id: s_cost
+                                min: 0.0
+                                max: 1.0
+                                step: 0.001
+                                value: root.cost_slider_value
+                                on_value: root.cost_slider_value = self.value
+                                size_hint_x: 0.7
+                                cursor_size: dp(25), dp(25)
+                                
+                            Button:
+                                text: "+"
+                                size_hint_x: 0.15
+                                background_color: 0.3, 0.3, 0.3, 1
+                                on_release: root.adjust_cost_slider(0.001)
+
+                        # Row 3: Value Display & Reset Check
+                        BoxLayout:
+                            size_hint_y: 0.3
+                            spacing: 20
+                            Label:
+                                text: f"${root.cost_slider_value:.3f} / kWh"
+                                font_size: '18sp'
+                                bold: True
+                                size_hint_x: 0.5
+                                
+                            BoxLayout:
+                                size_hint_x: 0.5
+                                Label:
+                                    text: "Reset Now"
+                                    font_size: '14sp'
+                                CheckBox:
+                                    id: chk_reset_cost
+                                    color: 1, 1, 1, 1
+
+                    # --- RIGHT COLUMN: ACTIONS (25%) ---
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_x: 0.25
+                        spacing: 5
+                        padding: 5
+                        
+                        Button:
+                            text: "SAVE"
+                            background_color: 0.2, 0.8, 0.2, 1
+                            on_release: root.save_cost_setup()
+                            
+                        Button:
+                            text: "CANCEL"
+                            background_color: 0.5, 0.5, 0.5, 1
+                            on_release: root.cancel_cost_setup()
+
+        # --- MIDDLE CONTENT ---
+        ScreenManager:
+            id: center_content
+            size_hint_y: 1
+            
+            # SCREEN: MANUAL CONTROL
+            Screen:
+                name: 'page_manual'
+                BoxLayout:
+                    orientation: 'vertical'
+                    padding: [30, 10, 30, 10] # Side padding to center controls visually
+                    spacing: 10
+                    
+                    # 1. TARGET TEMP
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: root.manual_target_display
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 1, 1, 1)
+                        Slider:
+                            id: temp_slider
+                            disabled: root.controls_disabled
+                            min: 70
+                            max: 212
+                            value: root.slider_temp_val
+                            on_value: root.on_slider_drag('temp', self.value)
+                            on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('temp', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+                    # 2. TIMER
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: "Timer: " + str(int(time_slider.value)) + " min"
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (0.2, 0.6, 1, 1)
+                        Slider:
+                            id: time_slider
+                            disabled: root.controls_disabled
+                            min: 0
+                            max: 120
+                            step: 1
+                            value: root.slider_time_val
+                            on_value: root.on_slider_drag('time', self.value)
+                            on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('time', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+                    # 3. VOLUME
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: root.manual_vol_display
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (0.2, 0.6, 0.8, 1)
+                        Slider:
+                            id: vol_slider
+                            disabled: root.controls_disabled
+                            min: 2.0
+                            max: 9.0
+                            step: 0.25
+                            value: root.slider_vol_val
+                            on_value: root.on_slider_drag('vol', self.value)
+                            on_touch_up: if self.collide_point(*args[1].pos): root.on_slider_release('vol', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+                    # 4. RAMP POWER
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: "Ramp: " + root.display_ramp_watts + " W"
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (1, 0.6, 0.2, 1)
+                        Slider:
+                            id: ramp_slider
+                            disabled: root.controls_disabled
+                            min: 0
+                            max: 4
+                            step: 1
+                            value: root.slider_ramp_power_val
+                            on_value: root.on_slider_drag('ramp_power', self.value)
+                            on_touch_up: if args[1].grab_current == self or self.collide_point(*args[1].pos): root.on_slider_release('ramp_power', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+                    # 5. HOLD POWER
+                    BoxLayout:
+                        orientation: 'horizontal'
+                        size_hint_y: 1
+                        Label:
+                            text: "Hold: " + root.display_hold_watts + " W"
+                            size_hint_x: 0.3
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            font_size: '18sp'
+                            bold: True
+                            color: (1, 1, 1, 0.5) if root.controls_disabled else (0.2, 0.8, 0.2, 1)
+                        Slider:
+                            id: hold_slider
+                            disabled: root.controls_disabled
+                            min: 0
+                            max: 4
+                            step: 1
+                            value: root.slider_hold_power_val
+                            on_value: root.on_slider_drag('hold_power', self.value)
+                            on_touch_up: if args[1].grab_current == self or self.collide_point(*args[1].pos): root.on_slider_release('hold_power', self.value)
+                            size_hint_x: 0.7
+                            cursor_size: dp(30), dp(30)
+
+            # SCREEN: AUTO STEPS LIST
+            Screen:
+                name: 'page_auto'
+                BoxLayout:
+                    orientation: 'vertical'
+                    BoxLayout:
+                        size_hint_y: None
+                        height: '30dp'
+                        spacing: 5
+                        canvas.before:
+                            Color:
+                                rgba: 0.2, 0.2, 0.2, 1
+                            Rectangle:
+                                pos: self.pos
+                                size: self.size
+                        
+                        # SPACER for Arrow (0.1)
+                        Label:
+                            text: ""
+                            size_hint_x: 0.1
+
+                        # Index (Reduced)
+                        Label:
+                            text: "#"
+                            size_hint_x: 0.05
+                            bold: True
+
+                        # Name (Reduced)
+                        Label:
+                            text: "Step Name"
+                            size_hint_x: 0.25
+                            halign: 'left'
+                            text_size: self.size
+                            padding_x: 10
+                            bold: True
+                            
+                        # Volume
+                        Label:
+                            text: "Volume"
+                            size_hint_x: 0.15
+                            bold: True
+
+                        # Target
+                        Label:
+                            text: "Target"
+                            size_hint_x: 0.15
+                            bold: True
+
+                        # Duration
+                        Label:
+                            text: "Duration"
+                            size_hint_x: 0.15
+                            bold: True
+
+                        # Ready At
+                        Label:
+                            text: "Ready At"
+                            size_hint_x: 0.15
+                            bold: True
+                    
+                    RecycleView:
+                        id: rv_steps
+                        
+                        # KEY CHANGE: Tell it to look at 'view_type' in the dict
+                        key_viewclass: 'view_type' 
+                        
+                        scroll_type: ['bars', 'content']
+                        bar_width: 10
+                        RecycleBoxLayout:
+                            # UPDATED for variable row heights
+                            default_size: None, None
+                            default_size_hint: 1, None
+                            size_hint_y: None
+                            height: self.minimum_height
+                            orientation: 'vertical'
+                            spacing: 2
+
+        # --- BOTTOM NAV ---
+        ScreenManager:
+            id: bottom_nav
+            size_hint_y: None
+            height: '50dp' # <--- CHANGED FROM 80dp TO 60dp
+            transition: kivy.uix.screenmanager.SlideTransition(direction='up')
+            Screen:
+                name: 'nav_standard'
+                BoxLayout:
+                    spacing: 2
+                    
+                    # 1. MANUAL
+                    Button:
+                        text: "MANUAL"
+                        background_color: (0.1, 0.2, 0.4, 1) if (root.is_delay_active and root.ids.center_content.current == 'page_manual') else ((0.3, 0.3, 0.3, 1) if root.is_delay_active else ((0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_manual' else (0.3, 0.3, 0.3, 1)))
+                        on_release: root.switch_to_manual()
+
+                    # 2. AUTO
+                    Button:
+                        text: "AUTO"
+                        background_color: (0.1, 0.2, 0.4, 1) if (root.is_delay_active and root.ids.center_content.current == 'page_auto') else ((0.3, 0.3, 0.3, 1) if root.is_delay_active else ((0.2, 0.8, 0.4, 1) if root.ids.center_content.current == 'page_auto' else (0.3, 0.3, 0.3, 1)))
+                        on_release: root.switch_to_auto()
+                        
+                    Button:
+                        text: root.action_button_text
+                        background_color: root.action_button_color
+                        disabled: root.controls_disabled
+                        always_release: True
+                        on_release: root.on_action_click()
+                    Button:
+                        text: "STOP"
+                        background_color: 0.8, 0.2, 0.2, 1
+                        on_release: root.on_stop_request()
+                    Button:
+                        text: "PROFILES"
+                        background_color: 0.3, 0.3, 0.3, 1
+                        on_release: root.open_profiles()
+                        
+                    # --- WATER BUTTON ---
+                    Button:
+                        text: "WATER"
+                        disabled: not (root.ids.center_content.current == 'page_manual' or root.is_profile_loaded)
+                        background_color: (0.2, 0.6, 1, 1) if not self.disabled else (0.2, 0.2, 0.2, 1)
+                        color: (1, 1, 1, 1) if not self.disabled else (0.5, 0.5, 0.5, 1)
+                        on_release: root.open_water_calculator()
+                    # ------------------------                     
+                         
+                    Button:
+                        text: "SETTINGS"
+                        background_color: 0.3, 0.3, 0.3, 1
+                        on_release: root.open_settings()
+            
+            Screen:
+                name: 'nav_confirm'
+                BoxLayout:
+                    orientation: 'horizontal'
+                    padding: 5
+                    spacing: 10
+                    canvas.before:
+                        Color:
+                            rgba: 0.1, 0, 0, 1 # Dark Red Warning Background
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+                    
+                    Button:
+                        text: "RESET SESSION"
+                        background_color: 0.8, 0.2, 0.2, 1
+                        on_release: root.on_confirm_reset()
+
+                    Button:
+                        text: "PAUSE SESSION"
+                        background_color: 0.2, 0.4, 0.8, 1
+                        on_release: root.on_recover_pause()
+
+                    Button:
+                        text: "RESUME SESSION"
+                        background_color: 0.2, 0.8, 0.2, 1
+                        on_release: root.on_confirm_resume()
+                            
+            Screen:
+                name: 'nav_mode_confirm'
+                BoxLayout:
+                    orientation: 'horizontal'
+                    padding: 5
+                    spacing: 10
+                    canvas.before:
+                        Color:
+                            rgba: 0.15, 0.05, 0, 1 # Dark Amber/Red Background
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+                    
+                    Button:
+                        text: root.mode_reset_btn_text
+                        background_color: 0.8, 0.2, 0.2, 1 # Red
+                        on_release: root.confirm_mode_switch()
+                    Button:
+                        text: "CANCEL"
+                        background_color: 0.5, 0.5, 0.5, 1 # Grey
+                        on_release: root.cancel_mode_switch()
+                         
+            Screen:
+                name: 'nav_temp_warning'
+                BoxLayout:
+                    orientation: 'horizontal'
+                    padding: 5
+                    spacing: 10
+                    canvas.before:
+                        Color:
+                            rgba: 0.2, 0.2, 0.2, 1
+                        Rectangle:
+                            pos: self.pos
+                            size: self.size
+                    
+                    Button:
+                        text: "ASSIGN TEMP PROBE"
+                        background_color: 1, 0.6, 0, 1 # Orange/Amber
+                        on_release: root.open_hardware_setup()
+
+                    Button:
+                        text: "CANCEL"
+                        background_color: 0.5, 0.5, 0.5, 1
+                        on_release: root.cancel_temp_warning()
+
+# --- PROFILES SCREEN ---
+<ProfilesScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 10
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: "Profile Library"
+            font_size: '24sp'
+            size_hint_y: 0.15
+            color: 0.2, 0.8, 1, 1
+
+        RecycleView:
+            id: rv_profiles
+            viewclass: 'ProfileListButton'
+            scroll_type: ['bars', 'content']
+            bar_width: '50dp'
+            
+            RecycleBoxLayout:
+                default_size: None, dp(60)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+                orientation: 'vertical'
+                spacing: 5
+                # NEW: Adds a 60dp empty margin on the right side.
+                # This stops the buttons from rendering under the scrollbar!
+                padding: [0, 0, dp(60), 0]
+
+        # --- UPDATED FOOTER ---
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: '50dp'     # <--- ADDED fixed height
+            spacing: 20
+            
+            Button:
+                text: "BACK TO DASHBOARD"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.go_back()
+
+            Button:
+                text: "+ ADD NEW PROFILE"
+                background_color: 0.2, 0.6, 0.2, 1
+                on_release: app.create_new_profile()
+
+# --- NEW SETTINGS MASTER CONTAINER ---
+<SettingsMasterScreen>:
+    name: 'sys_settings'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 5
+        spacing: 5
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # --- 1. TOP TABS ---
+        BoxLayout:
+            size_hint_y: None
+            height: '60dp'
+            spacing: 2
+            
+            # TABS: Font size ~18sp + Bold
+            ToggleButton:
+                text: "GENERAL"
+                group: 'settings_tabs'
+                state: 'down'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                halign: 'center'
+                valign: 'middle'
+                text_size: self.size
+                on_release: root.select_tab('settings_app')
+            ToggleButton:
+                text: "HARDWARE"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '16sp'
+                bold: True
+                on_release: root.select_tab('settings_hw')
+            ToggleButton:
+                text: "HEATERS"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                on_release: root.select_tab('settings_heaters')
+            ToggleButton:
+                text: "CALIBRATION"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '16sp'
+                bold: True
+                halign: 'center'
+                valign: 'middle'
+                text_size: self.size
+                on_release: root.select_tab('settings_cal')
+            ToggleButton:
+                text: "PID"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                on_release: root.select_tab('settings_pid')
+            ToggleButton:
+                text: "UPDATES"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                on_release: root.select_tab('settings_updates')
+            ToggleButton:
+                text: "ABOUT"
+                group: 'settings_tabs'
+                allow_no_selection: False
+                font_size: '18sp'
+                bold: True
+                on_release: root.select_tab('settings_about')
+
+        # --- 2. CONTENT AREA ---
+        ScreenManager:
+            id: content_manager
+            
+            # Existing Screens
+            AppSettingsScreen:
+                id: view_app
+                name: 'settings_app'
+            HardwareSettingsScreen:
+                id: view_hw
+                name: 'settings_hw'
+            CalibrationSettingsScreen:
+                id: view_cal
+                name: 'settings_cal'
+            UpdatesSettingsScreen:
+                id: view_updates
+                name: 'settings_updates'
+                
+            # New Screens
+            HeaterSettingsScreen:
+                id: view_heaters
+                name: 'settings_heaters'
+            PIDSettingsScreen:
+                id: view_pid
+                name: 'settings_pid'
+            AboutScreen:
+                id: view_about
+                name: 'settings_about'
+
+        # --- 3. FOOTER BUTTONS ---
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            spacing: 10
+            padding: [0, 5, 0, 0]
+
+            # BTN 1: EXIT
+            Button:
+                text: "EXIT"
+                font_size: '18sp'
+                bold: True
+                background_color: 0.5, 0.5, 0.5, 1
+                on_release: root.exit_settings()
+
+            # BTN 2: HELP
+            Button:
+                text: "HELP"
+                font_size: '18sp'
+                bold: True
+                background_color: 0.3, 0.3, 0.3, 1
+                on_release: root.show_help()
+
+            # BTN 3: DYNAMIC (Blank or Check)
+            Button:
+                text: root.btn_3_text
+                font_size: '18sp'
+                bold: True
+                disabled: not root.btn_3_visible
+                opacity: 1 if root.btn_3_visible else 0
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.on_btn_3()
+
+            # BTN 4: DYNAMIC (Reset or Install)
+            # LOGIC UPDATED: Disabled if on Updates tab AND install not ready
+            Button:
+                text: root.btn_4_text
+                font_size: '18sp'
+                bold: True
+                
+                disabled: 
+                    (not root.btn_4_visible) or \
+                    (root.current_tab == 'settings_updates' and not root.ids.view_updates.install_enabled)
+                
+                opacity: 1 if root.btn_4_visible else 0
+                
+                # Gray if disabled, Gold if Install, Orange if Reset
+                background_color: 
+                    (0.3, 0.3, 0.3, 1) if self.disabled else \
+                    ((0.8, 0.6, 0.2, 1) if root.btn_4_text == "INSTALL" else (0.8, 0.4, 0.2, 1))
+                
+                on_release: root.on_btn_4()
+
+            # BTN 5: DYNAMIC (Save or Restart)
+            Button:
+                text: root.btn_5_text
+                font_size: '18sp'
+                bold: True
+                disabled: not root.btn_5_visible
+                opacity: 1 if root.btn_5_visible else 0
+                background_color: (1, 0.6, 0, 1) if root.btn_5_text == "RESTART APP" else (0.2, 0.8, 0.2, 1)
+                on_release: root.on_btn_5()
+
+<AppSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+        # ROW 1: DISPLAY UNITS
+        BoxLayout:
+            Label:
+                text: "Display Units:"
+                size_hint_x: 0.6
+                halign: 'right'
+            Spinner:
+                text: root.units_text
+                values: ["Imperial (°F / Gal)", "Metric (°C / L)"]
+                size_hint_x: 0.4
+                on_text: root.units_text = self.text
+
+        # ROW 2: FORCE NUMLOCK
+        BoxLayout:
+            Label:
+                text: "Force NumLock:"
+                size_hint_x: 0.6
+                halign: 'right'
+            Switch:
+                active: root.force_numlock
+                size_hint_x: 0.4
+                on_active: root.force_numlock = self.active
+
+        # ROW 3: AUTO START
+        BoxLayout:
+            Label:
+                text: "Auto-Start on Boot:"
+                size_hint_x: 0.6
+                halign: 'right'
+            Switch:
+                active: root.auto_start
+                size_hint_x: 0.4
+                on_active: root.auto_start = self.active
+
+        # ROW 4: AUTO RESUME (RESTORED)
+        BoxLayout:
+            Label:
+                text: "Auto-Resume:"
+                size_hint_x: 0.6
+                halign: 'right'
+                color: (1, 1, 1, 1) if root.auto_start else (0.5, 0.5, 0.5, 1)
+            Switch:
+                active: root.auto_resume
+                size_hint_x: 0.4
+                disabled: not root.auto_start
+                on_active: root.auto_resume = self.active
+
+        # ROW 5: LOGGING
+        BoxLayout:
+            Label:
+                text: "CSV Data Logging:"
+                size_hint_x: 0.6
+                halign: 'right'
+            Switch:
+                active: root.csv_logging
+                size_hint_x: 0.4
+                on_active: root.csv_logging = self.active
+        
+        Widget: # Filler
+
+<HardwareSettingsScreen>:
+    GridLayout:
+        cols: 2
+        spacing: 20
+        padding: 20
+        
+        # 1. Temp Sensor
+        Label:
+            text: "Temp Sensor:"
+            halign: 'right'
+        Spinner:
+            id: spinner_sensor
+            text: "Select..."
+            values: root.sensor_list
+
+        # 2. Boil Temp
+        Label:
+            text: "Boil Temp: " + str(int(root.boil_temp))
+            halign: 'right'
+        Slider:
+            id: s_boil
+            min: 180
+            max: 212
+            step: 1
+            value: root.boil_temp
+            on_value: root.boil_temp = self.value
+
+        # 3. Audio Out
+        Label:
+            text: "Audio Out:"
+            halign: 'right'
+        Spinner:
+            id: spinner_audio
+            text: "Select..."
+            values: root.audio_list
+            
+        # 4. Alert Volume
+        Label:
+            text: "Alert Volume: " + str(int(root.system_volume)) + "%"
+            halign: 'right'
+        Slider:
+            id: s_vol
+            min: 0
+            max: 100
+            step: 5
+            value: root.system_volume
+            on_value: root.system_volume = self.value
+            on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
+
+        # 5. Alert Repeat (RESTORED)
+        Label:
+            text: "Alert Repeat: " + ("OFF" if root.alert_repeat_freq == 0 else str(int(root.alert_repeat_freq)) + "s")
+            halign: 'right'
+        Slider:
+            id: s_repeat
+            min: 0
+            max: 60
+            step: 5
+            value: root.alert_repeat_freq
+            on_value: root.alert_repeat_freq = self.value
+
+        # 6. Sound File
+        Label:
+            text: "Alert Sound:"
+            halign: 'right'
+        BoxLayout:
+            spacing: 10
+            Spinner:
+                id: spinner_sound
+                text: "Select..."
+                values: root.sound_list
+                size_hint_x: 0.6
+            Button:
+                text: "TEST"
+                size_hint_x: 0.4
+                background_color: 0.3, 0.3, 0.3, 1
+                on_release: root.test_audio()
+
+<CalibrationSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 15
+        
+        Label:
+            text: "Current Factor: " + root.current_factor_text
+            color: 0.6, 0.6, 0.6, 1
+            size_hint_y: 0.1
+
+        BoxLayout: # Vol & Time
+            spacing: 20
+            size_hint_y: 0.2
+            BoxLayout:
+                Label:
+                    text: "Vol: " + str(round(root.cal_vol, 2))
+                    size_hint_x: 0.4
+                Slider:
+                    id: s_cal_vol
+                    min: 2.0
+                    max: 10.0
+                    step: 0.25
+                    value: root.cal_vol
+                    on_value: root.cal_vol = self.value
+                    size_hint_x: 0.6
+            BoxLayout:
+                Label:
+                    text: "Min: " + str(int(root.cal_time))
+                    size_hint_x: 0.4
+                Slider:
+                    id: s_cal_time
+                    min: 1
+                    max: 90
+                    step: 1
+                    value: root.cal_time
+                    on_value: root.cal_time = self.value
+                    size_hint_x: 0.6
+
+        BoxLayout: # Start Temp
+            size_hint_y: 0.2
+            Label:
+                text: "Start: " + str(int(root.cal_start_temp))
+                size_hint_x: 0.3
+            Slider:
+                id: s_cal_start
+                value: root.cal_start_temp
+                on_value: root.cal_start_temp = self.value
+                size_hint_x: 0.7
+
+        BoxLayout: # End Temp
+            size_hint_y: 0.2
+            Label:
+                text: "End: " + str(int(root.cal_end_temp))
+                size_hint_x: 0.3
+            Slider:
+                id: s_cal_end
+                value: root.cal_end_temp
+                on_value: root.cal_end_temp = self.value
+                size_hint_x: 0.7
+
+        BoxLayout: # Action
+            size_hint_y: 0.2
+            spacing: 20
+            Button:
+                text: "CALCULATE"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.calculate_efficiency()
+            Label:
+                text: "Result: " + root.calc_result_text
+                bold: True
+                color: 1, 0.8, 0, 1
+
+<UpdatesSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        TextInput:
+            text: root.log_text
+            readonly: True
+            background_color: 0, 0, 0, 1
+            foreground_color: 0, 1, 0, 1
+            font_size: '12sp'
+
+<PIDSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 30
+        spacing: 20
+        
+        # P
+        BoxLayout:
+            Label:
+                text: "Kp (Proportional): " + str(round(root.kp, 1))
+                size_hint_x: 0.4
+                halign: 'right'
+            Slider:
+                min: 0.0
+                max: 200.0
+                step: 1.0
+                value: root.kp
+                on_value: root.kp = self.value
+                size_hint_x: 0.6
+
+        # I
+        BoxLayout:
+            Label:
+                text: "Ki (Integral): " + str(round(root.ki, 3))
+                size_hint_x: 0.4
+                halign: 'right'
+            Slider:
+                min: 0.000
+                max: 0.100
+                step: 0.001
+                value: root.ki
+                on_value: root.ki = self.value
+                size_hint_x: 0.6
+        
+        # D
+        BoxLayout:
+            Label:
+                text: "Kd (Derivative): " + str(round(root.kd, 1))
+                size_hint_x: 0.4
+                halign: 'right'
+            Slider:
+                min: 0.0
+                max: 100.0
+                step: 1.0
+                value: root.kd
+                on_value: root.kd = self.value
+                size_hint_x: 0.6
+        
+        Widget: # Spacer
+
+<HeaterSettingsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 15
+        
+        Label:
+            text: "Heater Configuration"
+            font_size: '22sp'
+            size_hint_y: None
+            height: '40dp'
+            color: 0.2, 0.8, 1, 1
+
+        # RELAY 1
+        BoxLayout:
+            size_hint_y: 0.3
+            orientation: 'horizontal'
+            spacing: 20
+            Label:
+                text: "Relay 1: " + root.r1_text
+                halign: 'right'
+                valign: 'middle'
+                text_size: self.size
+                size_hint_x: 0.3
+                color: (1, 1, 1, 1) if root.r1_val > 0 else (0.5, 0.5, 0.5, 1)
+            Slider:
+                id: s_r1
+                min: 0
+                max: 2000
+                step: 50
+                on_value: root.on_slider_change(1, self.value)
+                size_hint_x: 0.7
+                cursor_size: dp(40), dp(40)
+
+        # RELAY 2
+        BoxLayout:
+            size_hint_y: 0.3
+            orientation: 'horizontal'
+            spacing: 20
+            Label:
+                text: "Relay 2: " + root.r2_text
+                halign: 'right'
+                valign: 'middle'
+                text_size: self.size
+                size_hint_x: 0.3
+                color: (1, 1, 1, 1) if root.r2_val > 0 else (0.5, 0.5, 0.5, 1)
+            Slider:
+                id: s_r2
+                min: 0
+                max: 2000
+                step: 50
+                on_value: root.on_slider_change(2, self.value)
+                size_hint_x: 0.7
+                cursor_size: dp(40), dp(40)
+
+        # RELAY 3
+        BoxLayout:
+            size_hint_y: 0.3
+            orientation: 'horizontal'
+            spacing: 20
+            Label:
+                text: "Relay 3: " + root.r3_text
+                halign: 'right'
+                valign: 'middle'
+                text_size: self.size
+                size_hint_x: 0.3
+                color: (1, 1, 1, 1) if root.r3_val > 0 else (0.5, 0.5, 0.5, 1)
+            Slider:
+                id: s_r3
+                min: 0
+                max: 2000
+                step: 50
+                on_value: root.on_slider_change(3, self.value)
+                size_hint_x: 0.7
+                cursor_size: dp(40), dp(40)
+
+        Widget: # Spacer
+
+<AboutScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: [0, 5, 0, 0]
+        
+        # MAIN CONTENT AREA (Horizontal Split)
+        BoxLayout:
+            orientation: 'horizontal'
+            padding: [10, 10]
+            spacing: 10
+            size_hint_y: 1
+
+            # LEFT: Text Content (Scrollable)
+            ScrollView:
+                do_scroll_x: False
+                size_hint_x: 0.75
+                
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: 10
+                    
+                    # -- 1. Brands --
+                    Label:
+                        text: "KegLevel Brands"
+                        color: 1, 0.6, 0, 1 # Amber
+                        size_hint_y: None
+                        height: '40dp' # Approx 5% of 800x480
+                        halign: 'left'
+                        text_size: self.size
+                        font_size: '24sp'
+                        bold: True
+
+                    Label:
+                        text: "Keglevel Lite(c), KegLevel Monitor(c), KettleBrain(c), and FermVault(c) names, texts, UI/UX and program code are copyrighted. This material and all components of this program are protected by copyright law. Unauthorized use, duplication, or distribution is strictly prohibited."
+                        bold: False
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                        text_size: self.width, None
+                        halign: 'left'
+                        color: 0.8, 0.8, 0.8, 1
+                        font_size: '18sp'
+
+                    Widget:
+                        size_hint_y: None
+                        height: 20
+
+                    # -- 2. Support --
+                    Label:
+                        text: "Support This App"
+                        color: 1, 0.6, 0, 1 # Amber
+                        size_hint_y: None
+                        height: '40dp'
+                        halign: 'left'
+                        text_size: self.size
+                        font_size: '24sp'
+                        bold: True
+
+                    Label:
+                        text: "This App took hundreds of hours to develop, test, and optimize. Please consider supporting this App with a donation so continuous improvements can be made. If you wish to receive customer support via email, please make a reasonable donation. Customer support requests without a donation may not be considered."
+                        bold: False
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                        text_size: self.width, None
+                        halign: 'left'
+                        color: 0.8, 0.8, 0.8, 1
+                        font_size: '18sp'
+
+                    Widget:
+                        size_hint_y: None
+                        height: 20
+
+                    # -- 3. Acknowledgements --
+                    Label:
+                        text: "Acknowledgements"
+                        color: 1, 0.6, 0, 1 # Amber
+                        size_hint_y: None
+                        height: '40dp'
+                        halign: 'left'
+                        text_size: self.size
+                        font_size: '24sp'
+                        bold: True
+
+                    Label:
+                        text: "Icons created by Pixel Perfect - Flaticon\nhttps://www.flaticon.com/free-icons/update"
+                        bold: False
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                        text_size: self.width, None
+                        halign: 'left'
+                        color: 0.8, 0.8, 0.8, 1
+                        font_size: '18sp'
+
+            # RIGHT: Image (Fixed Width)
+            AnchorLayout:
+                anchor_x: 'right'
+                anchor_y: 'top'
+                size_hint_x: None
+                width: 200
+                size_hint_y: 1 
+                padding: [0, 20, 20, 0] # Top/Right padding for positioning
+                
+                Image:
+                    source: 'assets/support.gif'
+                    size_hint: None, None
+                    size: 140, 140
+                    allow_stretch: True
+                    keep_ratio: True
+# --- POPUP MENU ---
+<ProfileOptionsPopup>:
+    title: "Profile Options"
+    size_hint: 0.8, 0.85
+    auto_dismiss: False
+    BoxLayout:
+        orientation: 'vertical'
+        spacing: 10
+        padding: 10
+        
+        Label:
+            text: root.profile_name
+            font_size: '22sp'
+            bold: True
+            color: 0.2, 0.8, 1, 1
+            size_hint_y: 0.15
+
+        GridLayout:
+            cols: 2
+            spacing: 20
+            
+            # --- ROW 1 ---
+            Button:
+                text: "EDIT PROFILE"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.do_edit()
+
+            Button:
+                text: "LOAD PROFILE"
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.do_load()
+
+            # --- ROW 2 ---
+            Button:
+                text: "COPY PROFILE"
+                background_color: 0.5, 0.5, 0.5, 1
+                on_release: root.do_copy()
+            
+            Widget: # Spacer to keep Copy on the left
+
+            # --- ROW 3 ---
+            Button:
+                text: "DELETE PROFILE"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.do_delete()
+
+            Button:
+                text: "CANCEL / CLOSE"
+                background_color: 0.4, 0.4, 0.4, 1
+                on_release: root.dismiss()
+
+<ProfileListButton@Button>:
+    profile_id: ''
+    profile_name: ''
+    background_normal: ''
+    background_color: 0.2, 0.2, 0.2, 1
+    on_release: app.open_profile_options(self.profile_id, self.text)
+
+# --- NEW: Child Row for Alerts (Indented) ---
+<EditorAlertChildItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '35dp'
+    padding: [50, 0, 10, 0]
+    canvas.before:
+        Color:
+            rgba: 0.15, 0.15, 0.15, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    Label:
+        text: root.text
+        font_size: '16sp'
+        color: 0.7, 0.7, 0.7, 1
+        halign: 'left'
+        text_size: self.size
+        valign: 'middle'
+
+<EditorStepItem>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '50dp'
+    padding: 5
+    spacing: 10
+    canvas.before:
+        Color:
+            rgba: 0.2, 0.2, 0.2, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            
+    # 1. Arrow / Expander
+    Button:
+        text: root.arrow_text
+        size_hint_x: None
+        width: '40dp'
+        background_color: 0,0,0,0
+        opacity: root.arrow_opacity
+        disabled: root.arrow_disabled
+        on_release: app.root.get_screen('editor').toggle_step_expansion(root.step_index)
+
+    # 2. Index
+    Label:
+        text: root.display_index
+        size_hint_x: None
+        width: '30dp'
+        bold: True
+        color: 0.5, 0.5, 0.5, 1
+
+    # 3. Reorder Buttons (Standard Chars)
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_x: None
+        width: '30dp'
+        spacing: 1
+        
+        Button:
+            text: "^"
+            font_size: '14sp'
+            bold: True
+            background_color: 0.3, 0.3, 0.3, 1
+            on_release: app.move_step_up(root.step_index)
+        
+        Button:
+            text: "v"
+            font_size: '12sp'
+            bold: True
+            background_color: 0.3, 0.3, 0.3, 1
+            on_release: app.move_step_down(root.step_index)
+
+    # 4. Name & Desc
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: root.step_name
+            text_size: self.size
+            halign: 'left'
+            valign: 'bottom'
+            bold: True
+            font_size: '18sp'
+        Label:
+            text: root.step_desc
+            text_size: self.size
+            halign: 'left'
+            valign: 'top'
+            font_size: '14sp'
+            color: 0.7, 0.7, 0.7, 1
+
+    # 5. Edit Button
+    Button:
+        text: "EDIT"
+        size_hint_x: None
+        width: '60dp'
+        background_color: 0.2, 0.4, 0.8, 1
+        on_release: app.open_step_editor(root.step_index)
+
+    # 6. Delete Button
+    Button:
+        text: "X"
+        size_hint_x: None
+        width: '40dp'
+        background_color: 0.8, 0.2, 0.2, 1
+        on_release: app.delete_step_from_editor(root.step_index)
+
+# --- UPDATED: Profile Editor Screen RecycleView ---
+<ProfileEditorScreen>:
+    name: 'editor'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 15
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # Header (Name Input)
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            spacing: 10
+            Label:
+                text: "Profile Name:"
+                size_hint_x: None
+                width: '120dp'
+            TextInput:
+                text: root.temp_name
+                multiline: False
+                font_size: '20sp'
+                on_text: root.temp_name = self.text
+
+        # --- STEPS LIST (FIXED) ---
+        RecycleView:
+            id: rv_editor_steps
+            key_viewclass: 'view_type'
+            scroll_type: ['bars', 'content']
+            bar_width: 15
+            
+            # USE GRID LAYOUT TO FORCE 1 COLUMN
+            RecycleGridLayout:
+                cols: 1                       # <--- GUARANTEES 1 COLUMN
+                default_size: None, None
+                default_size_hint: 1, None    # Forces items to full width
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: 2
+
+        # Footer Actions
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'          # <--- Standardized Height
+            spacing: 20             # <--- Reduced from 40 to match other screens
+            padding: [0, 10, 0, 0]  # <--- Added to align vertical position with Step Editor
+
+            # DYNAMIC CANCEL BUTTON
+            Button:
+                text: "DISCARD CHANGES" if root.is_dirty else "CANCEL"
+                background_color: (0.8, 0.2, 0.2, 1) if root.is_dirty else (0.6, 0.2, 0.2, 1)
+                on_release: root.cancel_edit()
+
+            # ADD BUTTON (Always available)
+            Button:
+                text: "ADD STEP"
+                background_color: 0.2, 0.4, 0.8, 1
+                on_release: root.add_new_step()
+
+            # DYNAMIC SAVE BUTTON
+            Button:
+                text: "SAVE CHANGES" if root.is_dirty else "SAVE PROFILE"
+                background_color: (0.2, 0.8, 0.2, 1) if root.is_dirty else (0.2, 0.6, 0.2, 1)
+                on_release: root.save_profile()
+
+
+# --- NEW STEP EDITOR SCREEN ---
+<StepEditorScreen>:
+    name: 'step_editor'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 15
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # --- HEADER ---
+        Label:
+            text: "Edit Step Configuration"
+            font_size: '22sp'
+            bold: True
+            size_hint_y: None
+            height: '30dp'
+            color: 0.2, 0.8, 0.2, 1
+
+        # --- TOP ROW: Type & Advance ---
+        BoxLayout:
+            size_hint_y: None
+            height: '40dp'
+            spacing: 20
+            
+            # Type Spinner
+            Spinner:
+                text: root.selected_type
+                values: root.step_type_options
+                on_text: root.selected_type = self.text
+                background_color: 0.2, 0.4, 0.8, 1
+                size_hint_x: 0.5
+
+            # Advance Spinner
+            Spinner:
+                text: root.selected_advance
+                values: root.advance_options
+                on_text: root.selected_advance = self.text
+                background_color: 0.3, 0.3, 0.3, 1
+                size_hint_x: 0.5
+
+        # --- NAME INPUT ---
+        BoxLayout:
+            size_hint_y: None
+            height: '40dp'
+            Label:
+                text: "Step Name:"
+                size_hint_x: 0.25
+                halign: 'left'
+            TextInput:
+                text: root.step_name
+                multiline: False
+                on_text: root.step_name = self.text
+                size_hint_x: 0.75
+
+        # --- SLIDERS CONTAINER ---
+        BoxLayout:
+            orientation: 'vertical'
+            spacing: 10
+            
+            # 1. TEMP
+            BoxLayout:
+                size_hint_y: 1
+                Label: 
+                    text: root.step_target_display
+                    size_hint_x: 0.25
+                    color: (0.5, 0.5, 0.5, 1) if root.is_temp_locked else (1,1,1,1)
+                Slider:
+                    id: s_temp
+                    value: root.step_temp
+                    on_value: if not self.disabled: root.step_temp = self.value
+                    disabled: root.is_temp_locked
+                    padding: dp(25) 
+                    cursor_size: dp(30), dp(30)
+            
+            # 2. DURATION
+            BoxLayout:
+                size_hint_y: 1
+                Label: 
+                    text: f"Time: {int(s_dur.value)} m"
+                    size_hint_x: 0.25
+                    color: 0.2, 0.6, 1, 1
+                Slider:
+                    id: s_dur
+                    min: 0
+                    max: 120
+                    step: 1
+                    value: root.step_dur
+                    on_value: root.step_dur = self.value
+                    cursor_size: dp(30), dp(30)
+
+            # 3. VOLUME
+            BoxLayout:
+                size_hint_y: 1
+                Label: 
+                    text: root.step_vol_display
+                    size_hint_x: 0.25
+                    color: 0.2, 0.6, 0.8, 1
+                Slider:
+                    id: s_vol
+                    value: root.step_vol
+                    on_value: root.step_vol = self.value
+                    padding: dp(25)
+                    cursor_size: dp(30), dp(30)
+
+            # 4. RAMP POWER
+            BoxLayout:
+                size_hint_y: 1
+                Label: 
+                    text: f"Ramp: {root.display_ramp_power}"
+                    size_hint_x: 0.25
+                    color: 1, 0.6, 0.2, 1
+                Slider:
+                    id: s_ramp
+                    min: 0
+                    max: 4
+                    step: 1
+                    value: root.step_ramp_power_idx
+                    on_value: root.step_ramp_power_idx = self.value
+                    cursor_size: dp(30), dp(30)
+
+            # 5. HOLD POWER
+            BoxLayout:
+                size_hint_y: 1
+                Label: 
+                    text: f"Hold: {root.display_hold_power}"
+                    size_hint_x: 0.25
+                    color: 0.2, 0.8, 0.2, 1
+                Slider:
+                    id: s_hold
+                    min: 0
+                    max: 4
+                    step: 1
+                    value: root.step_hold_power_idx
+                    on_value: root.step_hold_power_idx = self.value
+                    cursor_size: dp(30), dp(30)
+
+        # --- FOOTER ACTIONS ---
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            spacing: 20
+            padding: [0, 10, 0, 0]
+            
+            Button:
+                text: "DISCARD CHANGES" if root.is_dirty else "CANCEL"
+                background_color: (0.8, 0.2, 0.2, 1) if root.is_dirty else (0.5, 0.5, 0.5, 1)
+                on_release: root.cancel()
+
+            Button:
+                text: "ALERTS & ADDITIONS >"
+                background_color: 0.2, 0.4, 0.6, 1
+                on_release: root.open_alerts_screen()
+                
+            Button:
+                text: "APPLY CHANGES" if root.is_dirty else "APPLY"
+                background_color: (0.2, 0.8, 0.2, 1) if root.is_dirty else (0.3, 0.6, 0.3, 1)
+                on_release: root.save_step()
+
+# --- NEW ALERTS MANAGEMENT SCREEN ---
+<StepAlertsScreen>:
+    name: 'step_alerts'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+        canvas.before:
+            Color:
+                rgba: 0.08, 0.08, 0.08, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # --- HEADER ---
+        Label:
+            text: "Alerts for: " + root.step_name
+            font_size: '20sp'
+            size_hint_y: None
+            height: '40dp'
+            color: 0.2, 0.6, 1, 1
+
+        # --- LIST ---
+        RecycleView:
+            id: rv_alerts
+            viewclass: 'AlertItem'
+            # Pass index to enable click-to-edit
+            data: [{'name': x['name'], 'time': x['time'], 'index': i} for i, x in enumerate(root.local_additions)]
+            scroll_type: ['bars', 'content']
+            bar_width: 15
+            RecycleBoxLayout:
+                default_size: None, dp(50)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+                orientation: 'vertical'
+                spacing: 2
+
+        # --- EDITING AREA ---
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_y: None
+            height: '140dp'
+            spacing: 10
+            padding: 10
+            canvas.before:
+                Color: 
+                    rgba: 0.15, 0.15, 0.15, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            
+            # Inputs
+            BoxLayout:
+                size_hint_y: 0.5
+                spacing: 10
+                TextInput:
+                    text: root.new_alert_name
+                    hint_text: "Alert Name"
+                    multiline: False
+                    size_hint_x: 0.6
+                    on_text: root.new_alert_name = self.text
+                
+                Label:
+                    text: f"@ {int(alert_slider.value)} min"
+                    size_hint_x: 0.4
+            
+            # Slider
+            Slider:
+                id: alert_slider
+                min: 0
+                max: 120
+                step: 1
+                size_hint_y: 0.4
+                value: root.new_alert_time
+                on_value: root.new_alert_time = self.value
+
+            # Action Buttons
+            BoxLayout:
+                size_hint_y: 0.5
+                spacing: 20
+                
+                Button:
+                    text: "DELETE"
+                    disabled: root.editing_index == -1
+                    background_color: (0.8, 0.2, 0.2, 1) if not self.disabled else (0.3, 0.3, 0.3, 1)
+                    on_release: root.delete_alert()
+
+                Button:
+                    text: root.btn_text
+                    background_color: 0.2, 0.6, 0.2, 1
+                    on_release: root.add_or_update()
+
+        # --- FOOTER ---
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            spacing: 20
+            
+            # Left Button: DISCARD / CANCEL
+            Button:
+                text: "DISCARD CHANGES" if root.is_dirty else "CANCEL"
+                background_color: (0.8, 0.2, 0.2, 1) if root.is_dirty else (0.5, 0.5, 0.5, 1)
+                on_release: root.discard_changes()
+
+            # Right Button: APPLY
+            Button:
+                text: "APPLY CHANGES" if root.is_dirty else "APPLY"
+                background_color: (0.2, 0.8, 0.2, 1) if root.is_dirty else (0.2, 0.6, 0.2, 1)
+                on_release: root.apply_changes()
+
+       
+
+
+<WaterScreen>:
+    name: 'water_calc'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 5
+        spacing: 5
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # TABS (Water / Chem / Results)
+        TabbedPanel:
+            id: tabs
+            do_default_tab: False
+            tab_width: (self.parent.width - dp(15)) / 3
+            background_color: 0.1, 0.1, 0.1, 1
+            
+            # --- TAB 1: WATER ---
+            TabbedPanelItem:
+                text: "WATER"
+                GridLayout:
+                    cols: 2
+                    padding: 5
+                    spacing: 10
+                    
+                    # COLUMN 0 (Left)
+                    BoxLayout:
+                        orientation: 'vertical'
+                        spacing: 5
+                        # 1. Method
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Method"
+                                size_hint_x: 0.35
+                                font_size: '14sp'
+                            Spinner:
+                                text: root.mash_method
+                                values: ["No Sparge (BIAB)", "Sparge"]
+                                on_text: root.mash_method = self.text; root.calculate_all()
+                                size_hint_x: 0.65
+                                background_color: 0.2, 0.4, 0.6, 1
+                        # 2. Grain Weight
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Grain Weight"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_grain
+                                min: 2.0
+                                max: 15.0
+                                step: 0.5
+                                value: root.grain_wt
+                                on_value: root.grain_wt = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{root.grain_wt} {'kg' if root.is_metric else 'lb'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+                        # 3. Dough-In Temp (Was Grain Temp)
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Dough-In Temp"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_dough_in_temp
+                                min: 145
+                                max: 165
+                                step: 1
+                                value: root.dough_in_temp
+                                on_value: root.dough_in_temp = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{int(root.dough_in_temp)} {'C' if root.is_metric else 'F'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+                        # 4. Mash Temp
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Mash Temp"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_mash_temp
+                                min: 145
+                                max: 165
+                                step: 1
+                                value: root.mash_temp
+                                on_value: root.mash_temp = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{int(root.mash_temp)} {'C' if root.is_metric else 'F'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+                        # 5. Boil Time
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Boil Time"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                min: 30
+                                max: 120
+                                step: 15
+                                value: root.boil_time
+                                on_value: root.boil_time = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{int(root.boil_time)} min"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+                        # 6. Into Fermenter
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Into Fermenter"
+                                text_size: self.size
+                                halign: 'right'
+                                valign: 'middle'
+                                padding_x: 10
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_ferm_vol
+                                min: 2.0
+                                max: 8.0
+                                step: 0.25
+                                value: root.ferm_vol
+                                on_value: root.ferm_vol = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{root.ferm_vol} {'L' if root.is_metric else 'G'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+
+                    # COLUMN 1 (Right)
+                    BoxLayout:
+                        orientation: 'vertical'
+                        spacing: 5
+                        
+                        # 1. Mash Tun Capacity (NEW)
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Tun Cap"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_tun_cap
+                                min: 5.0
+                                max: 20.0
+                                step: 0.25
+                                value: root.tun_capacity
+                                on_value: root.tun_capacity = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{root.tun_capacity} {'L' if root.is_metric else 'G'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+
+                        # 2. Absorption
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Absorption"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_abs
+                                min: 0.20
+                                max: 1.20
+                                step: 0.05
+                                value: root.abs_rate
+                                on_value: root.abs_rate = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{root.abs_rate:.2f} {'L/kg' if root.is_metric else 'qt/lb'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+
+                        # 3. Thickness
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Thickness"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_thick
+                                min: 0.5
+                                max: 3.0
+                                step: 0.1
+                                value: root.thickness
+                                disabled: root.mash_method == "No Sparge (BIAB)"
+                                on_value: root.thickness = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{root.thickness:.1f} {'L/kg' if root.is_metric else 'qt/lb'}"
+                                color: (1,1,1,1) if root.mash_method == "Sparge" else (0.4,0.4,0.4,1)
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+
+                        # 4. Boil Off
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Boil Off"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_boiloff
+                                min: 0.5
+                                max: 3.5
+                                step: 0.1
+                                value: root.boiloff
+                                on_value: root.boiloff = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{root.boiloff:.1f} {'L' if root.is_metric else 'G'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+
+                        # 5. Trub Loss
+                        BoxLayout:
+                            size_hint_y: 1
+                            Label: 
+                                text: "Trub"
+                                size_hint_x: 0.3
+                                font_size: '14sp'
+                            Slider:
+                                id: s_trub
+                                min: 0.0
+                                max: 3.0
+                                step: 0.25
+                                value: root.trub_vol
+                                on_value: root.trub_vol = self.value; root.calculate_all()
+                                size_hint_x: 0.5
+                            Label:
+                                text: f"{root.trub_vol:.2f} {'L' if root.is_metric else 'G'}"
+                                size_hint_x: 0.2
+                                font_size: '14sp'
+                        # FILLER
+                        Widget:
+
+            # --- TAB 2: CHEMISTRY ---
+            TabbedPanelItem:
+                text: "CHEMISTRY"
+                BoxLayout:
+                    orientation: 'vertical'
+                    padding: 20
+                    spacing: 10
+
+                    # GRID
+                    GridLayout:
+                        cols: 2
+                        spacing: 20
+                        size_hint_y: 0.5
+
+                        # LEFT
+                        BoxLayout:
+                            orientation: 'vertical'
+                            spacing: 10
+                            # Profile
+                            BoxLayout:
+                                size_hint_y: 1
+                                Label: 
+                                    text: "Profile"
+                                    size_hint_x: 0.3
+                                    font_size: '14sp'
+                                Spinner:
+                                    id: profile_spinner
+                                    text: "Select..."
+                                    values: root.profile_names
+                                    text_autoupdate: True
+                                    color: root.profile_text_color   # <--- THIS IS THE KEY CHANGE
+                                    on_text: root.load_target_profile(self.text)
+                                    size_hint_x: 0.7
+                                    background_color: 0.2, 0.4, 0.6, 1
+                            # SRM
+                            BoxLayout:
+                                size_hint_y: 1
+                                Label: 
+                                    text: "SRM"
+                                    size_hint_x: 0.3
+                                    font_size: '14sp'
+                                Slider:
+                                    min: 1
+                                    max: 40
+                                    step: 1
+                                    value: root.srm
+                                    on_value: root.srm = self.value; root.calculate_all()
+                                    size_hint_x: 0.5
+                                Label:
+                                    text: str(int(root.srm))
+                                    size_hint_x: 0.2
+                                    font_size: '14sp'
+                            # Calcium
+                            BoxLayout:
+                                size_hint_y: 1
+                                Label: 
+                                    text: "Ca"
+                                    size_hint_x: 0.3
+                                    font_size: '14sp'
+                                    bold: True
+                                    color: 0.6, 0.6, 0.6, 1
+                                Slider:
+                                    min: 0
+                                    max: 200
+                                    step: 5
+                                    value: root.tgt_ca
+                                    on_value: root.tgt_ca = self.value; root.calculate_all()
+                                    size_hint_x: 0.5
+                                Label:
+                                    text: str(int(root.tgt_ca))
+                                    size_hint_x: 0.2
+                                    font_size: '14sp'
+
+                        # RIGHT
+                        BoxLayout:
+                            orientation: 'vertical'
+                            spacing: 10
+                            # pH
+                            BoxLayout:
+                                size_hint_y: 1
+                                Label: 
+                                    text: "Est pH"
+                                    size_hint_x: 0.3
+                                    font_size: '14sp'
+                                Slider:
+                                    min: 5.1
+                                    max: 5.8
+                                    step: 0.05
+                                    value: root.target_ph
+                                    on_value: root.target_ph = self.value; root.calculate_all()
+                                    size_hint_x: 0.5
+                                Label:
+                                    text: f"{root.target_ph:.2f}"
+                                    size_hint_x: 0.2
+                                    font_size: '14sp'
+                            # Mg
+                            BoxLayout:
+                                size_hint_y: 1
+                                Label: 
+                                    text: "Mg"
+                                    size_hint_x: 0.3
+                                    font_size: '14sp'
+                                    color: 0.6, 0.6, 0.6, 1
+                                Slider:
+                                    min: 0
+                                    max: 50
+                                    step: 1
+                                    value: root.tgt_mg
+                                    on_value: root.tgt_mg = self.value; root.calculate_all()
+                                    size_hint_x: 0.5
+                                Label:
+                                    text: str(int(root.tgt_mg))
+                                    size_hint_x: 0.2
+                                    font_size: '14sp'
+                            # Na
+                            BoxLayout:
+                                size_hint_y: 1
+                                Label: 
+                                    text: "Na"
+                                    size_hint_x: 0.3
+                                    font_size: '14sp'
+                                    color: 0.6, 0.6, 0.6, 1
+                                Slider:
+                                    min: 0
+                                    max: 100
+                                    step: 5
+                                    value: root.tgt_na
+                                    on_value: root.tgt_na = self.value; root.calculate_all()
+                                    size_hint_x: 0.5
+                                Label:
+                                    text: str(int(root.tgt_na))
+                                    size_hint_x: 0.2
+                                    font_size: '14sp'
+
+                    # BOTTOM SECTION
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_y: 0.5
+                        spacing: 0
+                        padding: 0
+                        
+                        Widget:
+                            size_hint_y: None
+                            height: '60dp'
+
+                        # Sulfate
+                        BoxLayout:
+                            size_hint_y: None
+                            height: '40dp'
+                            Label: 
+                                text: "Sulfate (SO4)"
+                                size_hint_x: 0.25
+                                halign: 'right'
+                                valign: 'middle'
+                                padding_x: 10
+                                color: 0.2, 0.8, 0.8, 1
+                            Slider:
+                                min: 0
+                                max: 350
+                                step: 5
+                                value: root.tgt_so4
+                                on_value: root.tgt_so4 = self.value; root.calculate_all()
+                                size_hint_x: 0.65
+                            Label:
+                                text: str(int(root.tgt_so4))
+                                size_hint_x: 0.1
+                                bold: True
+
+                        Widget:
+                            size_hint_y: None
+                            height: '20dp'
+
+                        # Chloride
+                        BoxLayout:
+                            size_hint_y: None
+                            height: '40dp'
+                            Label: 
+                                text: "Chloride (Cl)"
+                                size_hint_x: 0.25
+                                halign: 'right'
+                                valign: 'middle'
+                                padding_x: 10
+                                color: 0.8, 0.4, 0.2, 1
+                            Slider:
+                                min: 0
+                                max: 350
+                                step: 5
+                                value: root.tgt_cl
+                                on_value: root.tgt_cl = self.value; root.calculate_all()
+                                size_hint_x: 0.65
+                            Label:
+                                text: str(int(root.tgt_cl))
+                                size_hint_x: 0.1
+                                bold: True
+                        
+                        Widget:
+
+            # --- TAB 3: RESULTS ---
+            TabbedPanelItem:
+                id: tab_results
+                text: "RESULTS"
+                BoxLayout:
+                    orientation: 'vertical'
+                    padding: 10
+                    spacing: 5
+                    
+                    GridLayout:
+                        cols: 2
+                        spacing: 10
+                        
+                        # LEFT: WATER REQUIREMENTS
+                        BoxLayout:
+                            orientation: 'vertical'
+                            spacing: 5
+                            canvas.before:
+                                Color: 
+                                    rgba: 0.15, 0.15, 0.15, 1
+                                Rectangle: 
+                                    pos: self.pos
+                                    size: self.size
+                            
+                            Label:
+                                text: "Water Requirements"
+                                size_hint_y: None
+                                height: '35dp'
+                                bold: True
+                                color: 0.2, 0.6, 1, 1
+                                font_size: '18sp'
+                                canvas.before:
+                                    Color:
+                                        rgba: 0.1, 0.1, 0.1, 1
+                                    Rectangle:
+                                        pos: self.pos
+                                        size: self.size
+
+                            GridLayout:
+                                cols: 2
+                                spacing: 5
+                                size_hint_y: None
+                                height: self.minimum_height
+                                
+                                # Row 1
+                                ResultRow:
+                                    title: "Strike"
+                                    value: root.strike_vol
+                                ResultRow:
+                                    title: "Set Aside"
+                                    value: root.res_set_aside
+                                    value_color: (1, 0.4, 0.4, 1) if root.res_set_aside != "0.00 gal" and root.res_set_aside != "0.00 L" else (1,1,1,1)
+
+                                # Row 2
+                                ResultRow:
+                                    title: "Sparge"
+                                    value: root.sparge_vol
+                                ResultRow:
+                                    title: "Dough-in"
+                                    value: root.res_dough_in
+                                    value_color: (0.2, 0.8, 0.2, 1)
+
+                                # Row 3
+                                ResultRow:
+                                    title: "Total"
+                                    value: root.res_total_disp
+                                ResultRow:
+                                    title: "Mash"
+                                    value: root.res_mash
+
+                                # Row 4
+                                ResultRow:
+                                    title: "Temp"
+                                    value: root.strike_temp
+                                    value_color: (1, 0.6, 0.2, 1)
+                                ResultRow:
+                                    title: "Pre-Boil"
+                                    value: root.pre_boil_vol
+
+                            Widget: 
+
+                            # TOTAL MASH VOL BOX (BLUE)
+                            BoxLayout:
+                                orientation: 'vertical'
+                                size_hint_y: None
+                                height: '100dp'
+                                size_hint_x: 1
+                                padding: 5
+                                canvas.before:
+                                    Color:
+                                        rgba: 0.1, 0.2, 0.4, 1
+                                    Rectangle:
+                                        pos: self.pos
+                                        size: self.size
+                                # Top Row: Label + Value
+                                BoxLayout:
+                                    size_hint_y: 0.6
+                                    Label:
+                                        text: "Total Mash Volume"
+                                        size_hint_x: 0.5
+                                        halign: 'left'
+                                        text_size: self.size
+                                        valign: 'middle'
+                                        color: 0.7, 0.8, 1, 1
+                                        font_size: '16sp'
+                                    Label:
+                                        text: root.total_mash_vol
+                                        size_hint_x: 0.5
+                                        halign: 'left' # Left align to centerline
+                                        text_size: self.size
+                                        valign: 'middle'
+                                        bold: True
+                                        font_size: '18sp'
+                                        color: 1, 1, 1, 1
+                                # Bottom Row: Warning Text
+                                Label:
+                                    size_hint_y: 0.4
+                                    text: "Ensure your Mash Tun is large enough\nto hold the Total Mash Volume."
+                                    text_size: self.width, None
+                                    halign: 'center'
+                                    valign: 'top'
+                                    color: 0.8, 0.8, 0.8, 1
+                                    font_size: '16sp' # Matches Label Size
+
+                        # RIGHT: SALT ADDITIONS
+                        BoxLayout:
+                            orientation: 'vertical'
+                            spacing: 5
+                            canvas.before:
+                                Color: 
+                                    rgba: 0.15, 0.15, 0.15, 1
+                                Rectangle: 
+                                    pos: self.pos
+                                    size: self.size
+
+                            Label:
+                                text: "Salt Additions"
+                                size_hint_y: None
+                                height: '35dp'
+                                bold: True
+                                color: 0.2, 0.8, 0.2, 1
+                                font_size: '18sp'
+                                canvas.before:
+                                    Color:
+                                        rgba: 0.1, 0.1, 0.1, 1
+                                    Rectangle:
+                                        pos: self.pos
+                                        size: self.size
+
+                            GridLayout:
+                                cols: 2
+                                spacing: 5
+                                size_hint_y: None
+                                height: self.minimum_height
+                                
+                                ResultRow:
+                                    title: "Gypsum"
+                                    value: root.res_gypsum
+                                ResultRow:
+                                    title: "Salt"
+                                    value: root.res_salt
+                                ResultRow:
+                                    title: "CaCl2"
+                                    value: root.res_cacl2
+                                ResultRow:
+                                    title: "Lime"
+                                    value: root.res_lime
+                                ResultRow:
+                                    title: "Epsom"
+                                    value: root.res_epsom
+                                Widget:
+                                    size_hint_y: None
+                                    height: '30dp'
+
+                            Widget:
+
+                            # LACTIC ACID (Aligned with Mash Vol)
+                            BoxLayout:
+                                size_hint_y: None
+                                height: '100dp' # Matches Mash Vol Height
+                                size_hint_x: 1
+                                padding: 10
+                                canvas.before:
+                                    Color:
+                                        rgba: 0.25, 0.25, 0.25, 1
+                                    Rectangle:
+                                        pos: self.pos
+                                        size: self.size
+                                Label:
+                                    text: "Lactic Acid (88%)"
+                                    size_hint_x: 0.5
+                                    text_size: self.size
+                                    halign: 'left'
+                                    valign: 'middle'
+                                    color: 0.6, 0.6, 0.6, 1
+                                    font_size: '16sp'
+                                Label:
+                                    text: root.res_acid + " / " + root.res_acid_g
+                                    size_hint_x: 0.5
+                                    text_size: self.size
+                                    halign: 'left' # Left align to centerline
+                                    valign: 'middle'
+                                    bold: True
+                                    font_size: '18sp'
+                                    color: 1, 0.2, 0.2, 1
+
+        # --- FOOTER ---
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            orientation: 'horizontal'
+            spacing: 10
+            
+            # CASE 1: MANUAL CONTEXT (Just Exit)
+            Button:
+                text: "BACK TO DASHBOARD"
+                background_color: 0.8, 0.2, 0.2, 1
+                on_release: root.save_and_exit()
+                # Hide this button if we are in AUTO context
+                opacity: 1 if root.context != "AUTO" else 0
+                disabled: True if root.context == "AUTO" else False
+                size_hint_x: 1 if root.context != "AUTO" else 0
+                width: 0 if root.context == "AUTO" else self.width
+
+            # CASE 2: AUTO CONTEXT (Cancel / Save)
+            
+            # Cancel Button
+            Button:
+                text: "CANCEL / EXIT"
+                background_color: 0.6, 0.6, 0.6, 1
+                on_release: root.save_and_exit() # Just exit, don't populate
+                # Show only if AUTO
+                opacity: 1 if root.context == "AUTO" else 0
+                disabled: True if root.context != "AUTO" else False
+                size_hint_x: 0.4 if root.context == "AUTO" else 0
+                width: 0 if root.context != "AUTO" else self.width
+
+            # Save Button
+            Button:
+                text: "SAVE RESULTS TO PROFILE"
+                background_color: 0.2, 0.8, 0.2, 1
+                on_release: root.save_results_to_profile()
+                # Show only if AUTO
+                opacity: 1 if root.context == "AUTO" else 0
+                disabled: True if root.context != "AUTO" else False
+                size_hint_x: 0.6 if root.context == "AUTO" else 0
+                width: 0 if root.context != "AUTO" else self.width
+            
+# --- HELPER WIDGET FOR WATER RESULTS ---
+<ResultRow@BoxLayout>:
+    title: ""
+    value: ""
+    value_color: (1, 1, 1, 1)
+    size_hint_y: None
+    height: '30dp'
+    Label:
+        text: root.title
+        text_size: self.size
+        halign: 'left'
+        valign: 'middle'
+        padding_x: 10
+        color: 0.7, 0.7, 0.7, 1
+    Label:
+        text: root.value
+        text_size: self.size
+        halign: 'right'
+        valign: 'middle'
+        padding_x: 10
+        bold: True
+        color: root.value_color
+        
+        

@@ -1,0 +1,54 @@
+[SECTION: main]
+[size=24][b][color=33ccff]Project App Help[/color][/b][/size]
+
+Select a topic below:
+  • [ref=operationalControls][color=33ccff]Operational Controls[/color][/ref]
+  • [ref=settingsMenus][color=33ccff]Settings Menus[/color][/ref]
+
+[size=18][b][color=ffffff]Description[/color][/b][/size]
+Basic description of the app:
+  • Feature 1.
+  • Feature 2.
+
+[size=18][b][color=ffffff]Operational Specs[/color][/b][/size]
+[b]Main hardware component[/b]
+Description of the main components.
+
+[b]Sensors & actuators[/b]
+Description of the sensors.
+
+Description of the actuators.
+
+[b]Operational controls[/b]
+Description of the operational controls.
+
+[size=18][b][color=ffffff]Settings Menus[/color][/b][/size]
+Screens accessible from the Settings menu allow you to adjust system parameters and view important information about the app.
+  • Screen 1
+  • Screen 2
+
+
+[SECTION: operationalControls]
+[size=24][b][color=33ccff]Operational Controls[/color][/b][/size]
+Basic description of the operational controls and modes.
+
+[b]Control Mode 1[/b]
+More detailed description of Control Mode 1.
+
+[b]Control Mode 2[/b]
+More detailed description of Control Mode 2.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: settingsMenus]
+[size=24][b][color=33ccff]Settings Menus[/color][/b][/size]
+Basic description of the settings menus.
+
+[b]Menu 1[/b]
+More detailed description.
+
+[b]Menu 2[/b]
+More detailed description.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
