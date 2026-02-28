@@ -6,6 +6,8 @@ SETLOCAL EnableDelayedExpansion
 :: Clones repo to %USERPROFILE%\kettlebrain and runs install.bat
 
 SET "INSTALL_DIR=%USERPROFILE%\kettlebrain"
+SET "DATA_DIR=%USERPROFILE%\kettlebrain-data"
+SET "SHORTCUT_PATH=%USERPROFILE%\Desktop\KettleBrain.lnk"
 SET "REPO_URL=https://github.com/keglevelmonitor/kettlebrain.git"
 
 TITLE KettleBrain Auto-Installer
@@ -32,15 +34,116 @@ IF %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-:: 2. Clone or update
+:: 2. Check for existing install - show menu if found
+SET "WHAT_TO_INSTALL=KettleBrain Application and Data Directory"
+SET "CLEANUP_MODE=NONE"
+IF EXIST "%INSTALL_DIR%" goto :menu
+IF EXIST "%DATA_DIR%" goto :menu
+goto :confirm_proceed
+
+:menu
+echo Existing installation detected:
+IF EXIST "%INSTALL_DIR%" echo  - App: %INSTALL_DIR%
+IF EXIST "%DATA_DIR%" echo  - Data: %DATA_DIR%
+echo.
+echo How would you like to proceed? (Case Sensitive)
+echo   UPDATE    - Update the App (Git Pull) and re-run install (Keeps data)
+echo   APP       - Reinstall App only (Deletes App folder, Keeps data)
+echo   ALL       - Reinstall App AND reset data (Fresh Install)
+echo   UNINSTALL - Uninstall the app and the data directory
+echo   EXIT      - Cancel
+echo.
+set /p "choice=Enter selection: "
+
+IF /i "%choice%"=="UPDATE" (
+    SET "WHAT_TO_INSTALL=KettleBrain Update"
+    SET "CLEANUP_MODE=NONE"
+    goto :confirm_proceed
+)
+IF /i "%choice%"=="APP" (
+    SET "WHAT_TO_INSTALL=KettleBrain Application (Fresh App, Keep Data)"
+    SET "CLEANUP_MODE=APP"
+    goto :confirm_proceed
+)
+IF /i "%choice%"=="ALL" (
+    SET "WHAT_TO_INSTALL=KettleBrain Application and Data Directory (Fresh Install)"
+    SET "CLEANUP_MODE=ALL"
+    goto :confirm_proceed
+)
+IF /i "%choice%"=="UNINSTALL" goto :do_uninstall
+IF /i "%choice%"=="EXIT" (
+    echo Cancelled.
+    pause
+    exit /b 0
+)
+echo Invalid selection.
+goto :menu
+
+:confirm_proceed
+echo.
+echo ------------------------------------------------------------
+echo Processing: %WHAT_TO_INSTALL%
+echo ------------------------------------------------------------
+echo.
+set /p "confirm=Press Y to proceed, or any other key to cancel: "
+IF /i not "%confirm%"=="Y" (
+    echo Cancelled.
+    pause
+    exit /b 0
+)
+IF "%CLEANUP_MODE%"=="APP" (
+    echo Removing existing application...
+    IF EXIST "%INSTALL_DIR%" rmdir /s /q "%INSTALL_DIR%"
+)
+IF "%CLEANUP_MODE%"=="ALL" (
+    echo Removing application and data...
+    IF EXIST "%INSTALL_DIR%" rmdir /s /q "%INSTALL_DIR%"
+    IF EXIST "%DATA_DIR%" rmdir /s /q "%DATA_DIR%"
+)
+goto :clone
+
+:do_uninstall
+echo.
+echo ------------------------------------------
+echo YOU ARE ABOUT TO DELETE:
+echo The KettleBrain application AND all user data/settings.
+echo ------------------------------------------
+echo.
+set /p "confirm=Type YES to UNINSTALL, or any other key to return: "
+IF /i not "%confirm%"=="YES" (
+    echo Uninstallation aborted.
+    goto :menu
+)
+echo.
+echo Removing files...
+IF EXIST "%SHORTCUT_PATH%" (
+    del "%SHORTCUT_PATH%"
+    echo  - Removed desktop shortcut
+)
 IF EXIST "%INSTALL_DIR%" (
-    echo Existing installation detected at:
-    echo %INSTALL_DIR%
+    rmdir /s /q "%INSTALL_DIR%"
+    echo  - Removed application directory
+)
+IF EXIST "%DATA_DIR%" (
+    rmdir /s /q "%DATA_DIR%"
+    echo  - Removed data directory
+)
+echo.
+echo ==========================================
+echo    Uninstallation Complete
+echo ==========================================
+pause
+exit /b 0
+
+:clone
+:: 3. Clone or update repository
+IF EXIST "%INSTALL_DIR%" (
     echo.
     echo Updating code...
     cd /d "%INSTALL_DIR%"
     git pull
 ) ELSE (
+    echo.
     echo Cloning repository to %INSTALL_DIR%...
     git clone %REPO_URL% "%INSTALL_DIR%"
     cd /d "%INSTALL_DIR%"
@@ -52,7 +155,7 @@ IF %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-:: 3. Run the main installer
+:: 4. Run the main installer
 echo.
 echo Launching main installer...
 call install.bat
