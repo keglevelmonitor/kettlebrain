@@ -9,6 +9,7 @@ from datetime import datetime # <--- ADD THIS
 from profile_data import BrewProfile, StepType, TimeoutBehavior, SequenceStatus
 import subprocess
 import os
+import sys
 from pid_controller import PIDController  # <--- NEW IMPORT
 
 class SequenceManager:
@@ -85,28 +86,28 @@ class SequenceManager:
         print(f"[SequenceManager] {msg}")
     
     def _play_alert_sound(self):
-        """Plays the configured alert sound using aplay (non-blocking)."""
+        """Plays the configured alert sound using aplay (Linux) or winsound (Windows)."""
         try:
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            
-            # Retrieve configured filename (default to alert.wav)
             sound_filename = self.settings.get_system_setting("alert_sound_file", "alert.wav")
             sound_file = os.path.join(base_dir, "assets", sound_filename)
-            
-            if os.path.exists(sound_file):
-                # Retrieve Audio Device
+
+            if not os.path.exists(sound_file):
+                return
+
+            if sys.platform == 'win32':
+                import winsound
+                winsound.PlaySound(sound_file, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            else:
                 audio_dev = self.settings.get_system_setting("audio_device", "default")
-                
                 cmd = ["aplay", "-q"]
                 if audio_dev != "default":
                     cmd.extend(["-D", audio_dev])
                 cmd.append(sound_file)
-                
                 subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
-                
-                # UPDATE TIMER
-                self.last_alert_nag_time = time.monotonic()
-                
+
+            self.last_alert_nag_time = time.monotonic()
+
         except Exception as e:
             print(f"[SequenceManager] Alert Sound Error: {e}")
     

@@ -2126,18 +2126,29 @@ class HardwareSettingsScreen(Screen):
         """Play the selected sound on the selected device."""
         import os
         selected_sound = self.ids.spinner_sound.text
-        selected_friendly = self.ids.spinner_audio.text
-        dev_str = self.audio_map.get(selected_friendly, "default")
-        
         base_dir = os.path.dirname(os.path.abspath(__file__))
         sound_path = os.path.join(base_dir, "assets", selected_sound)
-        
-        if os.path.exists(sound_path):
+
+        if not os.path.exists(sound_path):
+            return
+
+        if sys.platform == 'win32':
+            try:
+                import winsound
+                winsound.PlaySound(sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            except Exception as e:
+                print(f"[Hardware] Audio test failed (Windows): {e}")
+        else:
+            selected_friendly = self.ids.spinner_audio.text
+            dev_str = self.audio_map.get(selected_friendly, "default")
             cmd = ["aplay", "-q"]
             if dev_str != "default":
                 cmd.extend(["-D", dev_str])
             cmd.append(sound_path)
-            subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
+            try:
+                subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
+            except Exception as e:
+                print(f"[Hardware] Audio test failed: {e}")
 
     def set_volume_live(self, value):
         """Called on_touch_up of slider to set amixer volume."""
