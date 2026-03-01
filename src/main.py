@@ -122,10 +122,11 @@ def handle_signal(signum, frame):
 atexit.register(failsafe_cleanup)
 
 # 2. Register Signal Handlers (Terminal Close, Kill Command)
-signal.signal(signal.SIGTERM, handle_signal) # Kill command
-signal.signal(signal.SIGHUP, handle_signal)  # Terminal closed
-# Note: SIGINT (Ctrl+C) is usually handled by Python as KeyboardInterrupt, 
-# which triggers atexit automatically, so we don't strictly need it here, but it doesn't hurt.
+signal.signal(signal.SIGTERM, handle_signal)  # Kill command
+# SIGHUP exists only on Unix (terminal closed); skip on Windows
+if hasattr(signal, 'SIGHUP'):
+    signal.signal(signal.SIGHUP, handle_signal)
+# SIGINT (Ctrl+C) - triggers KeyboardInterrupt, atexit runs cleanup
 signal.signal(signal.SIGINT, handle_signal)
 
 
