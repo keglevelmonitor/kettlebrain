@@ -5,8 +5,13 @@ Handles sensor readings and the "Developer Mode" simulation logic.
 import random
 import os
 import glob
+import sys
 import time
 from collections import deque
+
+# Mock sensor/temp for Windows (no DS18B20 or 1-Wire hardware)
+MOCK_TEMP_F = 70.0
+MOCK_SENSOR_IDS = ["28-MOCK-TEMP001"]
 
 class HardwareInterface:
     def __init__(self, settings_mgr):
@@ -43,7 +48,11 @@ class HardwareInterface:
         # If Dev Mode is ON, only show virtual sensors
         if self._dev_mode_active:
             return ["Virtual-Probe-01", "Virtual-Probe-02"]
-            
+
+        # Windows: No 1-Wire bus - return mock IDs for UX demo
+        if sys.platform == 'win32':
+            return list(MOCK_SENSOR_IDS)
+
         try:
             base_dir = '/sys/bus/w1/devices/'
             # Find all folders starting with 28-
@@ -62,9 +71,13 @@ class HardwareInterface:
         e.g. [("Default (System)", "default"), ("Headphones (3.5mm)", "plughw:0,0"), ("USB Audio", "plughw:1,0")]
         """
         devices = [("Default (System)", "default")]
-        
+
         if self._dev_mode_active:
             devices.append(("Virtual Speaker", "default"))
+            return devices
+
+        # Windows: aplay is Linux-only - return default device for UX demo
+        if sys.platform == 'win32':
             return devices
 
         try:
@@ -124,6 +137,10 @@ class HardwareInterface:
         sensor_id = self.settings.get_system_setting("temp_sensor_id", "unassigned")
         if not sensor_id or sensor_id == "unassigned":
             return None
+
+        # Windows: No DS18B20 hardware - return mock temp for UX demo
+        if sys.platform == 'win32':
+            return MOCK_TEMP_F
 
         try:
             device_file = f'/sys/bus/w1/devices/{sensor_id}/w1_slave'
