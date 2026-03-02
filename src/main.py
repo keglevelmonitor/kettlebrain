@@ -2456,13 +2456,19 @@ class UpdatesSettingsScreen(Screen):
         threading.Thread(target=self._run_update_process, args=([], False)).start()
 
     def _run_update_process(self, flags, is_check_mode):
-        """Runs the update shell script in a background thread."""
+        """Runs the update script (update.sh on Linux, update.bat on Windows)."""
         import subprocess
-        
+
         # 1. Locate Script
         src_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(src_dir)
-        script_path = os.path.join(project_root, "update.sh")
+
+        if sys.platform == "win32":
+            script_path = os.path.join(project_root, "update.bat")
+            cmd = ["cmd", "/c", script_path] + flags
+        else:
+            script_path = os.path.join(project_root, "update.sh")
+            cmd = ["bash", script_path] + flags
 
         if not os.path.exists(script_path):
             self._append_log(f"Error: Could not find script at:\n{script_path}")
@@ -2470,15 +2476,18 @@ class UpdatesSettingsScreen(Screen):
             return
 
         # 2. Run Process
-        cmd = ["bash", script_path] + flags
         try:
-            process = subprocess.Popen(
-                cmd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.STDOUT, 
-                text=True, 
-                bufsize=1
+            popen_kw = dict(
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=project_root
             )
+            if sys.platform == "win32":
+                popen_kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+            process = subprocess.Popen(cmd, **popen_kw)
 
             update_available = False
             
