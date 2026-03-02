@@ -51,7 +51,8 @@ echo --- Starting Install Process ---
 
 :: 1. Git Pull
 echo [1/2] Pulling latest code...
-git pull origin %BRANCH%
+REM Explicit rebase strategy avoids newer Git divergence prompt/failure.
+git pull --rebase origin %BRANCH%
 
 IF %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Git pull failed.
