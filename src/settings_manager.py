@@ -37,7 +37,11 @@ DEFAULT_SETTINGS = {
         "heater_ref_rate_fpm": 1.3,
         "last_profile_id": None,
         "alert_repeat_freq": 15,
-        "cost_per_kwh": 0.120
+        "cost_per_kwh": 0.120,
+        "window_x": -1,
+        "window_y": -1,
+        "window_width": 800,
+        "window_height": 418,
     },
     # --- HEATER CONFIG ---
     "heater_config": {

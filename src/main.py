@@ -41,10 +41,9 @@ Config.set('kivy', 'window_icon', icon_path)
 # --- Rest of CONFIG ---
 Config.set('graphics', 'width', '800')
 Config.set('graphics', 'height', '418')
-Config.set('graphics', 'resizable', '0')
-Config.set('graphics', 'position', 'custom')
-Config.set('graphics', 'top', '50')
-Config.set('graphics', 'left', '0')
+Config.set('graphics', 'resizable', '1')
+Config.set('graphics', 'minimum_width', '800')
+Config.set('graphics', 'minimum_height', '418')
 
 import kivy
 from kivy.app import App
@@ -2646,7 +2645,25 @@ class KettleApp(App):
         return sm
 
     def on_start(self):
-        """Called after build() when the window is ready. Schedule splash dismissal."""
+        """Called after build() when the window is ready."""
+        from kivy.core.window import Window
+        Window.minimum_width = 800
+        Window.minimum_height = 418
+        try:
+            sm = self.settings_manager
+            x = sm.get_system_setting("window_x", -1)
+            y = sm.get_system_setting("window_y", -1)
+            w = sm.get_system_setting("window_width", 800)
+            h = sm.get_system_setting("window_height", 418)
+            if x != -1 and y != -1:
+                Window.left = int(x)
+                Window.top = int(y)
+            safe_w = max(int(w), 800) if w > 0 else 800
+            safe_h = max(int(h), 418) if h > 0 else 418
+            Window.size = (safe_w, safe_h)
+            print(f"[App] Window restored: pos({x},{y}) size({safe_w}x{safe_h})")
+        except Exception as e:
+            print(f"[App] Window restore error: {e}")
         Clock.schedule_once(self.dismiss_splash, 0.5)
 
     def dismiss_splash(self, dt):
@@ -3128,6 +3145,18 @@ class KettleApp(App):
     def on_stop(self):
         """Called by Kivy when the app is closing normally."""
         print("[App] Stopping...")
+        try:
+            from kivy.core.window import Window
+            if hasattr(self, 'settings_manager') and self.settings_manager:
+                safe_w = max(Window.size[0], 800)
+                safe_h = max(Window.size[1], 418)
+                self.settings_manager.set_system_setting("window_x", Window.left)
+                self.settings_manager.set_system_setting("window_y", Window.top)
+                self.settings_manager.set_system_setting("window_width", safe_w)
+                self.settings_manager.set_system_setting("window_height", safe_h)
+                print(f"[App] Window saved: pos({Window.left},{Window.top}) size({safe_w}x{safe_h})")
+        except Exception as e:
+            print(f"[App] Window save error: {e}")
         if hasattr(self, 'sequencer'):
             self.sequencer.stop()
         if hasattr(self, 'relay'):
