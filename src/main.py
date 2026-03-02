@@ -64,6 +64,57 @@ from kivy.uix.screenmanager import SlideTransition
 from kivy.uix.spinner import Spinner
 from kivy.core.window import Window
 
+# --- GLOBAL SLIDER TOUCH/THUMB POLICY ---
+_ORIG_SLIDER_ON_TOUCH_DOWN = Slider.on_touch_down
+_ORIG_SLIDER_ON_KV_POST = Slider.on_kv_post
+
+
+def _slider_thumb_center(slider):
+    """Return the current thumb center in window coordinates."""
+    span = max(float(slider.max - slider.min), 1e-9)
+    ratio = (float(slider.value) - float(slider.min)) / span
+    ratio = min(1.0, max(0.0, ratio))
+    pad = float(slider.padding)
+
+    if slider.orientation == "vertical":
+        cx = slider.center_x
+        cy = slider.y + pad + ratio * max(0.0, slider.height - (2.0 * pad))
+    else:
+        cx = slider.x + pad + ratio * max(0.0, slider.width - (2.0 * pad))
+        cy = slider.center_y
+    return cx, cy
+
+
+def _touch_hits_thumb(slider, touch):
+    cx, cy = _slider_thumb_center(slider)
+    thumb_w, thumb_h = slider.cursor_size
+    # Small halo makes thumb grab realistic on Pi touchscreens.
+    hit_radius = (max(float(thumb_w), float(thumb_h)) / 2.0) + dp(4)
+    dx = float(touch.x) - cx
+    dy = float(touch.y) - cy
+    return (dx * dx) + (dy * dy) <= (hit_radius * hit_radius)
+
+
+def _thumb_only_on_touch_down(self, touch):
+    """
+    Require touch near the thumb before a slider can grab.
+    This disables track/bar tap-to-jump to prevent adjacent slider mis-grabs.
+    """
+    if not self.collide_point(*touch.pos):
+        return False
+    if not _touch_hits_thumb(self, touch):
+        return False
+    return _ORIG_SLIDER_ON_TOUCH_DOWN(self, touch)
+
+
+def _uniform_thumb_on_kv_post(self, base_widget):
+    _ORIG_SLIDER_ON_KV_POST(self, base_widget)
+    self.cursor_size = (dp(30), dp(30))
+
+
+Slider.on_touch_down = _thumb_only_on_touch_down
+Slider.on_kv_post = _uniform_thumb_on_kv_post
+
 # --- BACKEND IMPORTS ---
 from settings_manager import SettingsManager 
 from hardware_interface import HardwareInterface
