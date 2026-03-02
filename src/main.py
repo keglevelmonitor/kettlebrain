@@ -89,7 +89,7 @@ def _touch_hits_thumb(slider, touch):
     cx, cy = _slider_thumb_center(slider)
     thumb_w, thumb_h = slider.cursor_size
     # Small halo makes thumb grab realistic on Pi touchscreens.
-    hit_radius = (max(float(thumb_w), float(thumb_h)) / 2.0) + dp(4)
+    hit_radius = (max(float(thumb_w), float(thumb_h)) / 2.0) + dp(8)
     dx = float(touch.x) - cx
     dy = float(touch.y) - cy
     return (dx * dx) + (dy * dy) <= (hit_radius * hit_radius)
