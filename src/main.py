@@ -1558,6 +1558,16 @@ class MainScreen(Screen):
         self.manager.transition.direction = 'left'
         self.manager.current = 'sys_settings'
 
+    def go_to_contextual_help(self):
+        center = self.ids.center_content.current
+        if center == 'page_manual':
+            section = 'manualMode'
+        elif center == 'page_auto':
+            section = 'autoMode'
+        else:
+            section = 'mainScreen'
+        App.get_running_app().open_help_section(section, return_screen='main')
+
     def get_delay_time_str(self, total_minutes):
         val = int(total_minutes)
         h = val // 60
@@ -1877,10 +1887,12 @@ class HelpScreen(Screen):
     help_text = StringProperty("Loading...")
     return_screen = StringProperty('main')
     sections = {}
+    _pending_section = 'main'
 
     def on_pre_enter(self, *args):
         self.load_help()
-        self.go_to_section('main')
+        self.go_to_section(self._pending_section)
+        self._pending_section = 'main'
 
     def load_help(self):
         base_path = os.path.dirname(os.path.abspath(__file__))
@@ -2794,8 +2806,7 @@ class KettleApp(App):
     def open_help_section(self, section_name='main', return_screen=None):
         """Navigate to the Help screen at a specific section."""
         help_screen = self.root.get_screen('help')
-        help_screen.load_help()
-        help_screen.go_to_section(section_name)
+        help_screen._pending_section = section_name
         help_screen.return_screen = return_screen if return_screen else self.root.current
         self.root.transition.direction = 'left'
         self.root.current = 'help'
