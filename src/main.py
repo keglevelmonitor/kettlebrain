@@ -1972,13 +1972,13 @@ class SettingsMasterScreen(Screen):
 
     def show_help(self):
         tab_section_map = {
-            'settings_app':         'settingsApp',
-            'settings_hardware':    'settingsHardware',
-            'settings_heater':      'settingsHeater',
-            'settings_pid':         'settingsPID',
-            'settings_calibration': 'settingsCalibration',
-            'settings_updates':     'settingsUpdates',
-            'settings_about':       'overview',
+            'settings_app':     'settingsApp',
+            'settings_hw':      'settingsHardware',
+            'settings_heaters': 'settingsHeater',
+            'settings_pid':     'settingsPID',
+            'settings_cal':     'settingsCalibration',
+            'settings_updates': 'settingsUpdates',
+            'settings_about':   'overview',
         }
         section = tab_section_map.get(self.current_tab, 'main')
         App.get_running_app().open_help_section(section, return_screen='sys_settings')
