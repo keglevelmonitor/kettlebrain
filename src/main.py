@@ -207,13 +207,25 @@ class ProfileOptionsPopup(Popup):
         self.dismiss()
 
     def do_delete(self):
-        app = App.get_running_app()
-        app.delete_profile(self.profile_id)
+        """Dismiss this popup and open a confirmation dialog before deleting."""
+        confirm = DeleteProfileConfirmPopup()
+        confirm.profile_name = self.profile_name
+        confirm.profile_id = self.profile_id
         self.dismiss()
+        confirm.open()
 
     def do_edit(self):
         app = App.get_running_app()
         app.launch_profile_editor(self.profile_id)
+        self.dismiss()
+
+
+class DeleteProfileConfirmPopup(Popup):
+    profile_name = StringProperty("")
+    profile_id = StringProperty("")
+
+    def confirm_delete(self):
+        App.get_running_app().delete_profile(self.profile_id)
         self.dismiss()
 
 

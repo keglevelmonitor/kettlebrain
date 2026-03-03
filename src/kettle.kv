@@ -1823,6 +1823,45 @@
                 background_color: 0.4, 0.4, 0.4, 1
                 on_release: root.dismiss()
 
+<DeleteProfileConfirmPopup>:
+    title: "Delete Profile"
+    title_size: '18sp'
+    size_hint: 0.75, 0.38
+    auto_dismiss: False
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 14
+        spacing: 12
+        canvas.before:
+            Color:
+                rgba: 0.12, 0.12, 0.12, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        Label:
+            text: "Permanently delete:\n[b]" + root.profile_name + "[/b]\n\nThis cannot be undone."
+            markup: True
+            font_size: '16sp'
+            halign: 'center'
+            text_size: self.size
+            valign: 'middle'
+        BoxLayout:
+            spacing: 10
+            size_hint_y: None
+            height: '55dp'
+            Button:
+                text: "YES, DELETE"
+                font_size: '15sp'
+                bold: True
+                background_color: 0.8, 0.15, 0.15, 1
+                on_release: root.confirm_delete()
+            Button:
+                text: "CANCEL"
+                font_size: '15sp'
+                bold: True
+                background_color: 0.4, 0.4, 0.4, 1
+                on_release: root.dismiss()
+
 <ProfileListButton@Button>:
     profile_id: ''
     profile_name: ''
