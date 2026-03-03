@@ -1,54 +1,626 @@
 [SECTION: main]
-[size=24][b][color=33ccff]Project App Help[/color][/b][/size]
+[size=24][b][color=33ccff]KettleBrain Help[/color][/b][/size]
 
-Select a topic below:
-  • [ref=operationalControls][color=33ccff]Operational Controls[/color][/ref]
-  • [ref=settingsMenus][color=33ccff]Settings Menus[/color][/ref]
+KettleBrain is an electric brewing kettle controller. It manages up to three heating element relays, reads a temperature probe, and guides your brew through a sequence of named steps with alerts for hop additions and other timed events.
 
-[size=18][b][color=ffffff]Description[/color][/b][/size]
-Basic description of the app:
-  • Feature 1.
-  • Feature 2.
+[b]Select a topic below:[/b]
 
-[size=18][b][color=ffffff]Operational Specs[/color][/b][/size]
-[b]Main hardware component[/b]
-Description of the main components.
+[size=16][b][color=aaaaaa]OPERATION[/color][/b][/size]
+  • [ref=overview][color=33ccff]App Overview[/color][/ref]
+  • [ref=mainScreen][color=33ccff]The Main Screen[/color][/ref]
+  • [ref=autoMode][color=33ccff]Auto Mode — Running a Brew Profile[/color][/ref]
+  • [ref=manualMode][color=33ccff]Manual Mode[/color][/ref]
+  • [ref=delayedStart][color=33ccff]Delayed Start[/color][/ref]
 
-[b]Sensors & actuators[/b]
-Description of the sensors.
+[size=16][b][color=aaaaaa]PROFILES & STEPS[/color][/b][/size]
+  • [ref=brewProfiles][color=33ccff]Brew Profiles Screen[/color][/ref]
+  • [ref=profileEditor][color=33ccff]Profile Editor[/color][/ref]
+  • [ref=stepEditor][color=33ccff]Step Editor[/color][/ref]
+  • [ref=stepAlerts][color=33ccff]Step Alerts & Additions[/color][/ref]
 
-Description of the actuators.
+[size=16][b][color=aaaaaa]WATER CALCULATOR[/color][/b][/size]
+  • [ref=waterCalculator][color=33ccff]Water & Chemistry Calculator[/color][/ref]
 
-[b]Operational controls[/b]
-Description of the operational controls.
+[size=16][b][color=aaaaaa]SETTINGS[/color][/b][/size]
+  • [ref=settingsApp][color=33ccff]App Preferences[/color][/ref]
+  • [ref=settingsHardware][color=33ccff]Hardware[/color][/ref]
+  • [ref=settingsHeater][color=33ccff]Heater Configuration[/color][/ref]
+  • [ref=settingsPID][color=33ccff]PID Control[/color][/ref]
+  • [ref=settingsCalibration][color=33ccff]Heater Calibration[/color][/ref]
+  • [ref=settingsUpdates][color=33ccff]Updates[/color][/ref]
 
-[size=18][b][color=ffffff]Settings Menus[/color][/b][/size]
-Screens accessible from the Settings menu allow you to adjust system parameters and view important information about the app.
-  • Screen 1
-  • Screen 2
+[size=16][b][color=aaaaaa]OTHER[/color][/b][/size]
+  • [ref=troubleshooting][color=33ccff]Troubleshooting[/color][/ref]
 
 
-[SECTION: operationalControls]
-[size=24][b][color=33ccff]Operational Controls[/color][/b][/size]
-Basic description of the operational controls and modes.
+[SECTION: overview]
+[size=24][b][color=33ccff]App Overview[/color][/b][/size]
 
-[b]Control Mode 1[/b]
-More detailed description of Control Mode 1.
+KettleBrain controls an electric brew kettle by switching up to three heating element relays and reading a DS18B20 temperature probe. A PID controller manages precise temperature holds; boil steps run open-loop at full configured power.
 
-[b]Control Mode 2[/b]
-More detailed description of Control Mode 2.
+[size=18][b][color=ffffff]Four Main Areas[/color][/b][/size]
+
+[b]Main Screen[/b]
+Live temperature, heater status, timer, and brew sequence controls. This is where all active brewing takes place.
+
+[b]Brew Profiles[/b]
+Create and manage named step sequences. Each profile holds a full brew day — strike water, mash rests, boil, chill — with timed alerts for additions and other events.
+
+[b]Water Calculator[/b]
+A mash water volume and mineral chemistry calculator. In Auto mode the results save directly to the active brew profile.
+
+[b]Settings[/b]
+Hardware configuration, PID tuning, heater wiring, calibration, app preferences, and software updates.
+
+[size=18][b][color=ffffff]Two Operating Modes[/color][/b][/size]
+
+[b]Auto Mode[/b] runs a loaded brew profile step by step. The app heats to each step's target temperature, holds it for the configured duration, fires addition alerts at the right times, and then advances to the next step automatically or waits for your confirmation.
+
+[b]Manual Mode[/b] gives you direct control: set a target temperature, a hold duration, and power levels, then start the heater. The timer begins counting down once the target is reached.
 
 [ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
 
 
-[SECTION: settingsMenus]
-[size=24][b][color=33ccff]Settings Menus[/color][/b][/size]
-Basic description of the settings menus.
+[SECTION: mainScreen]
+[size=24][b][color=33ccff]The Main Screen[/color][/b][/size]
 
-[b]Menu 1[/b]
-More detailed description.
+[size=18][b][color=ffffff]Temperature & Status[/color][/b][/size]
 
-[b]Menu 2[/b]
-More detailed description.
+[b]Temperature display[/b]
+The large number at the top shows the current probe reading. The color indicates heating state: green when at or near target, cyan while actively heating toward target, and white when idle.
+
+[b]Target temperature[/b]
+Shown below the live reading. In Auto mode this is set by the current step. In Manual mode it is set by the target temp slider.
+
+[b]Status line[/b]
+Describes the current state of the sequencer: IDLE, HEATING, the active step name, PAUSED, ALERT, DONE, etc.
+
+[size=18][b][color=ffffff]Timers[/color][/b][/size]
+
+[b]Step timer (MM:SS)[/b]
+Counts down the hold duration for the current step. [b]The timer only starts once the target temperature is reached.[/b] While the kettle is still heating up, the timer shows the full duration and does not move.
+
+[b]Global elapsed time (HH:MM)[/b]
+Total time elapsed since the brew session started. Paused time is excluded.
+
+[size=18][b][color=ffffff]Heater Indicators[/color][/b][/size]
+
+Three indicators (R1, R2, R3) show the configured wattage of each relay and light up when that relay is physically energised. The wattage numbers shown reflect the values set in [ref=settingsHeater][color=33ccff]Heater Settings[/color][/ref].
+
+[size=18][b][color=ffffff]Energy & Cost[/color][/b][/size]
+
+The kWh display tracks cumulative energy used since the last reset. Tap it to open the cost setup panel where you can set your electricity rate ($/kWh) and optionally reset the counter at the start of a new brew.
+
+[size=18][b][color=ffffff]Step List (Auto Mode)[/color][/b][/size]
+
+In Auto mode the steps of the loaded profile are shown below the controls. Each step card shows the step name, target temperature, duration, and a predicted ready time. Predicted times are recalculated continuously based on current temperature and volume. Tap a step card to expand it for more detail. The active step is highlighted.
+
+[size=18][b][color=ffffff]Control Buttons[/color][/b][/size]
+
+[b]START / PAUSE / RESUME[/b]
+Context-sensitive main action button. Starts the sequence or manual heat, pauses while maintaining temperature hold, or resumes from pause.
+
+[b]ADVANCE[/b]
+In Auto mode, manually skips the current step and moves to the next one.
+
+[b]RESET[/b]
+Stops the sequence and rewinds to step 1. In Manual mode, stops and clears the timer.
+
+[b]EMERGENCY STOP[/b]
+Immediately cuts power to all relays and holds them off until you press START or RESET. Use this if you need to cut heat instantly without losing your place in the profile. The session remains in a PAUSED state and can be resumed.
+
+[size=18][b][color=ffffff]Mode Switching[/color][/b][/size]
+
+The mode switcher lets you move between Auto (Profile) and Manual mode. Switching modes will prompt a confirmation if a session is active, since doing so stops the current sequence.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: autoMode]
+[size=24][b][color=33ccff]Auto Mode — Running a Brew Profile[/color][/b][/size]
+
+Auto mode executes a brew profile step by step. Load a profile from the [ref=brewProfiles][color=33ccff]Profiles screen[/color][/ref], return to the Main Screen, and press START.
+
+[size=18][b][color=ffffff]How a Step Executes[/color][/b][/size]
+
+Each step has two phases:
+
+[b]Ramp phase[/b]
+The heater fires at the step's configured Ramp Power until the kettle reaches the target temperature. The status line shows "HEATING — Step Name". The step timer does not move during this phase.
+
+[b]Hold phase[/b]
+Once the target is reached (and held for 5 seconds to debounce), the step timer starts counting down from the configured duration. The heater switches to Hold Power and the PID maintains the temperature. An alert sound plays when the temperature is first reached.
+
+[size=18][b][color=ffffff]Step Completion[/color][/b][/size]
+
+When the hold timer reaches zero, what happens next depends on the step's [b]Timeout Behavior[/b]:
+
+  • [b]Auto Advance[/b] — The app immediately moves to the next step. No user action needed.
+  • [b]Manual Advance[/b] — The timer stops, an alert sounds, and the display shows "DONE: Step Name". Press ADVANCE (or the action button) to continue.
+  • [b]End Program[/b] — The sequence ends, all relays turn off, and the status shows "Brew Complete".
+
+[size=18][b][color=ffffff]Addition Alerts[/color][/b][/size]
+
+If a step has [ref=stepAlerts][color=33ccff]additions[/color][/ref] configured, the app pauses and sounds an alert when each one is due. The alert name (e.g. "Bittering hops") is shown on screen. Press the action button to acknowledge and resume.
+
+[size=18][b][color=ffffff]Pausing[/color][/b][/size]
+
+Pressing PAUSE during a step freezes the step timer but [b]the PID continues to hold the kettle at the current target temperature[/b]. This lets you pause without losing your mash temperature. Paused time is excluded from all timers.
+
+[size=18][b][color=ffffff]Emergency Stop[/color][/b][/size]
+
+EMERGENCY STOP cuts all relay power immediately and prevents the control loop from re-energising them. The session stays PAUSED. Press RESUME or ADVANCE to clear the hard stop and continue.
+
+[size=18][b][color=ffffff]Brew Complete[/color][/b][/size]
+
+When the last step finishes (via Auto Advance or End Program), all relays are turned off and the status shows "Brew Complete". The energy counter and global elapsed time remain visible for reference. Press RESET to clear the session.
+
+[size=18][b][color=ffffff]Session Recovery[/color][/b][/size]
+
+KettleBrain saves the session state every 30 seconds and on every state change. If the app is closed or loses power during a brew, it will offer to restore the session on next launch (requires Auto-Resume to be enabled in [ref=settingsApp][color=33ccff]App Preferences[/color][/ref]).
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: manualMode]
+[size=24][b][color=33ccff]Manual Mode[/color][/b][/size]
+
+Manual mode lets you heat water to a target temperature and hold it for a set time without a brew profile. It is useful for quick tasks, cleaning, or experimenting.
+
+[size=18][b][color=ffffff]Controls[/color][/b][/size]
+
+[b]Target Temperature[/b]
+Set the temperature you want to reach and hold. The heater fires until this temperature is achieved, then the PID holds it.
+
+[b]Timer Duration[/b]
+How long to hold temperature once the target is reached. The countdown begins when the probe first reads at or above the target.
+
+[b]Ramp Power[/b]
+Maximum wattage allowed while heating up to the target. Useful for limiting inrush on older circuits.
+
+[b]Hold Power[/b]
+Maximum wattage allowed while maintaining the target temperature. A lower hold power reduces cycling and saves energy during long holds.
+
+[b]Volume[/b]
+The volume of water in the kettle. This is used to calculate the estimated time to reach temperature, shown in the prediction display. It does not affect heater control.
+
+[size=18][b][color=ffffff]Timer Behaviour[/color][/b][/size]
+
+The countdown only starts once the probe reads at or above the target. If you press PAUSE before the target is reached, it acts as a full reset — the heater stops and the settings return to their defaults. If you press PAUSE after the timer has started, the timer freezes but the heater continues to hold temperature.
+
+When the timer reaches zero the session automatically resets to Manual Mode standby — the heater settings are retained so you can start another run immediately.
+
+[size=18][b][color=ffffff]Starting, Pausing, and Stopping[/color][/b][/size]
+
+  • Press [b]START[/b] to begin heating.
+  • Press [b]PAUSE[/b] to freeze the timer (heat continues) or reset if still in pre-heat.
+  • Press [b]RESET[/b] to stop the heater and clear the session entirely.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: delayedStart]
+[size=24][b][color=33ccff]Delayed Start[/color][/b][/size]
+
+Delayed Start lets you schedule the kettle to begin heating automatically so that water is at strike temperature when you are ready to brew.
+
+[size=18][b][color=ffffff]How It Works[/color][/b][/size]
+
+You enter the time you want the water to be ready, and the app works backwards: it calculates how long the heater needs to run based on the current water temperature, the target temperature, and the volume, then schedules the heater to fire at the right time.
+
+The calculated start time is recalculated every 30 minutes to account for changes in ambient temperature.
+
+[size=18][b][color=ffffff]Setting Up a Delayed Start[/color][/b][/size]
+
+  1. Set the [b]Target Temperature[/b] — the temperature you want the water at.
+  2. Set the [b]Volume[/b] — how much water is in the kettle.
+  3. Set the [b]Ready Time[/b] — the time of day you want the water ready.
+  4. Press [b]CONFIRM DELAY[/b].
+
+The display will show "DELAY ACTIVE" along with the calculated heater fire time and the ready time.
+
+[size=18][b][color=ffffff]Cancelling[/color][/b][/size]
+
+Press the delay button again (or RESET) to cancel. The app returns to the mode it was in before the delay was set — Auto (IDLE) if you were in Auto mode, or Manual if you were in Manual mode.
+
+[size=18][b][color=ffffff]Accuracy Note[/color][/b][/size]
+
+The heat-up time estimate depends on the [ref=settingsCalibration][color=33ccff]heater calibration factor[/color][/ref]. If the factory default has not been calibrated for your system, the ready time may be off by several minutes. Running a calibration improves accuracy.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: brewProfiles]
+[size=24][b][color=33ccff]Brew Profiles Screen[/color][/b][/size]
+
+The Profiles screen lists all saved brew profiles. Each profile is a named sequence of steps that defines a full brew day.
+
+[size=18][b][color=ffffff]Loading a Profile[/color][/b][/size]
+
+Tap a profile in the list to select it, then tap [b]LOAD[/b]. The app returns to the Main Screen with that profile ready to run. The profile name appears at the top of the Main Screen.
+
+[size=18][b][color=ffffff]Creating a Profile[/color][/b][/size]
+
+Tap [b]NEW[/b] to create a blank profile, or tap [b]COPY[/b] on an existing profile to duplicate it. Both options open the [ref=profileEditor][color=33ccff]Profile Editor[/color][/ref] where you can name the profile and build its step list.
+
+[size=18][b][color=ffffff]Deleting a Profile[/color][/b][/size]
+
+Tap a profile in the list and tap [b]DELETE[/b]. The built-in Default Profile cannot be deleted.
+
+[size=18][b][color=ffffff]The Default Profile[/color][/b][/size]
+
+A Default Profile ships with the app as a starting point. It includes a strike water step, 60-minute mash, mash-out, 60-minute boil with four hop addition alerts, and a chill step. It is protected from deletion but can be copied and modified freely.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: profileEditor]
+[size=24][b][color=33ccff]Profile Editor[/color][/b][/size]
+
+The Profile Editor lets you set the profile name and manage its list of steps.
+
+[size=18][b][color=ffffff]Profile Name[/color][/b][/size]
+
+Tap the name field at the top to edit it. The name appears in the Profiles list and on the Main Screen when the profile is loaded.
+
+[size=18][b][color=ffffff]Managing Steps[/color][/b][/size]
+
+  • Tap [b]ADD STEP[/b] to append a new step to the end of the list.
+  • Tap a step in the list to open the [ref=stepEditor][color=33ccff]Step Editor[/color][/ref] for that step.
+  • Use the [b]UP / DOWN[/b] arrows to reorder steps.
+  • Tap [b]DELETE[/b] on a step to remove it.
+
+[size=18][b][color=ffffff]Water Calculator Data[/color][/b][/size]
+
+Each profile stores its own water and chemistry calculator data. When the Water Calculator is open and a profile is loaded (Auto context), saving the results writes them to the profile. See [ref=waterCalculator][color=33ccff]Water Calculator[/color][/ref] for details.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: stepEditor]
+[size=24][b][color=33ccff]Step Editor[/color][/b][/size]
+
+The Step Editor configures all parameters for a single brew step.
+
+[size=18][b][color=ffffff]Name & Step Type[/color][/b][/size]
+
+[b]Name[/b]
+A descriptive label shown in the step list and on the Main Screen during execution. Examples: "Strike Water", "Mash", "60-min Boil".
+
+[b]Step Type[/b]
+Classifies the step for display and control purposes. Available types:
+
+  • [b]Step[/b] — Generic step, full PID control.
+  • [b]Prep Water[/b] — Heating pre-brew water.
+  • [b]Dough-in[/b] — Adding grain to the kettle.
+  • [b]Mash[/b] — Standard mash rest with PID temperature hold.
+  • [b]Mash-out[/b] — Raising mash to conversion-stop temperature.
+  • [b]Sparge[/b] — Sparge water heating.
+  • [b]Boil Start[/b] — Heating to boil.
+  • [b]Boil Off[/b] — Active boil. Runs [b]open-loop[/b] at full configured power regardless of temperature. The timer starts as soon as the step is reached.
+  • [b]Chill[/b] — Post-boil chill-down monitoring.
+
+[size=18][b][color=ffffff]Temperature & Duration[/color][/b][/size]
+
+[b]Target Temperature[/b]
+The setpoint the heater works toward during this step. For Boil Off steps, this is used only to determine when to start the timer (212 °F / 100 °C at sea level).
+
+[b]Duration[/b]
+The hold time in minutes, counted from when the target temperature is first reached. A duration of 0 means the step completes immediately at temperature and advances without holding.
+
+[size=18][b][color=ffffff]Power Settings[/color][/b][/size]
+
+[b]Ramp Power[/b]
+Maximum wattage used while heating up to the target. Setting this below the system maximum can reduce thermal stress or limit inrush on a shared circuit.
+
+[b]Hold Power[/b]
+Maximum wattage used once the target is reached. During a mash rest, a lower hold power reduces temperature overshoot and keeps the PID working in a tighter range.
+
+[size=18][b][color=ffffff]Timeout Behaviour[/color][/b][/size]
+
+Determines what the app does when the hold timer expires:
+
+  • [b]Auto Advance[/b] — Immediately moves to the next step.
+  • [b]Manual Advance[/b] — Pauses and alerts; you press the button to continue.
+  • [b]End Program[/b] — Stops the sequence and turns off all heaters. Used for the last step (usually Chill).
+
+[size=18][b][color=ffffff]Lauter Volume[/color][/b][/size]
+
+The volume of water in the kettle during this step. Used by the prediction engine to calculate estimated ready times for this and all subsequent steps. If left blank, the volume is inherited from the previous step.
+
+[size=18][b][color=ffffff]SG Reading Fields[/color][/b][/size]
+
+Optional fields for recording a specific gravity reading taken during this step. Enter the measured SG and the sample temperature; the app calculates a temperature-corrected value. These readings are stored with the profile for your records.
+
+[size=18][b][color=ffffff]Step Notes[/color][/b][/size]
+
+A free-text note shown when the step card is expanded on the Main Screen. Use this for reminders like "reserve 1.5 gal for lautering" or "turn on pump".
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: stepAlerts]
+[size=24][b][color=33ccff]Step Alerts & Additions[/color][/b][/size]
+
+Alerts are timed notifications within a step — hop additions, finings, gravity reads, or any other event that needs to happen at a specific point during the hold.
+
+[size=18][b][color=ffffff]How Alert Timing Works[/color][/b][/size]
+
+Alert timing is measured as [b]minutes remaining[/b] in the step's hold timer at the point the alert should fire.
+
+For example, in a 60-minute boil step:
+  • An alert with time [b]60[/b] fires the moment the boil starts (60 min remaining).
+  • An alert with time [b]15[/b] fires 15 minutes before the end of the boil.
+  • An alert with time [b]0[/b] fires when the timer reaches zero (end of step).
+
+This matches standard hop addition schedules where additions are named by "minutes left in boil".
+
+[size=18][b][color=ffffff]What Happens When an Alert Fires[/color][/b][/size]
+
+The sequence pauses, an alert sound plays, and the alert name is displayed on the Main Screen. The heater continues to hold temperature while paused. Press the action button to acknowledge the alert and resume the timer. If you do not acknowledge within the configured repeat interval, the alert sound plays again.
+
+[size=18][b][color=ffffff]Adding and Editing Alerts[/color][/b][/size]
+
+Open the [b]Step Alerts screen[/b] from the Step Editor. Tap [b]ADD ALERT[/b] to create a new one. For each alert, enter:
+  • [b]Name[/b] — What to display on screen (e.g. "Bittering hops", "Irish Moss", "Take SG reading").
+  • [b]Time[/b] — Minutes remaining in the step's hold timer when this alert should fire.
+
+Tap an existing alert to edit it, or tap [b]DELETE[/b] to remove it.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: waterCalculator]
+[size=24][b][color=33ccff]Water & Chemistry Calculator[/color][/b][/size]
+
+The Water Calculator computes strike water volumes, sparge volumes, and strike temperature for your mash, and calculates the mineral salt additions needed to hit target water chemistry.
+
+[size=18][b][color=ffffff]Manual vs. Profile Context[/color][/b][/size]
+
+The calculator operates in two contexts:
+
+[b]Manual context[/b]
+Used when no brew profile is loaded, or when running in Manual mode. The inputs are a temporary working session and are [b]reset to defaults each time the app starts[/b]. Use this for standalone calculations.
+
+[b]Auto / Profile context[/b]
+Used when a brew profile is loaded. The inputs and results are saved [b]directly to the profile[/b] when you tap "Save Results to Profile". Each profile stores its own water data independently. Tap "Cancel / Exit" to leave without saving.
+
+The footer button bar changes depending on context — in Manual mode you see "Back to Dashboard"; in Auto mode you see "Cancel / Exit" and "Save Results to Profile".
+
+[size=18][b][color=ffffff]Water Tab — Inputs[/color][/b][/size]
+
+[b]Mash Method[/b]
+  • [b]No Sparge (BIAB)[/b] — All water goes in at once. No separate sparge volume calculated.
+  • [b]Sparge[/b] — Water is split between mash and sparge. A separate sparge volume is calculated.
+
+[b]Grain Weight[/b] — Total weight of all grains in your recipe.
+[b]Boil Time[/b] — Duration of the boil in minutes.
+[b]Dough-In Temp[/b] — The temperature you want the water at when you add the grain.
+[b]Mash Temp[/b] — Target mash temperature (after grain is added and temperature settles).
+[b]Boil-Off Rate[/b] — Volume lost to evaporation per hour.
+[b]Absorption Rate[/b] — Volume absorbed by the grain per unit weight.
+[b]Trub Loss[/b] — Volume left behind in the kettle after the boil.
+[b]Fermentation Volume[/b] — Your target volume into the fermenter.
+[b]Mash Thickness[/b] — Ratio of water to grain (qt/lb or L/kg).
+[b]Tun Capacity[/b] — Maximum liquid volume your kettle can hold.
+
+[size=18][b][color=ffffff]Water Tab — Results[/color][/b][/size]
+
+  • [b]Total Water[/b] — Total water needed for the brew.
+  • [b]Set Aside[/b] — Volume to reserve separately (sparge water in Sparge method; lautering water in BIAB).
+  • [b]Dough-In Volume[/b] — Water volume for the mash.
+  • [b]Pre-Boil Volume[/b] — Expected volume in the kettle at the start of the boil.
+  • [b]Strike Temp[/b] — Temperature to heat the water to before adding grain, so that adding room-temperature grain brings the mash to the target mash temperature.
+
+Tap [b]SEND TO PROFILE STEPS[/b] (in Auto context) to auto-populate volumes and temperatures into the matching steps of your brew profile.
+
+[size=18][b][color=ffffff]Chemistry Tab — Inputs[/color][/b][/size]
+
+[b]SRM[/b] — Beer color (used to estimate residual alkalinity target).
+[b]Target pH[/b] — Desired mash pH.
+[b]Ion targets (Ca, Mg, Na, SO₄, Cl)[/b] — Desired mineral concentrations in ppm. Common profiles range from balanced (50/10/15/75/63) to hoppy (high sulfate) or malty (high chloride).
+
+Tap [b]Load Profile[/b] to select from the built-in target water profiles (Burton, Pilsen, Dublin, etc.) which will fill in the ion targets automatically.
+
+[size=18][b][color=ffffff]Chemistry Tab — Results[/color][/b][/size]
+
+Mineral addition amounts (in grams) calculated to bring your source water to the target ion levels:
+  • [b]Gypsum[/b] (CaSO₄) — Raises Ca and SO₄. Accentuates hop bitterness.
+  • [b]Calcium Chloride[/b] (CaCl₂) — Raises Ca and Cl. Enhances malt character.
+  • [b]Epsom Salt[/b] (MgSO₄) — Raises Mg and SO₄.
+  • [b]Table Salt[/b] (NaCl) — Raises Na and Cl.
+  • [b]Pickling Lime[/b] (Ca(OH)₂) — Raises Ca and pH.
+  • [b]Lactic Acid (88%)[/b] — Lowers mash pH. Results shown in both ml and grams.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: settingsApp]
+[size=24][b][color=33ccff]Settings — App Preferences[/color][/b][/size]
+
+[b]Units[/b]
+Switch between [b]Imperial (°F / Gal)[/b] and [b]Metric (°C / L)[/b]. All temperatures and volumes throughout the app update immediately. Settings are stored internally in imperial and converted for display.
+
+[b]Auto-Start on Boot[/b]
+When enabled, KettleBrain launches automatically when the Raspberry Pi starts up. This creates (or removes) a desktop autostart entry. Recommended for dedicated brewing systems.
+
+[b]Auto-Resume[/b]
+When enabled, if the app detects that the previous session ended uncleanly (power loss, crash), it will offer to restore the brew session on next launch. Requires Auto-Start to also be enabled. The recovery state is saved every 30 seconds during active brewing.
+
+[b]Force Numlock[/b]
+Ensures the numeric keypad is active when text input fields are used on a Pi touchscreen with an on-screen keyboard.
+
+[b]CSV Logging[/b]
+When enabled, the app writes temperature, power, and step data to [b]kettlebrain-log.csv[/b] in the data folder (~/ kettlebrain-data/) every 30 seconds during active sessions. Useful for post-brew analysis. The file is appended to, not overwritten, across sessions.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: settingsHardware]
+[size=24][b][color=33ccff]Settings — Hardware[/color][/b][/size]
+
+[b]Temp Sensor[/b]
+Select the DS18B20 temperature probe that KettleBrain should read. The dropdown lists all 1-wire sensors detected on the bus. If your probe is not listed, check that the 1-wire interface is enabled in raspi-config and that the probe is correctly wired (data line to GPIO 4 by default). Selecting "unassigned" disables temperature monitoring.
+
+[b]Boil Temp[/b]
+The temperature threshold used to determine when a boil step's hold timer should start, and at which point the heater switches from PID control to open-loop. At sea level this is 212 °F (100 °C). Reduce this value if you brew at altitude. Range: 180 – 212 °F.
+
+[b]Relay Activation[/b]
+Sets the electrical logic of your relay board:
+  • [b]Active HIGH[/b] — The relay closes (heater on) when the GPIO pin is driven HIGH. Used by some solid-state relay modules.
+  • [b]Active LOW[/b] — The relay closes (heater on) when the GPIO pin is driven LOW. This is the most common configuration for mechanical and SSR relay boards, and is the factory default.
+If your heater runs continuously or never fires, try switching this setting.
+
+[b]Alert Sound[/b]
+The audio file played when a step alert fires or a temperature target is reached. Tap TEST to preview the selected sound. Available sounds include several dings, buzzers, and bells.
+
+[b]Audio Out[/b]
+The output device used for alert sounds. On a Raspberry Pi this typically lists HDMI and the headphone jack. Select the device connected to your speaker or buzzer.
+
+[b]Alert Volume[/b]
+System output volume, set via the OS mixer. Adjust this if alerts are too quiet or too loud.
+
+[b]Alert Repeat[/b]
+How often the alert sound repeats (in seconds) while waiting for you to acknowledge an addition alert. Set to OFF (0) to disable repeat sounds — the alert will play once only.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: settingsHeater]
+[size=24][b][color=33ccff]Settings — Heater Configuration[/color][/b][/size]
+
+KettleBrain supports up to three independently controlled heating element relays (GPIO pins 26, 20, and 21). This screen sets the rated wattage of each element.
+
+[size=18][b][color=ffffff]Why Wattage Matters[/color][/b][/size]
+
+The app uses the configured wattages to decide which combination of relays to fire in order to deliver a target power level. When a step or manual mode calls for, say, 1800 W and you have a 1000 W and an 800 W element configured, the app turns on both simultaneously. For fractional power levels, it uses a 30-second duty cycle on a third relay to interpolate.
+
+Setting the correct wattage values for your elements is important for accurate power delivery and for the energy (kWh) counter.
+
+[size=18][b][color=ffffff]Relay Sliders[/color][/b][/size]
+
+Each slider sets the rated wattage of one relay in 50 W steps. Dragging the slider below 500 W snaps it to [b]DISABLED[/b] — that relay will never be energised. This is useful if you only have one or two elements installed.
+
+Default values: R1 = 1000 W, R2 = 800 W, R3 = 1000 W (total: 2800 W).
+
+[size=18][b][color=ffffff]Total Available Power[/color][/b][/size]
+
+The sum of all enabled relays determines the maximum power level available in step and manual mode power sliders. If you change relay wattages, the Main Screen power maps update on your next visit to that screen.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: settingsPID]
+[size=24][b][color=33ccff]Settings — PID Control[/color][/b][/size]
+
+The PID controller is the algorithm that decides how much power to apply in order to hold the kettle precisely at a target temperature. It is used during all non-boil steps.
+
+[size=18][b][color=ffffff]The Three Parameters[/color][/b][/size]
+
+[b]Kp — Proportional Gain (default: 50)[/b]
+Determines how aggressively the controller responds to the difference between the current temperature and the target. A higher Kp makes the controller react more forcefully but can cause overshoot.
+
+[b]Ki — Integral Gain (default: 0.02)[/b]
+Corrects for sustained drift — if the temperature is consistently slightly below target, the integral term gradually increases power to compensate. Too high a value causes slow oscillation.
+
+[b]Kd — Derivative Gain (default: 10)[/b]
+Responds to the rate of change of temperature. A higher Kd slows the controller's response as temperature approaches the target, reducing overshoot. Too high a value can cause instability.
+
+[size=18][b][color=ffffff]When to Adjust[/color][/b][/size]
+
+The defaults work well for most single-vessel electric systems. You may want to tune if:
+  • The mash temperature consistently overshoots by several degrees (reduce Kp or increase Kd).
+  • The temperature settles below the target and stays there (increase Ki slightly).
+  • The heater cycles rapidly and noisily (reduce Kp).
+
+Changes take effect immediately without restarting the app.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: settingsCalibration]
+[size=24][b][color=33ccff]Settings — Heater Calibration[/color][/b][/size]
+
+The calibration factor tells KettleBrain how quickly your system heats water — expressed as degrees per minute at a reference volume of 8 gallons (30 L). This value is used by the [ref=delayedStart][color=33ccff]Delayed Start[/color][/ref] feature and the step prediction engine to estimate how long each ramp will take.
+
+[size=18][b][color=ffffff]Current Factor[/color][/b][/size]
+
+The current calibration value is shown at the top of the screen. The factory default is 1.3 °F/min at 8 gallons.
+
+[size=18][b][color=ffffff]Running a Calibration[/color][/b][/size]
+
+For best results, calibrate with a typical brew volume at full heater power.
+
+  1. Fill your kettle with a known volume of water and note the starting temperature.
+  2. Heat the water at full power, noting the time when you start and the final temperature when you stop.
+  3. Enter [b]Volume[/b], [b]Start Temp[/b], [b]End Temp[/b], and [b]Time[/b] into the calibration screen.
+  4. Tap [b]CALCULATE[/b] to compute the new rate.
+  5. Tap [b]SAVE[/b] to apply it.
+
+[size=18][b][color=ffffff]How the Factor Is Used[/color][/b][/size]
+
+The factor is automatically adjusted for different volumes. If your reference was measured at 6 gallons but a profile step uses 8 gallons, the app scales the rate proportionally. It also scales for the step's configured Ramp Power relative to the full system wattage.
+
+[b]Restore Defaults[/b] resets the factor to 1.3 °F/min.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: settingsUpdates]
+[size=24][b][color=33ccff]Settings — Updates[/color][/b][/size]
+
+KettleBrain uses a script-based update system to pull new versions from the remote repository.
+
+[b]CHECK[/b]
+Connects to the update server and reports whether a newer version is available. The result is shown in the log window.
+
+[b]INSTALL[/b]
+Downloads and installs the available update. The log window streams the installation output in real time. Do not close the app or power off the Pi during installation.
+
+[b]RESTART APP[/b]
+Restarts KettleBrain to apply an installed update. Any active brew session will be lost unless Auto-Resume is enabled and the session state was saved before restarting.
+
+[ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
+
+
+[SECTION: troubleshooting]
+[size=24][b][color=33ccff]Troubleshooting[/color][/b][/size]
+
+[size=18][b][color=ffffff]Temperature reads "---" or never updates[/color][/b][/size]
+
+  • The probe is not assigned. Go to [ref=settingsHardware][color=33ccff]Hardware Settings[/color][/ref] and select the correct sensor from the dropdown.
+  • If the dropdown is empty, no 1-wire sensors were detected. Check that the 1-wire interface is enabled in raspi-config (Interface Options → 1-Wire → Enable) and that the probe data line is connected to GPIO 4 with a 4.7 kΩ pull-up resistor.
+  • Try unplugging and re-plugging the probe, then re-enter Hardware Settings to refresh the sensor list.
+
+[size=18][b][color=ffffff]Heater never fires[/color][/b][/size]
+
+  • Check that the relay wattages in [ref=settingsHeater][color=33ccff]Heater Settings[/color][/ref] are set above 0. A value of 0 (DISABLED) means the relay is never activated.
+  • Verify the [b]Relay Activation[/b] setting in [ref=settingsHardware][color=33ccff]Hardware Settings[/color][/ref] matches your relay board's logic (Active HIGH or Active LOW). If the heater runs continuously instead of cycling, the logic is inverted.
+  • Ensure the target temperature is above the current kettle temperature. If the kettle is already at or above the setpoint, the PID will not fire the heater.
+
+[size=18][b][color=ffffff]Heater runs continuously during a mash hold[/color][/b][/size]
+
+  • The Relay Activation logic may be inverted — check [ref=settingsHardware][color=33ccff]Hardware Settings[/color][/ref].
+  • The PID Kp value may be too high. Try reducing it in [ref=settingsPID][color=33ccff]PID Settings[/color][/ref].
+
+[size=18][b][color=ffffff]Temperature overshoots the mash target[/color][/b][/size]
+
+  • Reduce the step's Hold Power. A lower wattage limit during the hold phase gives the PID finer control.
+  • Reduce Kp slightly or increase Kd in [ref=settingsPID][color=33ccff]PID Settings[/color][/ref].
+
+[size=18][b][color=ffffff]Delayed Start fires at the wrong time[/color][/b][/size]
+
+  • Run a [ref=settingsCalibration][color=33ccff]heater calibration[/color][/ref]. An uncalibrated system uses the factory default rate which may not match your setup.
+  • Ensure the correct volume is entered in the Delayed Start setup. The heat-up estimate scales with volume.
+
+[size=18][b][color=ffffff]Session was lost after a power cut[/color][/b][/size]
+
+  • Enable [b]Auto-Resume[/b] in [ref=settingsApp][color=33ccff]App Preferences[/color][/ref]. With this enabled, the next launch will detect the interrupted session and offer to restore it.
+  • The recovery state is saved every 30 seconds, so up to 30 seconds of elapsed timer progress may be lost, but the correct step and temperature target will be restored.
+
+[size=18][b][color=ffffff]App does not auto-start on boot[/color][/b][/size]
+
+  • Confirm [b]Auto-Start on Boot[/b] is enabled and saved in [ref=settingsApp][color=33ccff]App Preferences[/color][/ref].
+  • The setting creates a .desktop file in ~/.config/autostart/. Verify it exists and that LXDE autostart is enabled on your Pi.
 
 [ref=main][color=33ccff]<< Back to Help Index[/color][/ref]
