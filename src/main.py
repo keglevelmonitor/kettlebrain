@@ -1873,6 +1873,54 @@ class ProfilesScreen(Screen):
     def go_back(self):
         self.manager.current = 'main'
 
+class HelpScreen(Screen):
+    help_text = StringProperty("Loading...")
+    return_screen = StringProperty('main')
+    sections = {}
+
+    def on_pre_enter(self, *args):
+        self.load_help()
+        self.go_to_section('main')
+
+    def load_help(self):
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        help_file = os.path.join(base_path, 'assets', 'help.txt')
+        raw_text = ""
+        if os.path.exists(help_file):
+            try:
+                with open(help_file, 'r', encoding='utf-8') as f:
+                    raw_text = f.read()
+            except Exception as e:
+                raw_text = f"[SECTION: main]\nError reading help file: {e}"
+        else:
+            raw_text = "[SECTION: main]\nHelp file (assets/help.txt) not found."
+        self._parse_sections(raw_text)
+
+    def _parse_sections(self, text):
+        self.sections = {}
+        parts = text.split('[SECTION:')
+        for part in parts:
+            if not part.strip():
+                continue
+            try:
+                header, content = part.split(']', 1)
+                section_name = header.strip()
+                self.sections[section_name] = content.strip()
+            except ValueError:
+                continue
+
+    def go_to_section(self, section_name):
+        if section_name in self.sections:
+            self.help_text = self.sections[section_name]
+        else:
+            self.help_text = f"[color=ff4444]Section '{section_name}' not found.[/color]"
+
+    def go_back(self):
+        app = App.get_running_app()
+        app.root.transition.direction = 'right'
+        app.root.current = self.return_screen
+
+
 class SettingsMasterScreen(Screen):
     # Dynamic Footer Button Properties
     btn_3_text = StringProperty("")
@@ -1923,8 +1971,17 @@ class SettingsMasterScreen(Screen):
         self.manager.current = 'main'
 
     def show_help(self):
-        # Placeholder for help popup
-        print(f"[Settings] Help requested for {self.current_tab}")
+        tab_section_map = {
+            'settings_app':         'settingsApp',
+            'settings_hardware':    'settingsHardware',
+            'settings_heater':      'settingsHeater',
+            'settings_pid':         'settingsPID',
+            'settings_calibration': 'settingsCalibration',
+            'settings_updates':     'settingsUpdates',
+            'settings_about':       'overview',
+        }
+        section = tab_section_map.get(self.current_tab, 'main')
+        App.get_running_app().open_help_section(section, return_screen='sys_settings')
 
     def on_btn_3(self):
         # Slot 3: Usually Blank, or CHECK (Updates)
@@ -2078,6 +2135,7 @@ class HardwareSettingsScreen(Screen):
     boil_temp = NumericProperty(212)
     system_volume = NumericProperty(80)
     alert_repeat_freq = NumericProperty(15)
+    relay_active_high = BooleanProperty(False)
     
     # Selection lists for Spinners
     sensor_list = ListProperty(["unassigned"])
@@ -2140,6 +2198,9 @@ class HardwareSettingsScreen(Screen):
         # 6. LOAD ALERT REPEAT FREQUENCY
         self.alert_repeat_freq = sm.get_system_setting("alert_repeat_freq", 15)
 
+        # 7. LOAD RELAY LOGIC
+        self.relay_active_high = sm.get_system_setting("relay_active_high", False)
+
     def save_changes(self):
         """Write values to SettingsManager."""
         sm = self.app.settings_manager
@@ -2159,8 +2220,12 @@ class HardwareSettingsScreen(Screen):
         # Sound File
         sm.set_system_setting("alert_sound_file", self.ids.spinner_sound.text)
         
-        # Alert Frequency (UNCOMMENTED SO IT SAVES)
+        # Alert Frequency
         sm.set_system_setting("alert_repeat_freq", int(self.alert_repeat_freq))
+
+        # Relay Logic
+        sm.set_system_setting("relay_active_high", self.relay_active_high)
+        sm.set_system_setting("relay_logic_configured", True)
         
         print("[HardwareSettings] Saved.")
 
@@ -2670,6 +2735,9 @@ class KettleApp(App):
         
         # ADDED: Water Screen
         self.water_screen = WaterScreen(name='water_calc')
+
+        # Help Screen
+        self.help_screen = HelpScreen(name='help')
         
         # NEW SETTINGS MASTER
         self.settings_master = SettingsMasterScreen(name='sys_settings')        
@@ -2686,6 +2754,7 @@ class KettleApp(App):
         sm.add_widget(self.step_editor_screen)
         sm.add_widget(self.alerts_screen)
         sm.add_widget(self.water_screen)
+        sm.add_widget(self.help_screen)
         
         # Add the NEW Master
         sm.add_widget(self.settings_master)        
@@ -2721,7 +2790,16 @@ class KettleApp(App):
         """
         if hasattr(self, 'splash_queue'):
             self.splash_queue.put("STOP")
-    
+
+    def open_help_section(self, section_name='main', return_screen=None):
+        """Navigate to the Help screen at a specific section."""
+        help_screen = self.root.get_screen('help')
+        help_screen.load_help()
+        help_screen.go_to_section(section_name)
+        help_screen.return_screen = return_screen if return_screen else self.root.current
+        self.root.transition.direction = 'left'
+        self.root.current = 'help'
+
     # Add this method to KettleApp class
     def build_power_map(self):
         """
@@ -3598,6 +3676,9 @@ class WaterScreen(Screen):
             # NEW: Save the clean name of the current profile
             "profile_name": self.current_profile_clean_name 
         }
+
+    def go_to_help(self):
+        App.get_running_app().open_help_section('waterCalculator', return_screen='water_calc')
 
     def save_and_exit(self):
         """Save data to the correct context and return to dashboard."""

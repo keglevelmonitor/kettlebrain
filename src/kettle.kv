@@ -1205,80 +1205,156 @@
 <HardwareSettingsScreen>:
     GridLayout:
         cols: 2
-        spacing: 20
-        padding: 20
-        
-        # 1. Temp Sensor
-        Label:
-            text: "Temp Sensor:"
-            halign: 'right'
-        Spinner:
-            id: spinner_sensor
-            text: "Select..."
-            values: root.sensor_list
+        spacing: 15
+        padding: [20, 15, 20, 10]
 
-        # 2. Boil Temp
-        Label:
-            text: "Boil Temp: " + str(int(root.boil_temp))
-            halign: 'right'
-        Slider:
-            id: s_boil
-            min: 180
-            max: 212
-            step: 1
-            value: root.boil_temp
-            on_value: root.boil_temp = self.value
-
-        # 3. Audio Out
-        Label:
-            text: "Audio Out:"
-            halign: 'right'
-        Spinner:
-            id: spinner_audio
-            text: "Select..."
-            values: root.audio_list
-            
-        # 4. Alert Volume
-        Label:
-            text: "Alert Volume: " + str(int(root.system_volume)) + "%"
-            halign: 'right'
-        Slider:
-            id: s_vol
-            min: 0
-            max: 100
-            step: 5
-            value: root.system_volume
-            on_value: root.system_volume = self.value
-            on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
-
-        # 5. Alert Repeat (RESTORED)
-        Label:
-            text: "Alert Repeat: " + ("OFF" if root.alert_repeat_freq == 0 else str(int(root.alert_repeat_freq)) + "s")
-            halign: 'right'
-        Slider:
-            id: s_repeat
-            min: 0
-            max: 60
-            step: 5
-            value: root.alert_repeat_freq
-            on_value: root.alert_repeat_freq = self.value
-
-        # 6. Sound File
-        Label:
-            text: "Alert Sound:"
-            halign: 'right'
+        # ═══ LEFT COLUMN ═══
         BoxLayout:
-            spacing: 10
-            Spinner:
-                id: spinner_sound
-                text: "Select..."
-                values: root.sound_list
-                size_hint_x: 0.6
-            Button:
-                text: "TEST"
-                size_hint_x: 0.4
-                background_color: 0.3, 0.3, 0.3, 1
-                on_release: root.test_audio()
+            orientation: 'vertical'
+            spacing: 12
+
+            # 1. Temp Sensor
+            BoxLayout:
+                size_hint_y: 1
+                Label:
+                    text: "Temp Sensor:"
+                    size_hint_x: 0.38
+                    halign: 'right'
+                    text_size: self.size
+                    valign: 'middle'
+                Spinner:
+                    id: spinner_sensor
+                    text: "Select..."
+                    values: root.sensor_list
+                    size_hint_x: 0.62
+
+            # 2. Boil Temp
+            BoxLayout:
+                size_hint_y: 1
+                Label:
+                    text: "Boil Temp: " + str(int(root.boil_temp))
+                    size_hint_x: 0.38
+                    halign: 'right'
+                    text_size: self.size
+                    valign: 'middle'
+                Slider:
+                    id: s_boil
+                    min: 180
+                    max: 212
+                    step: 1
+                    value: root.boil_temp
+                    on_value: root.boil_temp = self.value
+                    size_hint_x: 0.62
+
+            # 3. Alert Sound + TEST
+            BoxLayout:
+                size_hint_y: 1
+                Label:
+                    text: "Alert Sound:"
+                    size_hint_x: 0.38
+                    halign: 'right'
+                    text_size: self.size
+                    valign: 'middle'
+                Spinner:
+                    id: spinner_sound
+                    text: "Select..."
+                    values: root.sound_list
+                    size_hint_x: 0.45
+                Button:
+                    text: "TEST"
+                    size_hint_x: 0.17
+                    background_color: 0.3, 0.3, 0.3, 1
+                    on_release: root.test_audio()
+
+            # 4. Alert Volume
+            BoxLayout:
+                size_hint_y: 1
+                Label:
+                    text: "Alert Volume: " + str(int(root.system_volume)) + "%"
+                    size_hint_x: 0.38
+                    halign: 'right'
+                    text_size: self.size
+                    valign: 'middle'
+                Slider:
+                    id: s_vol
+                    min: 0
+                    max: 100
+                    step: 5
+                    value: root.system_volume
+                    on_value: root.system_volume = self.value
+                    on_touch_up: if self.collide_point(*args[1].pos): root.set_volume_live(self.value)
+                    size_hint_x: 0.62
+
+        # ═══ RIGHT COLUMN ═══
+        BoxLayout:
+            orientation: 'vertical'
+            spacing: 12
+
+            # 1. Relay Activation
+            BoxLayout:
+                size_hint_y: 1
+                Label:
+                    text: "Relay Activation:"
+                    size_hint_x: 0.38
+                    halign: 'right'
+                    text_size: self.size
+                    valign: 'middle'
+                BoxLayout:
+                    size_hint_x: 0.62
+                    spacing: 6
+                    ToggleButton:
+                        text: "Active HIGH"
+                        group: "relay_logic"
+                        state: 'down' if root.relay_active_high else 'normal'
+                        on_release: root.relay_active_high = True
+                        background_normal: ''
+                        background_down: ''
+                        background_color: (0.15, 0.5, 0.85, 1) if self.state == 'down' else (0.25, 0.25, 0.25, 1)
+                    ToggleButton:
+                        text: "Active LOW"
+                        group: "relay_logic"
+                        state: 'normal' if root.relay_active_high else 'down'
+                        on_release: root.relay_active_high = False
+                        background_normal: ''
+                        background_down: ''
+                        background_color: (0.15, 0.5, 0.85, 1) if self.state == 'down' else (0.25, 0.25, 0.25, 1)
+
+            # 2. (blank row — aligns with Boil Temp slider)
+            Widget:
+                size_hint_y: 1
+
+            # 3. Audio Out
+            BoxLayout:
+                size_hint_y: 1
+                Label:
+                    text: "Audio Out:"
+                    size_hint_x: 0.38
+                    halign: 'right'
+                    text_size: self.size
+                    valign: 'middle'
+                Spinner:
+                    id: spinner_audio
+                    text: "Select..."
+                    values: root.audio_list
+                    size_hint_x: 0.62
+
+            # 4. Alert Repeat
+            BoxLayout:
+                size_hint_y: 1
+                Label:
+                    text: "Alert Repeat: " + ("OFF" if root.alert_repeat_freq == 0 else str(int(root.alert_repeat_freq)) + "s")
+                    size_hint_x: 0.38
+                    halign: 'right'
+                    text_size: self.size
+                    valign: 'middle'
+                Slider:
+                    id: s_repeat
+                    min: 0
+                    max: 60
+                    step: 5
+                    value: root.alert_repeat_freq
+                    on_value: root.alert_repeat_freq = self.value
+                    size_hint_x: 0.62
 
 <CalibrationSettingsScreen>:
     BoxLayout:
@@ -2775,6 +2851,14 @@
             height: '50dp'
             orientation: 'horizontal'
             spacing: 10
+
+            # Help Button (always visible)
+            Button:
+                text: "HELP"
+                size_hint_x: None
+                width: '75dp'
+                background_color: 0.2, 0.2, 0.45, 1
+                on_release: root.go_to_help()
             
             # CASE 1: MANUAL CONTEXT (Just Exit)
             Button:
@@ -2833,5 +2917,61 @@
         padding_x: 10
         bold: True
         color: root.value_color
-        
-        
+
+
+# ─────────────────────────────────────────────────────────────
+# HELP SCREEN
+# ─────────────────────────────────────────────────────────────
+<HelpScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: 0.12, 0.12, 0.12, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        # Header
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            padding: [12, 6]
+            spacing: 10
+            canvas.before:
+                Color:
+                    rgba: 0.18, 0.18, 0.18, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Label:
+                text: "[b]KettleBrain Help[/b]"
+                markup: True
+                font_size: '18sp'
+                color: 0.2, 0.8, 1, 1
+                halign: 'left'
+                text_size: self.size
+                valign: 'middle'
+            Button:
+                text: "BACK"
+                size_hint_x: None
+                width: '90dp'
+                background_color: 0.35, 0.35, 0.35, 1
+                on_release: root.go_back()
+
+        # Scrollable content
+        ScrollView:
+            do_scroll_x: False
+            do_scroll_y: True
+            Label:
+                text: root.help_text
+                markup: True
+                text_size: self.width, None
+                size_hint_y: None
+                height: self.texture_size[1]
+                halign: 'left'
+                valign: 'top'
+                font_size: '14sp'
+                padding: [20, 15]
+                color: 0.85, 0.85, 0.85, 1
+                on_ref_press: root.go_to_section(args[1])
