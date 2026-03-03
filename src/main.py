@@ -1946,7 +1946,12 @@ class SettingsMasterScreen(Screen):
     
     current_tab = StringProperty('settings_app')
 
+    def on_pre_enter(self):
+        App.get_running_app().is_settings_dirty = False
+
     def select_tab(self, tab_name):
+        if App.get_running_app().is_settings_dirty:
+            return  # Block tab switching while there are unsaved changes
         self.ids.content_manager.transition = SlideTransition(direction='left')
         self.ids.content_manager.current = tab_name
         self.current_tab = tab_name
@@ -1978,9 +1983,7 @@ class SettingsMasterScreen(Screen):
             self.btn_5_visible = True
 
     def exit_settings(self):
-        # Return to Dashboard
-        self.manager.transition.direction = 'right'
-        self.manager.current = 'main'
+        App.get_running_app().attempt_exit_settings()
 
     def show_help(self):
         tab_section_map = {
@@ -2003,13 +2006,18 @@ class SettingsMasterScreen(Screen):
 
     def on_btn_4(self):
         # Slot 4: RESET/DEFAULTS or INSTALL (Updates)
+        app = App.get_running_app()
         screen = self.ids.content_manager.get_screen(self.current_tab)
         
         if self.current_tab == 'settings_updates':
             if hasattr(screen, 'install_updates'): screen.install_updates()
         else:
-            # Standard Reset
-            if hasattr(screen, 'restore_defaults'): screen.restore_defaults()
+            app._suppress_dirty = True
+            try:
+                if hasattr(screen, 'restore_defaults'): screen.restore_defaults()
+            finally:
+                app._suppress_dirty = False
+            app.is_settings_dirty = False
 
     def on_btn_5(self):
         # Slot 5: SAVE or RESTART (Updates)
@@ -2018,9 +2026,9 @@ class SettingsMasterScreen(Screen):
         if self.current_tab == 'settings_updates':
             if hasattr(screen, 'restart_app'): screen.restart_app()
         else:
-            # Standard Save
             if hasattr(screen, 'save_changes'): screen.save_changes()
-            elif hasattr(screen, 'save_calibration'): screen.save_calibration() # Calib uses different name
+            elif hasattr(screen, 'save_calibration'): screen.save_calibration()
+            App.get_running_app().is_settings_dirty = False
 
 class PIDSettingsScreen(Screen):
     kp = NumericProperty(50.0)
@@ -2029,12 +2037,30 @@ class PIDSettingsScreen(Screen):
 
     def on_pre_enter(self):
         app = App.get_running_app()
-        sm = app.settings_manager
-        pid_cfg = sm.get_section("pid_settings")
-        
-        self.kp = float(pid_cfg.get("kp", 50.0))
-        self.ki = float(pid_cfg.get("ki", 0.02))
-        self.kd = float(pid_cfg.get("kd", 10.0))
+        app._suppress_dirty = True
+        try:
+            sm = app.settings_manager
+            pid_cfg = sm.get_section("pid_settings")
+            self.kp = float(pid_cfg.get("kp", 50.0))
+            self.ki = float(pid_cfg.get("ki", 0.02))
+            self.kd = float(pid_cfg.get("kd", 10.0))
+        finally:
+            app._suppress_dirty = False
+
+    def on_kp(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_ki(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_kd(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
 
     def save_changes(self):
         app = App.get_running_app()
@@ -2071,21 +2097,20 @@ class HeaterSettingsScreen(Screen):
     def on_pre_enter(self):
         """Load from settings on view."""
         app = App.get_running_app()
-        cfg = app.settings_manager.get_section("heater_config")
-        
-        self.r1_val = float(cfg.get("relay1_watts", 1000))
-        self.r2_val = float(cfg.get("relay2_watts", 800))
-        self.r3_val = float(cfg.get("relay3_watts", 1000))
-        
-        # PUSH values to the sliders (since we removed the KV binding loop)
-        if 's_r1' in self.ids: self.ids.s_r1.value = self.r1_val
-        if 's_r2' in self.ids: self.ids.s_r2.value = self.r2_val
-        if 's_r3' in self.ids: self.ids.s_r3.value = self.r3_val
-        
-        # Trigger text updates
-        self.on_slider_change(1, self.r1_val)
-        self.on_slider_change(2, self.r2_val)
-        self.on_slider_change(3, self.r3_val)
+        app._suppress_dirty = True
+        try:
+            cfg = app.settings_manager.get_section("heater_config")
+            self.r1_val = float(cfg.get("relay1_watts", 1000))
+            self.r2_val = float(cfg.get("relay2_watts", 800))
+            self.r3_val = float(cfg.get("relay3_watts", 1000))
+            if 's_r1' in self.ids: self.ids.s_r1.value = self.r1_val
+            if 's_r2' in self.ids: self.ids.s_r2.value = self.r2_val
+            if 's_r3' in self.ids: self.ids.s_r3.value = self.r3_val
+            self.on_slider_change(1, self.r1_val)
+            self.on_slider_change(2, self.r2_val)
+            self.on_slider_change(3, self.r3_val)
+        finally:
+            app._suppress_dirty = False
 
     def on_slider_change(self, relay_num, value):
         """Snap-to-zero logic: < 500 becomes 0 (Disabled)."""
@@ -2110,6 +2135,10 @@ class HeaterSettingsScreen(Screen):
         elif relay_num == 3:
             self.r3_val = snapped_val
             self.r3_text = txt
+
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
 
     def save_changes(self):
         app = App.get_running_app()
@@ -2163,55 +2192,76 @@ class HardwareSettingsScreen(Screen):
 
     def on_pre_enter(self):
         """Load current values when entering the screen."""
-        sm = self.app.settings_manager
-        hw = self.app.hw
-        
-        # 1. LOAD BOIL TEMP (With Conversion)
-        raw_boil = sm.get_system_setting("boil_temp_f", 212)
-        self.app.configure_slider(self.ids.s_boil, raw_boil, 'boil_temp')
+        app = App.get_running_app()
+        app._suppress_dirty = True
+        try:
+            sm = self.app.settings_manager
+            hw = self.app.hw
 
-        # 2. LOAD SENSORS
-        raw_sensors = hw.scan_available_sensors()
-        self.sensor_list = ["unassigned"] + raw_sensors
-        current_sensor = sm.get_system_setting("temp_sensor_id", "unassigned")
-        # Ensure current is valid
-        if current_sensor not in self.sensor_list:
-            self.sensor_list.append(current_sensor)
-        self.ids.spinner_sensor.text = current_sensor
+            # 1. LOAD BOIL TEMP (With Conversion)
+            raw_boil = sm.get_system_setting("boil_temp_f", 212)
+            self.app.configure_slider(self.ids.s_boil, raw_boil, 'boil_temp')
 
-        # 3. LOAD AUDIO DEVICES
-        raw_audio = hw.scan_audio_devices()
-        self.audio_list = []
-        self.audio_map = {}
-        
-        current_audio_dev = sm.get_system_setting("audio_device", "default")
-        current_friendly_text = "Default"
+            # 2. LOAD SENSORS
+            raw_sensors = hw.scan_available_sensors()
+            self.sensor_list = ["unassigned"] + raw_sensors
+            current_sensor = sm.get_system_setting("temp_sensor_id", "unassigned")
+            if current_sensor not in self.sensor_list:
+                self.sensor_list.append(current_sensor)
+            self.ids.spinner_sensor.text = current_sensor
 
-        for friendly, dev_str in raw_audio:
-            self.audio_list.append(friendly)
-            self.audio_map[friendly] = dev_str
-            if dev_str == current_audio_dev:
-                current_friendly_text = friendly
-        
-        self.ids.spinner_audio.text = current_friendly_text
+            # 3. LOAD AUDIO DEVICES
+            raw_audio = hw.scan_audio_devices()
+            self.audio_list = []
+            self.audio_map = {}
+            current_audio_dev = sm.get_system_setting("audio_device", "default")
+            current_friendly_text = "Default"
+            for friendly, dev_str in raw_audio:
+                self.audio_list.append(friendly)
+                self.audio_map[friendly] = dev_str
+                if dev_str == current_audio_dev:
+                    current_friendly_text = friendly
+            self.ids.spinner_audio.text = current_friendly_text
 
-        # 4. LOAD SOUNDS
-        self.sound_list = [
-            "alert.wav", "alt1_ding.wav", "alt2_buzzer.wav", 
-            "alt2_ding.wav", "bell_ding.wav", "doorbell.wav", 
-            "highbell.wav", "sports_buzzer.wav", "store_ding.wav"
-        ]
-        current_sound = sm.get_system_setting("alert_sound_file", "alert.wav")
-        self.ids.spinner_sound.text = current_sound
+            # 4. LOAD SOUNDS
+            self.sound_list = [
+                "alert.wav", "alt1_ding.wav", "alt2_buzzer.wav",
+                "alt2_ding.wav", "bell_ding.wav", "doorbell.wav",
+                "highbell.wav", "sports_buzzer.wav", "store_ding.wav"
+            ]
+            current_sound = sm.get_system_setting("alert_sound_file", "alert.wav")
+            self.ids.spinner_sound.text = current_sound
 
-        # 5. LOAD VOLUME (Mock or generic default as we can't easily read amixer)
-        self.system_volume = 80 
-        
-        # 6. LOAD ALERT REPEAT FREQUENCY
-        self.alert_repeat_freq = sm.get_system_setting("alert_repeat_freq", 15)
+            # 5. LOAD VOLUME
+            self.system_volume = 80
 
-        # 7. LOAD RELAY LOGIC
-        self.relay_active_high = sm.get_system_setting("relay_active_high", False)
+            # 6. LOAD ALERT REPEAT FREQUENCY
+            self.alert_repeat_freq = sm.get_system_setting("alert_repeat_freq", 15)
+
+            # 7. LOAD RELAY LOGIC
+            self.relay_active_high = sm.get_system_setting("relay_active_high", False)
+        finally:
+            app._suppress_dirty = False
+
+    def on_boil_temp(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_system_volume(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_alert_repeat_freq(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_relay_active_high(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
 
     def save_changes(self):
         """Write values to SettingsManager."""
@@ -2321,22 +2371,46 @@ class AppSettingsScreen(Screen):
         self.app = App.get_running_app()
 
     def on_pre_enter(self):
-        sm = self.app.settings_manager
-        
-        # 1. Load Units
-        sys_unit = sm.get_system_setting("units", "imperial")
-        self.units_text = self.UNIT_MAP_REV.get(sys_unit, "Imperial (°F / Gal)")
-        
-        # 2. Load Booleans
-        self.auto_start = sm.get_system_setting("auto_start_enabled", True)
-        self.auto_resume = sm.get_system_setting("auto_resume_enabled", False)
-        self.force_numlock = sm.get_system_setting("force_numlock", True)
-        self.csv_logging = sm.get_system_setting("enable_csv_logging", False)
+        app = App.get_running_app()
+        app._suppress_dirty = True
+        try:
+            sm = self.app.settings_manager
+            sys_unit = sm.get_system_setting("units", "imperial")
+            self.units_text = self.UNIT_MAP_REV.get(sys_unit, "Imperial (°F / Gal)")
+            self.auto_start = sm.get_system_setting("auto_start_enabled", True)
+            self.auto_resume = sm.get_system_setting("auto_resume_enabled", False)
+            self.force_numlock = sm.get_system_setting("force_numlock", True)
+            self.csv_logging = sm.get_system_setting("enable_csv_logging", False)
+        finally:
+            app._suppress_dirty = False
 
     def on_auto_start(self, instance, value):
         """Enforce dependency: Auto-Resume requires Auto-Start."""
         if not value:
             self.auto_resume = False
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_auto_resume(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_force_numlock(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_csv_logging(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
+
+    def on_units_text(self, instance, value):
+        app = App.get_running_app()
+        if not app._suppress_dirty:
+            app.mark_settings_dirty()
 
     def save_changes(self):
         sm = self.app.settings_manager
@@ -2712,7 +2786,9 @@ class UpdatesSettingsScreen(Screen):
 class KettleApp(App):
     
     fonts_loaded = BooleanProperty(False)
-    is_metric = BooleanProperty(False) 
+    is_metric = BooleanProperty(False)
+    is_settings_dirty = BooleanProperty(False)
+    _suppress_dirty = False
     
     def build(self):
         self.title = "KettleBrain"
@@ -2811,7 +2887,43 @@ class KettleApp(App):
         self.root.transition.direction = 'left'
         self.root.current = 'help'
 
-    # Add this method to KettleApp class
+    # --- DIRTY SETTINGS MANAGEMENT ---
+
+    def mark_settings_dirty(self):
+        """Flag that settings have unsaved changes. Suppressed during load operations."""
+        if not self._suppress_dirty:
+            self.is_settings_dirty = True
+
+    def discard_settings(self):
+        """Discard unsaved changes and return to the dashboard."""
+        self.is_settings_dirty = False
+        self.root.transition.direction = 'right'
+        self.root.current = 'main'
+
+    def save_and_continue_settings(self):
+        """Save the current settings tab then return to the dashboard."""
+        try:
+            sm = self.settings_master
+            screen = sm.ids.content_manager.get_screen(sm.current_tab)
+            if hasattr(screen, 'save_changes'):
+                screen.save_changes()
+            elif hasattr(screen, 'save_calibration'):
+                screen.save_calibration()
+        except Exception as e:
+            print(f"[Settings] Save-and-continue error: {e}")
+        self.is_settings_dirty = False
+        self.root.transition.direction = 'right'
+        self.root.current = 'main'
+
+    def attempt_exit_settings(self):
+        """Exit settings; show a dirty popup if there are unsaved changes."""
+        if self.is_settings_dirty:
+            from kivy.clock import Clock
+            Clock.schedule_once(lambda dt: DirtySettingsPopup().open(), 0)
+        else:
+            self.root.transition.direction = 'right'
+            self.root.current = 'main'
+
     def build_power_map(self):
         """
         Generates a list of wattage options: 
