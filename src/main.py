@@ -63,6 +63,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.screenmanager import SlideTransition
 from kivy.uix.spinner import Spinner
 from kivy.core.window import Window
+from kivy.factory import Factory
 
 # --- GLOBAL SLIDER TOUCH/THUMB POLICY ---
 _ORIG_SLIDER_ON_TOUCH_DOWN = Slider.on_touch_down
@@ -2918,8 +2919,7 @@ class KettleApp(App):
     def attempt_exit_settings(self):
         """Exit settings; show a dirty popup if there are unsaved changes."""
         if self.is_settings_dirty:
-            from kivy.clock import Clock
-            Clock.schedule_once(lambda dt: DirtySettingsPopup().open(), 0)
+            Clock.schedule_once(lambda dt: Factory.DirtySettingsPopup().open(), 0)
         else:
             self.root.transition.direction = 'right'
             self.root.current = 'main'
