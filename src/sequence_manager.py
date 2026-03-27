@@ -40,9 +40,6 @@ class SequenceManager:
         self.last_pid_update = 0.0
         self.last_applied_power = 0 
 
-        # Track if Delayed Start was launched from Auto (IDLE) or Manual context
-        self.delayed_is_auto = True
-        
         self.step_start_time = 0.0
         self.total_paused_time = 0.0
         self.last_pause_start = 0.0
@@ -302,79 +299,45 @@ class SequenceManager:
         return delta_temp / real_rate_fpm
 
     # --- DELAYED START LOGIC ---
-    def start_delayed_mode(self, target_temp, volume_gal, ready_time_dt, from_auto_mode=None):
+    def start_delayed_mode(self, ready_time_dt):
         """
         Calculates when to fire the heater so water is ready at ready_time_dt.
-        Enters DELAYED_WAIT state.
-        
-        Sets Manual Mode defaults (30m timer, UI Watts) immediately so UI reflects the pending state.
+        Reads target temp, volume, and ramp power from the current Manual mode settings.
+        Must only be called from Manual mode.
         """
-        # 1. Determine Context (Auto vs Manual)
-        if from_auto_mode is not None:
-            self.delayed_is_auto = from_auto_mode
-        else:
-            # Default: If not Manual, assume Auto
-            self.delayed_is_auto = (self.status != SequenceStatus.MANUAL)
+        target_temp = getattr(self, 'manual_target_temp', 150.0)
+        volume_gal = getattr(self, 'manual_volume_gal', 8.0)
+        ramp_watts = getattr(self, 'manual_ramp_watts', 1800)
 
-        self.stop() # Reset status
-        
-        # 2. Get Constants
-        ref_vol = self.settings.get_system_setting("heater_ref_volume_gal", 8.0)
-        ref_rate = self.settings.get_system_setting("heater_ref_rate_fpm", 1.2)
-        
-        # 3. Calculate adjusted rate for this volume
-        try:
-            adj_rate = ref_rate * (ref_vol / float(volume_gal))
-        except ZeroDivisionError:
-            adj_rate = ref_rate
+        self.stop()
 
-        # 4. Calculate Temp Rise needed
-        current = self.current_temp if self.current_temp else 60.0 # Fallback
-        rise = float(target_temp) - current
-        if rise < 0: rise = 0
-        
-        # 5. Calculate Duration (Minutes)
-        duration_min = rise / adj_rate
-        
-        # 6. Calculate Start Time (Epoch)
+        current = self.current_temp if self.current_temp else 60.0
+        ramp_min = self.calculate_ramp_minutes(current, target_temp, volume_gal, ramp_watts)
+
         ready_epoch = ready_time_dt.timestamp()
-        start_epoch = ready_epoch - (duration_min * 60)
-        
-        # --- STORE DATA ---
-        self.delayed_ready_epoch = ready_epoch 
+        start_epoch = ready_epoch - (ramp_min * 60.0)
+
+        self.delayed_ready_epoch = ready_epoch
         self.delayed_start_epoch = start_epoch
         self.delayed_target_temp = float(target_temp)
-        self.delayed_vol = float(volume_gal) 
+        self.delayed_vol = float(volume_gal)
         self.delayed_ready_time_str = ready_time_dt.strftime("%H:%M")
         self.delayed_start_time_str = datetime.fromtimestamp(start_epoch).strftime("%H:%M")
-        
-        # --- UPDATE MANUAL SETTINGS IMMEDIATELY ---
-        self.set_manual_target(self.delayed_target_temp)
-        self.set_manual_volume(self.delayed_vol)
-        self.set_manual_timer_duration(30.0) 
-        # FIX: Removed hardcoded legacy 1800W overwrite. 
-        # MainScreen.confirm_delay_start inherently handles the dual-power setup immediately after this.
-        
+
         self.status = SequenceStatus.DELAYED_WAIT
-        print(f"[Sequence] Delayed Start Set (Auto Context: {self.delayed_is_auto}).")
+        print(f"[Sequence] Delayed Start Set.")
         print(f"   Ready By: {self.delayed_ready_time_str}")
         print(f"   Heater Fires At: {self.delayed_start_time_str}")
-        print(f"   Configured Manual Mode: {self.delayed_target_temp}F, 30min, UI Watts")
-        
+        print(f"   Manual Mode: {target_temp}F, {ramp_watts}W, {volume_gal} gal")
+
         self._save_recovery_snapshot()
 
     def cancel_delayed_mode(self):
-        """Cancels delay and returns to the previous context (Auto or Manual)."""
+        """Cancels delay and returns to Manual mode."""
         if self.status != SequenceStatus.DELAYED_WAIT:
             return
-
-        # Check the flag we saved when delay started
-        if getattr(self, 'delayed_is_auto', True):
-            print("[Sequence] Cancel Delay -> Returning to Auto (IDLE)")
-            self.stop() # Returns to IDLE
-        else:
-            print("[Sequence] Cancel Delay -> Returning to Manual Mode")
-            self.enter_manual_mode() # Returns to MANUAL
+        print("[Sequence] Cancel Delay -> Returning to Manual Mode")
+        self.enter_manual_mode()
     
     def get_delayed_status_msg(self):
         """Returns the dynamic lines for the UI button."""
@@ -415,8 +378,7 @@ class SequenceManager:
     def set_manual_power(self, watts):
         """
         Legacy/Batch Setter.
-        Sets BOTH Ramp and Hold to the same value. 
-        Used by Delayed Start and legacy UI calls.
+        Sets BOTH Ramp and Hold to the same value.
         """
         val = int(watts)
         self.manual_ramp_watts = val
@@ -864,16 +826,17 @@ class SequenceManager:
                 # --- DELAYED START WAIT ---
                 if self.status == SequenceStatus.DELAYED_WAIT:
                     now = time.time()
-                    
+
                     if now - last_delay_calc > 30.0:
                         last_delay_calc = now
                         if hasattr(self, 'delayed_target_temp') and hasattr(self, 'delayed_ready_epoch'):
                              current_t = self.current_temp if self.current_temp else 60.0
+                             ramp_watts = getattr(self, 'manual_ramp_watts', 1800)
                              ramp_min = self.calculate_ramp_minutes(
-                                 current_t, 
-                                 self.delayed_target_temp, 
-                                 getattr(self, 'delayed_vol', 8.0), 
-                                 1800 # Estimation wattage
+                                 current_t,
+                                 self.delayed_target_temp,
+                                 getattr(self, 'delayed_vol', 8.0),
+                                 ramp_watts
                              )
                              self.delayed_start_epoch = self.delayed_ready_epoch - (ramp_min * 60.0)
                              self.delayed_start_time_str = datetime.fromtimestamp(self.delayed_start_epoch).strftime("%H:%M")
@@ -883,11 +846,7 @@ class SequenceManager:
                         if now >= self.delayed_start_epoch:
                              print("[SequenceManager] Delayed Start Triggered!")
                              self.reset_energy_counter()
-                             if getattr(self, 'delayed_is_auto', True):
-                                 self.status = SequenceStatus.RUNNING
-                                 self.start_sequence()
-                             else:
-                                 self.start_manual()
+                             self.start_manual()
                 
                 # --- MAIN SEQUENCE LOGIC ---
                 elif self.status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
@@ -1041,16 +1000,13 @@ class SequenceManager:
         # 1. SAVE DELAY STATE
         if self.status == SequenceStatus.DELAYED_WAIT:
             state["mode_type"] = "DELAY"
-            state["delayed_ready_epoch"] = getattr(self, 'delayed_ready_epoch', 0) # <--- NEW
+            state["delayed_ready_epoch"] = getattr(self, 'delayed_ready_epoch', 0)
             state["delayed_start_epoch"] = getattr(self, 'delayed_start_epoch', 0)
             state["delayed_target_temp"] = getattr(self, 'delayed_target_temp', 0)
             state["delayed_vol"] = getattr(self, 'delayed_vol', 0)
             state["delayed_ready_time_str"] = getattr(self, 'delayed_ready_time_str', "")
             state["delayed_start_time_str"] = getattr(self, 'delayed_start_time_str', "")
-            
-            # Save the context flag so we know where to return if cancelled
-            state["delayed_is_auto"] = getattr(self, 'delayed_is_auto', True)
-            
+
             self.settings.save_recovery_state(state)
             return
 
@@ -1178,33 +1134,25 @@ class SequenceManager:
         # --- RESTORE DELAYED START ---
         if mode_type == "DELAY":
             print("[Sequence] Restoring Delayed Start...")
-            
-            # 1. Restore Variables
-            self.delayed_is_auto = state_dict.get("delayed_is_auto", True)
-            self.delayed_ready_epoch = state_dict.get("delayed_ready_epoch", 0) # <--- NEW
+
+            self.delayed_ready_epoch = state_dict.get("delayed_ready_epoch", 0)
             self.delayed_start_epoch = state_dict.get("delayed_start_epoch", 0)
             self.delayed_target_temp = state_dict.get("delayed_target_temp", 0)
             self.delayed_vol = state_dict.get("delayed_vol", 0)
             self.delayed_ready_time_str = state_dict.get("delayed_ready_time_str", "")
             self.delayed_start_time_str = state_dict.get("delayed_start_time_str", "")
-            
-            # Ensure Manual Target is synced
+
             self.set_manual_target(self.delayed_target_temp)
-            
-            # 2. Check Time
+
             now = time.time()
             if now >= self.delayed_start_epoch:
-                # We missed the start time (or it's happening now) -> WAKE UP IMMEDIATELY
                 print("[Sequence] Restore: Start time passed. Firing Heater immediately.")
-                self.enter_manual_mode()
-                self.set_manual_target(self.delayed_target_temp)
-                self.toggle_manual_heater(True)
+                self.start_manual()
             else:
-                # We are still early -> GO BACK TO SLEEP
                 print("[Sequence] Restore: Still early. Resuming Delayed Wait.")
                 self.status = SequenceStatus.DELAYED_WAIT
                 self._save_recovery_snapshot()
-                
+
             return
 
         # --- RESTORE MANUAL MODE ---

@@ -963,15 +963,12 @@ class MainScreen(Screen):
     controls_disabled = BooleanProperty(False)
     delay_btn_text = StringProperty("DELAY START")
     delay_btn_color = ListProperty([0.2, 0.2, 0.4, 1])
-    
-    delay_temp = NumericProperty(150.0)
-    delay_vol = NumericProperty(8.0)
+    delay_btn_disabled = BooleanProperty(True)
+
     delay_minutes_total = NumericProperty(360) # 6 hours default
-    
-    delay_target_display = StringProperty("Target: --")
-    delay_vol_display = StringProperty("Volume: --") 
-    
-    delay_target_dt = ObjectProperty(None) 
+    delay_target_dt = ObjectProperty(None)
+    delay_fire_label = StringProperty("")
+    delay_can_activate = BooleanProperty(True)
     
     # Mode Switching
     mode_switch_target = StringProperty("") 
@@ -1008,9 +1005,8 @@ class MainScreen(Screen):
         self.is_profile_loaded = False
         self.is_delay_active = False
         self.controls_disabled = False
-        
-        # FIX 2: Initialize this to prevent crash in open_delay_setup
-        self.has_initialized_delay = False
+        self.delay_btn_disabled = True
+        self._delay_initialized = False
         
         # FIX 3: Initialize default power map to prevent crash in on_slider_drag
         self.watts_map = [0, 800, 1000, 1800, 2000, 2800]
@@ -1750,35 +1746,28 @@ class MainScreen(Screen):
 
     def open_delay_setup(self):
         status = self.app.sequencer.status
-        if status == SequenceStatus.DELAYED_WAIT:
-            raw_temp = self.app.to_backend_units(self.delay_temp, 'temp')
-            raw_vol = self.app.to_backend_units(self.delay_vol, 'vol')
-        elif not self.has_initialized_delay:
+        if status not in (SequenceStatus.MANUAL, SequenceStatus.DELAYED_WAIT):
+            return
+
+        if not self._delay_initialized:
             now = datetime.now()
             next_target = now.replace(hour=6, minute=0, second=0, microsecond=0)
             if next_target <= now:
                 next_target += timedelta(days=1)
             self.delay_minutes_total = (next_target.hour * 60) + next_target.minute
-            sm = self.app.settings_manager
-            raw_temp = sm.get("manual_mode_settings", "last_setpoint_f", 154.0)
-            raw_vol = sm.get("manual_mode_settings", "last_volume_gal", 8.0)
-            self.has_initialized_delay = True
-        else:
-            raw_temp = self.app.to_backend_units(self.delay_temp, 'temp')
-            raw_vol = self.app.to_backend_units(self.delay_vol, 'vol')
+            self._delay_initialized = True
 
+        self._update_delay_fire_label()
         self.ids.hero_manager.transition.direction = 'left'
         self.ids.hero_manager.current = 'hero_delay'
-        self.app.configure_slider(self.ids.s_delay_temp, raw_temp, 'temp')
-        self.app.configure_slider(self.ids.s_delay_vol, raw_vol, 'vol')
-        self.on_delay_temp(None, self.delay_temp)
-        self.on_delay_vol(None, self.delay_vol)
 
     def close_delay_setup(self):
         self.ids.hero_manager.transition.direction = 'right'
         self.ids.hero_manager.current = 'hero_standard'
 
     def confirm_delay_start(self):
+        if not self.delay_can_activate:
+            return
         try:
             val = int(self.delay_minutes_total)
             h = val // 60
@@ -1788,45 +1777,16 @@ class MainScreen(Screen):
             if target_dt <= now:
                 target_dt += timedelta(days=1)
             self.delay_target_dt = target_dt
-            is_auto = (self.app.sequencer.status != SequenceStatus.MANUAL)
-            threshold = 20 if self.app.is_metric else 70
-            if self.delay_temp < threshold:
-                target_f = 0.0
-            else:
-                target_f = self.app.to_backend_units(self.delay_temp, 'temp')
-            target_gal = self.app.to_backend_units(self.delay_vol, 'vol')
-            
-            self.app.sequencer.start_delayed_mode(
-                target_f, 
-                target_gal, 
-                target_dt, 
-                from_auto_mode=is_auto
-            )
-            
-            # Sync UI sliders to the delayed parameters
-            self.app.configure_slider(self.ids.temp_slider, target_f, 'temp')
-            self.app.configure_slider(self.ids.vol_slider, target_gal, 'vol')
-            self.slider_time_val = 30.0
-            
-            # Ensure the Sequencer locks in the current Dual Power UI states for Manual wake-up
-            try:
-                r_idx = int(self.slider_ramp_power_val)
-                if 0 <= r_idx < len(self.watts_map):
-                    self.app.sequencer.set_manual_ramp_power(self.watts_map[r_idx])
 
-                h_idx = int(self.slider_hold_power_val)
-                if 0 <= h_idx < len(self.watts_map):
-                    self.app.sequencer.set_manual_hold_power(self.watts_map[h_idx])
-            except Exception as pwr_e:
-                print(f"[MainScreen] Error syncing power during delay start: {pwr_e}")
-            
+            self.app.sequencer.start_delayed_mode(target_dt)
+
             self.update_status_display()
             self.close_delay_setup()
         except Exception as e:
             print(f"Delay Start Error: {e}")
     
     def deactivate_delay(self):
-        self.app.sequencer.stop()
+        self.app.sequencer.cancel_delayed_mode()
         self.update_status_display()
         self.close_delay_setup()
     
@@ -1853,29 +1813,38 @@ class MainScreen(Screen):
             elif status == SequenceStatus.MANUAL:
                 self._update_prediction()
 
-    def on_delay_temp(self, instance, value):
-        # 1. Get Units
-        u_temp = "C" if self.app.is_metric else "F"
-        
-        # --- NULL CHECK ---
-        threshold = 20 if self.app.is_metric else 70
-        
-        if value < threshold:
-            self.delay_target_display = "Target: --"
-            return
+    def on_delay_minutes_total(self, instance, value):
+        self._update_delay_fire_label()
 
-        # 2. Check BOIL Threshold
-        val_f = self.app.to_backend_units(value, 'temp')
-        sys_boil_f = self.app.settings_manager.get_system_setting("boil_temp_f", 212.0)
-        
-        if val_f >= (sys_boil_f - 1.0):
-            self.delay_target_display = f"Target: {int(value)} {u_temp} (BOIL)"
+    def _update_delay_fire_label(self):
+        """Recalculates the fire-at time label and sets delay_can_activate."""
+        seq = self.app.sequencer
+        target_temp = getattr(seq, 'manual_target_temp', 150.0)
+        volume_gal = getattr(seq, 'manual_volume_gal', 8.0)
+        ramp_watts = getattr(seq, 'manual_ramp_watts', 1800)
+        current_t = seq.current_temp if seq.current_temp else 60.0
+
+        ramp_min = seq.calculate_ramp_minutes(current_t, target_temp, volume_gal, ramp_watts)
+
+        val = int(self.delay_minutes_total)
+        h = val // 60
+        m = val % 60
+        now = datetime.now()
+        target_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if target_dt <= now:
+            target_dt += timedelta(days=1)
+
+        fire_dt = target_dt - timedelta(minutes=ramp_min)
+
+        if fire_dt <= now:
+            earliest_ready = now + timedelta(minutes=ramp_min)
+            earliest_str = self.get_delay_time_str(earliest_ready.hour * 60 + earliest_ready.minute)
+            self.delay_fire_label = f"Not enough time (earliest: {earliest_str})"
+            self.delay_can_activate = False
         else:
-            self.delay_target_display = f"Target: {int(value)} {u_temp}"
-
-    def on_delay_vol(self, instance, value):
-        u_vol = "L" if self.app.is_metric else "Gal"
-        self.delay_vol_display = f"Volume: {value:.2f} {u_vol}"
+            fire_str = self.get_delay_time_str(fire_dt.hour * 60 + fire_dt.minute)
+            self.delay_fire_label = f"Heating starts at: {fire_str}"
+            self.delay_can_activate = True
 
 class ProfilesScreen(Screen):
     def refresh_list(self):
@@ -3025,7 +2994,7 @@ class KettleApp(App):
                 raw_target_f = self.to_backend_units(screen.slider_temp_val, 'temp')
 
         elif status == SequenceStatus.DELAYED_WAIT:
-             raw_target_f = self.to_backend_units(screen.delay_temp, 'temp')
+             raw_target_f = getattr(seq, 'delayed_target_temp', 0.0)
 
         elif seq.current_profile and seq.current_step_index >= 0 and seq.current_step_index < len(seq.current_profile.steps):
             step = seq.current_profile.steps[seq.current_step_index]
@@ -3209,11 +3178,19 @@ class KettleApp(App):
             screen.controls_disabled = True
             screen.delay_btn_text = "DELAY ACTIVE"
             screen.delay_btn_color = [0.2, 0.6, 0.8, 1]
+            screen.delay_btn_disabled = False
+        elif status == SequenceStatus.MANUAL:
+            screen.is_delay_active = False
+            screen.controls_disabled = False
+            screen.delay_btn_text = "DELAY START"
+            screen.delay_btn_color = [0.2, 0.2, 0.4, 1]
+            screen.delay_btn_disabled = False
         else:
             screen.is_delay_active = False
             screen.controls_disabled = False
             screen.delay_btn_text = "DELAY START"
             screen.delay_btn_color = [0.2, 0.2, 0.4, 1]
+            screen.delay_btn_disabled = True
             
         # Update Est. End Label
         if hasattr(screen, '_update_est_end'):

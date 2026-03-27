@@ -326,7 +326,8 @@
                         Button:
                             text: root.delay_btn_text
                             size_hint_y: 0.6
-                            background_color: root.delay_btn_color
+                            background_color: root.delay_btn_color if not root.delay_btn_disabled else (0.15, 0.15, 0.15, 1)
+                            disabled: root.delay_btn_disabled
                             on_release: root.open_delay_setup()
 
                     # CARD 3: Timer & Heartbeat
@@ -379,17 +380,16 @@
                             pos: self.pos
                             size: self.size
 
-                    # --- LEFT COLUMN: SLIDERS (75% Width) ---
+                    # --- LEFT COLUMN: TIME SLIDER + INFO (75% Width) ---
                     BoxLayout:
                         orientation: 'vertical'
                         size_hint_x: 0.75
                         spacing: 0
 
-                        # ROW 1: TIME
+                        # ROW 1: TIME SLIDER
                         BoxLayout:
                             spacing: 10
                             Slider:
-                                # REDUCED WIDTH (Was 0.8)
                                 size_hint_x: 0.7
                                 min: 0
                                 max: 1435
@@ -398,9 +398,7 @@
                                 on_value: root.delay_minutes_total = self.value
                                 cursor_size: dp(30), dp(30)
                             Label:
-                                # INCREASED WIDTH (Was 0.2)
                                 size_hint_x: 0.3
-                                # MATCHING STYLE
                                 text: "Ready At: " + root.get_delay_time_str(root.delay_minutes_total)
                                 font_size: '18sp'
                                 bold: True
@@ -408,49 +406,14 @@
                                 valign: 'middle'
                                 text_size: self.size
 
-                        # ROW 2: TEMP
-                        BoxLayout:
-                            spacing: 10
-                            Slider:
-                                id: s_delay_temp  # <--- NEW ID
-                                size_hint_x: 0.7
-                                min: 70
-                                max: 212
-                                step: 1
-                                value: root.delay_temp
-                                on_value: root.delay_temp = self.value
-                                cursor_size: dp(30), dp(30)
-                            Label:
-                                size_hint_x: 0.3
-                                # FIX: Use dynamic property
-                                text: root.delay_target_display
-                                font_size: '18sp'
-                                bold: True
-                                halign: 'left'
-                                valign: 'middle'
-                                text_size: self.size
-
-                       # ROW 3: VOLUME
-                        BoxLayout:
-                            spacing: 10
-                            Slider:
-                                id: s_delay_vol   # <--- NEW ID
-                                size_hint_x: 0.7
-                                min: 2
-                                max: 9
-                                step: 0.25
-                                value: root.delay_vol
-                                on_value: root.delay_vol = self.value
-                                cursor_size: dp(30), dp(30)
-                            Label:
-                                size_hint_x: 0.3
-                                # FIX: Use dynamic property
-                                text: root.delay_vol_display
-                                font_size: '18sp'
-                                bold: True
-                                halign: 'left'
-                                valign: 'middle'
-                                text_size: self.size
+                        # ROW 2: FIRE-AT INFO LABEL
+                        Label:
+                            text: root.delay_fire_label
+                            font_size: '16sp'
+                            color: (0.2, 0.8, 0.2, 1) if root.delay_can_activate else (1, 0.4, 0.3, 1)
+                            halign: 'center'
+                            valign: 'middle'
+                            text_size: self.size
 
                     # --- RIGHT COLUMN: ACTIONS 2x2 (25% Width) ---
                     GridLayout:
@@ -464,7 +427,8 @@
                             text: "UPDATE" if root.is_delay_active else "ACTIVATE"
                             font_size: '13sp'
                             bold: True
-                            background_color: 0.2, 0.8, 0.2, 1
+                            background_color: (0.2, 0.8, 0.2, 1) if root.delay_can_activate else (0.2, 0.2, 0.2, 1)
+                            disabled: not root.delay_can_activate
                             on_release: root.confirm_delay_start()
 
                         # Row 1, Col 2: CANCEL

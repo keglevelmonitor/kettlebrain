@@ -202,26 +202,29 @@ When the timer reaches zero the session automatically resets to Manual Mode stan
 [SECTION: delayedStart]
 [size=24][b][color=33ccff]Delayed Start[/color][/b][/size]
 
-Delayed Start lets you schedule the kettle to begin heating automatically so that water is at strike temperature when you are ready to brew.
+Delayed Start lets you schedule the kettle to begin heating automatically so that water is at strike temperature when you are ready to brew. It is available only from [ref=manualMode][color=33ccff]Manual Mode[/color][/ref].
 
 [size=18][b][color=ffffff]How It Works[/color][/b][/size]
 
-You enter the time you want the water to be ready, and the app works backwards: it calculates how long the heater needs to run based on the current water temperature, the target temperature, and the volume, then schedules the heater to fire at the right time.
+You configure your Manual Mode settings (target temperature, volume, timer, and power levels), then open the Delayed Start panel and set the time you want the water to be ready. The app works backwards: it calculates how long the heater needs to run based on the current water temperature, the target temperature, the volume, and the configured ramp power, then schedules the heater to fire at the right time.
 
-The calculated start time is recalculated every 30 minutes to account for changes in ambient temperature.
+The calculated start time is recalculated every 30 seconds to account for changes in ambient temperature.
+
+When the delay fires, Manual Mode starts heating. Once the target temperature is reached, the hold timer begins counting down. When the timer expires, the heater shuts off. If you arrive while the timer is running or after it expires, you can switch to Auto Mode, load a brew profile, and begin your brew.
 
 [size=18][b][color=ffffff]Setting Up a Delayed Start[/color][/b][/size]
 
-  1. Set the [b]Target Temperature[/b] — the temperature you want the water at.
-  2. Set the [b]Volume[/b] — how much water is in the kettle.
-  3. Set the [b]Ready Time[/b] — the time of day you want the water ready.
-  4. Press [b]CONFIRM DELAY[/b].
+  1. Switch to [b]Manual Mode[/b].
+  2. Set the [b]Target Temperature[/b], [b]Volume[/b], [b]Timer[/b], and [b]Power[/b] using the Manual Mode controls.
+  3. Press the [b]DELAY START[/b] button in the status card.
+  4. Set the [b]Ready Time[/b] — the time of day you want the water ready (always the next occurrence within 24 hours).
+  5. Press [b]ACTIVATE[/b].
 
-The display will show "DELAY ACTIVE" along with the calculated heater fire time and the ready time.
+The display shows "DELAY ACTIVE" along with the calculated heater fire time and the ready time. The info label below the slider shows when heating will start, or warns you if the selected time does not allow enough ramp-up time.
 
 [size=18][b][color=ffffff]Cancelling[/color][/b][/size]
 
-Press the delay button again (or RESET) to cancel. The app returns to the mode it was in before the delay was set — Auto (IDLE) if you were in Auto mode, or Manual if you were in Manual mode.
+Press the delay button to reopen the panel and tap [b]DEACTIVATE[/b]. The app returns to Manual Mode standby with your settings intact.
 
 [size=18][b][color=ffffff]Accuracy Note[/color][/b][/size]
 
@@ -611,7 +614,12 @@ Restarts KettleBrain to apply an installed update. Any active brew session will 
 [size=18][b][color=ffffff]Delayed Start fires at the wrong time[/color][/b][/size]
 
   • Run a [ref=settingsCalibration][color=33ccff]heater calibration[/color][/ref]. An uncalibrated system uses the factory default rate which may not match your setup.
-  • Ensure the correct volume is entered in the Delayed Start setup. The heat-up estimate scales with volume.
+  • Ensure the correct volume is set in Manual Mode before activating the delay. The heat-up estimate scales with volume.
+  • Verify that the Ramp Power in Manual Mode matches your system. The delay calculation uses the configured ramp wattage.
+
+[size=18][b][color=ffffff]DELAY START button is grayed out[/color][/b][/size]
+
+  • Delayed Start is only available from Manual Mode. Switch to Manual Mode first, then the button becomes active.
 
 [size=18][b][color=ffffff]Session was lost after a power cut[/color][/b][/size]
 
