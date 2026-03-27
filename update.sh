@@ -52,15 +52,13 @@ fi
 echo "--- Starting Install Process ---"
 
 # --- 4. Git Pull ---
+echo "Cleaning local changes..."
+git reset --hard HEAD
+
 echo "Pulling changes..."
-# Explicit rebase strategy avoids newer Git prompt/failure on divergence.
 if ! git pull --rebase origin "$BRANCH"; then
-    echo "Resetting install.sh and update.sh (chmod changes) and retrying..."
-    git checkout -- install.sh update.sh 2>/dev/null
-    if ! git pull --rebase origin "$BRANCH"; then
-        echo "[ERROR] git pull failed."
-        exit 1
-    fi
+    echo "[ERROR] git pull failed."
+    exit 1
 fi
 chmod +x "$PROJECT_DIR/install.sh" "$PROJECT_DIR/update.sh" 2>/dev/null || true
 

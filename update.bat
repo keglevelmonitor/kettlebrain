@@ -50,8 +50,10 @@ echo.
 echo --- Starting Install Process ---
 
 :: 1. Git Pull
+echo [1/2] Cleaning local changes...
+git reset --hard HEAD
+
 echo [1/2] Pulling latest code...
-REM Explicit rebase strategy avoids newer Git divergence prompt/failure.
 git pull --rebase origin %BRANCH%
 
 IF %ERRORLEVEL% NEQ 0 (
