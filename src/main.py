@@ -1769,6 +1769,28 @@ class MainScreen(Screen):
         if not self.delay_can_activate:
             return
         try:
+            seq = self.app.sequencer
+
+            # Force-sync all slider values to sequencer before capturing
+            # (on_slider_release may not have fired if touch ended outside slider bounds)
+            threshold = 20 if getattr(self.app, 'is_metric', False) else 70
+            if self.slider_temp_val < threshold:
+                seq.set_manual_target(0.0)
+            else:
+                val_f = self.app.to_backend_units(self.slider_temp_val, 'temp')
+                seq.set_manual_target(val_f)
+
+            vol_gal = self.app.to_backend_units(self.slider_vol_val, 'vol')
+            seq.set_manual_volume(vol_gal)
+
+            r_idx = int(self.slider_ramp_power_val)
+            if 0 <= r_idx < len(self.watts_map):
+                seq.set_manual_ramp_power(self.watts_map[r_idx])
+
+            h_idx = int(self.slider_hold_power_val)
+            if 0 <= h_idx < len(self.watts_map):
+                seq.set_manual_hold_power(self.watts_map[h_idx])
+
             val = int(self.delay_minutes_total)
             h = val // 60
             m = val % 60
@@ -1778,7 +1800,7 @@ class MainScreen(Screen):
                 target_dt += timedelta(days=1)
             self.delay_target_dt = target_dt
 
-            self.app.sequencer.start_delayed_mode(target_dt)
+            seq.start_delayed_mode(target_dt)
 
             self.update_status_display()
             self.close_delay_setup()
