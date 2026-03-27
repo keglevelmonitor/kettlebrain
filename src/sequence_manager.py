@@ -828,9 +828,18 @@ class SequenceManager:
                 if self.status == SequenceStatus.DELAYED_WAIT:
                     now = time.time()
 
-                    if now - last_delay_calc > 30.0:
+                    # 1. TRIGGER CHECK (before recalculation so recalc can never suppress an overdue trigger)
+                    if hasattr(self, 'delayed_start_epoch'):
+                        if now >= self.delayed_start_epoch:
+                             print(f"[SequenceManager] Delayed Start Triggered! (epoch={self.delayed_start_epoch:.0f}, now={now:.0f})")
+                             self.reset_energy_counter()
+                             self.start_manual()
+
+                    # 2. RECALCULATION (only if still waiting — trigger above may have changed status)
+                    if self.status == SequenceStatus.DELAYED_WAIT and now - last_delay_calc > 30.0:
                         last_delay_calc = now
                         if hasattr(self, 'delayed_target_temp') and hasattr(self, 'delayed_ready_epoch'):
+                             old_start = getattr(self, 'delayed_start_epoch', now)
                              current_t = self.current_temp if self.current_temp else 60.0
                              ramp_watts = getattr(self, 'manual_ramp_watts', 1800)
                              ramp_min = self.calculate_ramp_minutes(
@@ -839,15 +848,16 @@ class SequenceManager:
                                  getattr(self, 'delayed_vol', 8.0),
                                  ramp_watts
                              )
-                             self.delayed_start_epoch = self.delayed_ready_epoch - (ramp_min * 60.0)
+                             new_start = self.delayed_ready_epoch - (ramp_min * 60.0)
+                             # Never push a past start time into the future
+                             if old_start <= now and new_start > now:
+                                 new_start = old_start
+                             self.delayed_start_epoch = new_start
                              self.delayed_start_time_str = datetime.fromtimestamp(self.delayed_start_epoch).strftime("%H:%M")
-                             self.update_predictions()
-
-                    if hasattr(self, 'delayed_start_epoch'):
-                        if now >= self.delayed_start_epoch:
-                             print("[SequenceManager] Delayed Start Triggered!")
-                             self.reset_energy_counter()
-                             self.start_manual()
+                             try:
+                                 self.update_predictions()
+                             except Exception as pred_e:
+                                 print(f"[SequenceManager] Prediction update error during delay: {pred_e}")
                 
                 # --- MAIN SEQUENCE LOGIC ---
                 elif self.status in [SequenceStatus.RUNNING, SequenceStatus.PAUSED, SequenceStatus.WAITING_FOR_USER]:
